@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  ros1_eth:
+    image: eth_sys:latest
+    stdin_open: true # keep stdin open
+    privileged: true 
+    environment:
+      - DISPLAY
+      - XAUTHORITY=/tmp/.Xauthority
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - __NV_PRIME_RENDER_OFFLOAD=1
+      - __GLX_VENDOR_LIBRARY_NAME=nvidia
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      - ~/.Xauthority:/root/.Xauthority # share the Xauthority file with the host
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw # share the X11 socket with the host
+      - /dev:/dev # share the devices with the host
+      - /dev/shm:/dev/shm # share the shared memory with the host 
+      - ../On-Track-SysID:/workspace/src/On-Track-SysID/
+      - ../f1tenth_simulator:/workspace/src/f1tenth_simulator_ros/
+    working_dir: /workspace
+    command: bash
