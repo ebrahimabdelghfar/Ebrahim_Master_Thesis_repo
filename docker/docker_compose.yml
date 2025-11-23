@@ -15,7 +15,6 @@ services:
     volumes:
       - ~/.Xauthority:/root/.Xauthority # share the Xauthority file with the host
       - /tmp/.X11-unix:/tmp/.X11-unix:rw # share the X11 socket with the host
-      - /dev:/dev # share the devices with the host
       - /dev/shm:/dev/shm # share the shared memory with the host 
       - ../On-Track-SysID:/workspace/src/On-Track-SysID/
       - ../f1tenth_simulator:/workspace/src/f1tenth_simulator_ros/
