@@ -35,3 +35,4 @@ dependencies:
     - empy
     - tqdm
     - catkin-pkg
+    - pyyaml
