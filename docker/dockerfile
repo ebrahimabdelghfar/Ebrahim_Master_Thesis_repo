@@ -32,6 +32,5 @@ ADD environment.yml .
 RUN conda env create -f environment.yml
 RUN echo "source activate env_pytorch" >> ~/.bashrc
 RUN pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-
 WORKDIR /workspace
 CMD ["bash"]
