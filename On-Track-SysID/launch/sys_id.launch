@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <launch>
-    <arg name="odom_topic" default="/car_state/odom" />
-    <arg name="ackermann_cmd_topic" default="/vesc/high_level/ackermann_cmd_mux/input/nav_1" />
+    <arg name="odom_topic" default="/odom" />
+    <arg name="ackermann_cmd_topic" default="/drive" />
 
     <arg name="save_LUT_name" default="NUCx_on_track_pacejka" />
     <arg name="plot_model" default="True" />

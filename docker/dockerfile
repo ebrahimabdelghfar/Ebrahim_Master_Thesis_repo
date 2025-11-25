@@ -17,5 +17,20 @@ RUN mkdir -p /workspace/src
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
     ros-noetic-teleop-twist-* \
     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -y && apt-get install -y --no-install-recommends \
+    python3-pip \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN wget https://repo.anaconda.com/archive/Anaconda3-2025.06-0-Linux-x86_64.sh
+RUN bash Anaconda3-2025.06-0-Linux-x86_64.sh -b -p /opt/conda
+RUN rm Anaconda3-2025.06-0-Linux-x86_64.sh
+ENV PATH="/opt/conda/bin:$PATH"
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main \
+ && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+ADD environment.yml .
+RUN conda env create -f environment.yml
+RUN echo "source activate env_pytorch" >> ~/.bashrc
+RUN pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 WORKDIR /workspace
 CMD ["bash"]
