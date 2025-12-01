@@ -206,7 +206,7 @@ def nn_train(training_data, racecar_version, save_LUT_name, plot_model):
     training_data = process_data(training_data, model)   
      
     avg_vel = np.mean(training_data[:,0]) # Defining average velocity for the simulation, NN will have more accurate predictions
-    avg_vel = np.clip(avg_vel, 2.75, 4)
+    avg_vel = np.clip(avg_vel, 2.75, 4) # Clip average velocity to be within a reasonable range (2.75 m/s to 4 m/s)
     
     # Iterative training loop
     for i in range(1, num_of_iterations+1):

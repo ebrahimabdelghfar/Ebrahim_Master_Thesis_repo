@@ -60,9 +60,9 @@ new_method_mux_idx: -1
 # Enables joystick if true
 joy: true
 # Joystick indices
-joy_speed_axis: 1
-joy_angle_axis: 3
-joy_max_speed: 2. # meters/second
+joy_speed_axis: 3
+joy_angle_axis: 2
+joy_max_speed: 0.1 # meters/second
 # Joystick indices for toggling mux
 joy_button_idx: 4  # LB button
 key_button_idx: 6 # not sure 

@@ -8,7 +8,9 @@ import yaml
 import csv
 from nav_msgs.msg import Odometry
 from ackermann_msgs.msg import AckermannDriveStamped
-from helpers.train_model import nn_train
+from helpers.train_model import nn_train, get_model_param
+from helpers.pacejka_formula import pacejka_formula
+from std_msgs.msg import Float64MultiArray
 from datetime import datetime
 from tqdm import tqdm
 
@@ -42,6 +44,34 @@ class On_Track_Sys_Id:
         # Subscribe to the topics using the loaded parameter values
         rospy.Subscriber(odom_topic, Odometry, self.odom_cb)
         rospy.Subscriber(ackermann_topic, AckermannDriveStamped, self.ackermann_cb)
+
+        # Publishers for estimated state and error
+        self.est_state_pub = rospy.Publisher('/estimated_state', Float64MultiArray, queue_size=1)
+        self.error_pub = rospy.Publisher('/estimation_error', Float64MultiArray, queue_size=1)
+
+        # Load model parameters for estimation
+        try:
+            self.model_params = get_model_param(self.racecar_version)
+            self.init_model_constants()
+        except Exception as e:
+            rospy.logwarn(f"Could not load model parameters: {e}")
+            self.model_params = None
+
+        self.sim_vy = 0.0
+        self.sim_omega = 0.0
+        self.last_time = rospy.Time.now()
+
+    def init_model_constants(self):
+        mp = self.model_params
+        self.m = mp['m']
+        self.I_z = mp['I_z']
+        self.l_f = mp['l_f']
+        self.l_r = mp['l_r']
+        self.l_wb = mp['l_wb']
+        self.F_zf = self.m * 9.81 * self.l_r / self.l_wb
+        self.F_zr = self.m * 9.81 * self.l_f / self.l_wb
+        self.C_Pf_model = mp['C_Pf_model']
+        self.C_Pr_model = mp['C_Pr_model']
 
     def setup_data_storage(self):
         """
@@ -104,7 +134,7 @@ class On_Track_Sys_Id:
         Closes the progress bar and logs a message if data collection is complete.
         """
         if self.current_state[0] > 1: # Only collect data when the car is moving
-            self.data = np.roll(self.data, -1, axis=0)
+            self.data = np.roll(self.data, -1, axis=0) # Shift data up by one row
             self.data[-1] = self.current_state
             self.counter += 1
             self.pbar.update(1)
@@ -119,21 +149,97 @@ class On_Track_Sys_Id:
         rospy.loginfo("Training neural network...")
         nn_train(self.data, self.racecar_version, self.save_LUT_name, self.plot_model)
         
+    def publish_estimates(self):
+        """
+        Calculates and publishes estimated state and error using the identified parameters.
+        """
+        if self.model_params is None:
+            return
+
+        v_x = self.current_state[0]
+        v_y_real = self.current_state[1]
+        omega_real = self.current_state[2]
+        delta = self.current_state[3]
+
+        # Reset simulation if car is stopped or just starting
+        if v_x < 0.1:
+            self.sim_vy = 0.0
+            self.sim_omega = 0.0
+            # Publish zeros or current state?
+            # Let's just return
+            return
+
+        # If simulation state is zero (just started moving), initialize with real state
+        if self.sim_vy == 0.0 and self.sim_omega == 0.0 and abs(v_y_real) > 0.0:
+             self.sim_vy = v_y_real
+             self.sim_omega = omega_real
+
+        dt = 1.0 / self.rate
+
+        # Physics Model Update
+        # Slip angles
+        alpha_f = -np.arctan((self.sim_vy + self.sim_omega * self.l_f) / v_x) + delta
+        alpha_r = -np.arctan((self.sim_vy - self.sim_omega * self.l_r) / v_x)
+
+        # Pacejka forces
+        F_f = pacejka_formula(self.C_Pf_model, alpha_f, self.F_zf)
+        F_r = pacejka_formula(self.C_Pr_model, alpha_r, self.F_zr)
+
+        # Dynamics
+        v_y_dot = (1/self.m) * (F_r + F_f * np.cos(delta) - self.m * v_x * self.sim_omega)
+        omega_dot = (1/self.I_z) * (F_f * self.l_f * np.cos(delta) - F_r * self.l_r)
+
+        # Integration
+        self.sim_vy += v_y_dot * dt
+        self.sim_omega += omega_dot * dt
+
+        # Publish Estimated State [v_x, v_y_est, omega_est]
+        est_msg = Float64MultiArray()
+        est_msg.data = [v_x, self.sim_vy, self.sim_omega]
+        self.est_state_pub.publish(est_msg)
+
+        # Publish Error [v_y_error, omega_error]
+        err_msg = Float64MultiArray()
+        err_msg.data = [v_y_real - self.sim_vy, omega_real - self.sim_omega]
+        self.error_pub.publish(err_msg)
+
     def loop(self):
         """
         Main loop for data collection, training, and exporting.
 
         This loop continuously collects data until completion, then runs neural network training
-        and exports the collected data as CSV before shutting down the node.
+        and exports the collected data as CSV. After training, it reloads the parameters and 
+        starts publishing estimates.
         """
         self.pbar = tqdm(total=self.timesteps, desc='Collecting data', ascii=True)
+        
+        # Data Collection Phase
         while not rospy.is_shutdown():
             self.collect_data()
             if self.counter == self.timesteps + 1:
-                self.run_nn_train()
-                self.export_data_as_csv()
-                
-                rospy.signal_shutdown("Training completed. Shutting down...")
+                break
+            self.loop_rate.sleep()
+            
+        if rospy.is_shutdown():
+            return
+
+        # Training Phase
+        self.run_nn_train()
+        self.export_data_as_csv()
+        
+        # Reload Parameters Phase
+        rospy.loginfo("Reloading parameters for estimation...")
+        try:
+            self.model_params = get_model_param(self.racecar_version)
+            self.init_model_constants()
+            rospy.loginfo("Parameters reloaded successfully.")
+        except Exception as e:
+            rospy.logerr(f"Failed to reload parameters: {e}")
+        
+        # Estimation Phase
+        rospy.loginfo("Starting estimation loop...")
+        while not rospy.is_shutdown():
+            self.publish_estimates()
             self.loop_rate.sleep()
 if __name__ == '__main__':
     sys_id = On_Track_Sys_Id()
