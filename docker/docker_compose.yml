@@ -18,5 +18,6 @@ services:
       - /dev/shm:/dev/shm # share the shared memory with the host 
       - ../On-Track-SysID:/workspace/src/On-Track-SysID/
       - ../f1tenth_simulator:/workspace/src/f1tenth_simulator_ros/
+      - ../pure_pursuit:/workspace/src/pure_pursuit/
     working_dir: /workspace
     command: bash
