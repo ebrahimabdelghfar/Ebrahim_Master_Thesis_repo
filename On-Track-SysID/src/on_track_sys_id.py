@@ -60,6 +60,7 @@ class On_Track_Sys_Id:
         self.sim_vy = 0.0
         self.sim_omega = 0.0
         self.last_time = rospy.Time.now()
+        self.current_time = rospy.Time.now()
 
     def init_model_constants(self):
         mp = self.model_params
@@ -122,6 +123,7 @@ class On_Track_Sys_Id:
         self.current_state[0] = msg.twist.twist.linear.x
         self.current_state[1] = msg.twist.twist.linear.y
         self.current_state[2] = msg.twist.twist.angular.z
+        self.current_time = msg.header.stamp
         
     def ackermann_cb(self, msg):
         self.current_state[3] = msg.drive.steering_angle
@@ -156,6 +158,23 @@ class On_Track_Sys_Id:
         if self.model_params is None:
             return
 
+        # Check if we have new data based on timestamp
+        if self.current_time <= self.last_time:
+            return
+
+        dt = (self.current_time - self.last_time).to_sec()
+        
+        # If dt is too small (duplicate) or negative, skip
+        if dt <= 0.00001:
+            return
+            
+        # If dt is too large (e.g. first run or pause), reset/skip integration to avoid jumps
+        if dt > 0.2:
+            self.last_time = self.current_time
+            return
+
+        self.last_time = self.current_time
+
         v_x = self.current_state[0]
         v_y_real = self.current_state[1]
         omega_real = self.current_state[2]
@@ -165,16 +184,12 @@ class On_Track_Sys_Id:
         if v_x < 0.1:
             self.sim_vy = 0.0
             self.sim_omega = 0.0
-            # Publish zeros or current state?
-            # Let's just return
             return
 
         # If simulation state is zero (just started moving), initialize with real state
         if self.sim_vy == 0.0 and self.sim_omega == 0.0 and abs(v_y_real) > 0.0:
              self.sim_vy = v_y_real
              self.sim_omega = omega_real
-
-        dt = 1.0 / self.rate
 
         # Physics Model Update
         # Slip angles
@@ -238,6 +253,7 @@ class On_Track_Sys_Id:
         
         # Estimation Phase
         rospy.loginfo("Starting estimation loop...")
+        self.last_time = self.current_time
         while not rospy.is_shutdown():
             self.publish_estimates()
             self.loop_rate.sleep()
