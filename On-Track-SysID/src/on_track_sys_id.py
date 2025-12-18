@@ -45,8 +45,9 @@ class On_Track_Sys_Id:
         rospy.Subscriber(odom_topic, Odometry, self.odom_cb)
         rospy.Subscriber(ackermann_topic, AckermannDriveStamped, self.ackermann_cb)
 
-        # Publishers for estimated state and error
+        # Publishers for estimated state, sensor state, and error
         self.est_state_pub = rospy.Publisher('/estimated_state', Float64MultiArray, queue_size=1)
+        self.sensor_state_pub = rospy.Publisher('/sensor_state', Float64MultiArray, queue_size=1)
         self.error_pub = rospy.Publisher('/estimation_error', Float64MultiArray, queue_size=1)
 
         # Load model parameters for estimation
@@ -57,8 +58,8 @@ class On_Track_Sys_Id:
             rospy.logwarn(f"Could not load model parameters: {e}")
             self.model_params = None
 
-        self.sim_vy = 0.0
-        self.sim_omega = 0.0
+        self.prev_v_y = 0.0
+        self.prev_omega = 0.0
         self.last_time = rospy.Time.now()
         self.current_time = rospy.Time.now()
 
@@ -154,6 +155,8 @@ class On_Track_Sys_Id:
     def publish_estimates(self):
         """
         Calculates and publishes estimated state and error using the identified parameters.
+        Uses one-step prediction: computes predicted next state from REAL measurements,
+        then compares with REAL measurements at the next timestep.
         """
         if self.model_params is None:
             return
@@ -171,6 +174,9 @@ class On_Track_Sys_Id:
         # If dt is too large (e.g. first run or pause), reset/skip integration to avoid jumps
         if dt > 0.2:
             self.last_time = self.current_time
+            # Store current real state for next prediction
+            self.prev_v_y = self.current_state[1]
+            self.prev_omega = self.current_state[2]
             return
 
         self.last_time = self.current_time
@@ -180,42 +186,46 @@ class On_Track_Sys_Id:
         omega_real = self.current_state[2]
         delta = self.current_state[3]
 
-        # Reset simulation if car is stopped or just starting
+        # Skip if car is stopped
         if v_x < 0.1:
-            self.sim_vy = 0.0
-            self.sim_omega = 0.0
+            self.prev_v_y = v_y_real
+            self.prev_omega = omega_real
             return
 
-        # If simulation state is zero (just started moving), initialize with real state
-        if self.sim_vy == 0.0 and self.sim_omega == 0.0 and abs(v_y_real) > 0.0:
-             self.sim_vy = v_y_real
-             self.sim_omega = omega_real
-
-        # Physics Model Update
-        # Slip angles
-        alpha_f = -np.arctan((self.sim_vy + self.sim_omega * self.l_f) / v_x) + delta
-        alpha_r = -np.arctan((self.sim_vy - self.sim_omega * self.l_r) / v_x)
+        # One-Step Prediction using REAL previous measurements
+        # Use previous real state for slip angle calculation (not simulated state)
+        alpha_f = -np.arctan((self.prev_v_y + self.prev_omega * self.l_f) / v_x) + delta
+        alpha_r = -np.arctan((self.prev_v_y - self.prev_omega * self.l_r) / v_x)
 
         # Pacejka forces
         F_f = pacejka_formula(self.C_Pf_model, alpha_f, self.F_zf)
         F_r = pacejka_formula(self.C_Pr_model, alpha_r, self.F_zr)
 
-        # Dynamics
-        v_y_dot = (1/self.m) * (F_r + F_f * np.cos(delta) - self.m * v_x * self.sim_omega)
+        # Dynamics derivatives
+        v_y_dot = (1/self.m) * (F_r + F_f * np.cos(delta) - self.m * v_x * self.prev_omega)
         omega_dot = (1/self.I_z) * (F_f * self.l_f * np.cos(delta) - F_r * self.l_r)
 
-        # Integration
-        self.sim_vy += v_y_dot * dt
-        self.sim_omega += omega_dot * dt
+        # Predicted next state (one-step prediction from previous real state)
+        v_y_pred = self.prev_v_y + v_y_dot * dt
+        omega_pred = self.prev_omega + omega_dot * dt
 
-        # Publish Estimated State [v_x, v_y_est, omega_est]
+        # Store current real state for next prediction
+        self.prev_v_y = v_y_real
+        self.prev_omega = omega_real
+
+        # Publish Sensor State [v_x, v_y_real, omega_real, delta]
+        sensor_msg = Float64MultiArray()
+        sensor_msg.data = [v_x, v_y_real, omega_real, delta]
+        self.sensor_state_pub.publish(sensor_msg)
+
+        # Publish Estimated/Predicted State [v_x, v_y_pred, omega_pred]
         est_msg = Float64MultiArray()
-        est_msg.data = [v_x, self.sim_vy, self.sim_omega]
+        est_msg.data = [v_x, v_y_pred, omega_pred]
         self.est_state_pub.publish(est_msg)
 
-        # Publish Error [v_y_error, omega_error]
+        # Publish Error [v_y_error, omega_error] (real - predicted)
         err_msg = Float64MultiArray()
-        err_msg.data = [v_y_real - self.sim_vy, omega_real - self.sim_omega]
+        err_msg.data = [abs(v_y_real - v_y_pred), abs(omega_real - omega_pred)]
         self.error_pub.publish(err_msg)
 
     def loop(self):

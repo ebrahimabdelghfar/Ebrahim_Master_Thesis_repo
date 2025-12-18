@@ -693,6 +693,8 @@ public:
             odom.pose.pose.orientation.z = quat.z();
             odom.pose.pose.orientation.w = quat.w();
             odom.twist.twist.linear.x = state.velocity;
+            // Compute lateral velocity from velocity and slip angle: v_y = v_x * tan(beta)
+            odom.twist.twist.linear.y = state.velocity * std::tan(state.slip_angle);
             odom.twist.twist.angular.z = state.angular_velocity;
             odom_pub.publish(odom);
         }
