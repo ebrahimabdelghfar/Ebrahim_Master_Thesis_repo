@@ -41,7 +41,6 @@ def save_waypoint(data:Odometry):
 	
 
 def shutdown():
-	file.write('%f, %f, %f, %f\n' % (0.0, 0.0, euler[2], 0.0))
 	file.close()
 	print('Goodbye')
 

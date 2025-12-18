@@ -29,9 +29,8 @@ freqs = 2
 # CAR VARIABLES
 # LOOKAHEAD = 1.5 # 1.5
 # WB = 0.3421
-LOOKAHEAD = 3.5 # 1.5
-WB = 2.1
-
+LOOKAHEAD = 1.5 # 1.5
+WB = 0.3302
 # PROGRAM VARIABLES
 pure_pursuit_flag = True
 show_animation = True
@@ -91,13 +90,19 @@ def find_nearest_waypoint():
 def idx_close_to_lookahead(idx):
 	"""
 	Get closest index to lookahead that is greater than the lookahead
+	Wraps around to the beginning of waypoints when reaching the end
 	"""
 	global LOOKAHEAD
+	max_iterations = len(waypoints)  # Prevent infinite loop
+	iterations = 5
 	while find_distance_index_based(idx) < LOOKAHEAD:
-		idx += 1 
+		idx += 1
 		if idx >= len(waypoints):
-			break
-	return idx - 1 
+			idx = 0  # Wrap around to the beginning
+		iterations += 1
+		if iterations >= max_iterations:
+			break  # Safety check to prevent infinite loop
+	return idx if idx > 0 else len(waypoints) - 1
 
 def plot_arrow(x, y, yaw, length=1.0, width=0.5, fc="r", ec="k"):
 	"""
@@ -116,9 +121,9 @@ def pure_pursuit():
 
 	# Initialize the message, subscriber and publisher
 	ackermann_msg = AckermannDriveStamped()
-	rospy.Subscriber("/aft_mapped_adjusted", Odometry, pose_callback) 
+	rospy.Subscriber("/odom", Odometry, pose_callback) 
 	#define control_topics
-	ackermann_pub = rospy.Publisher("/ackermann_cmd", AckermannDriveStamped, queue_size=1)
+	ackermann_pub = rospy.Publisher("/drive", AckermannDriveStamped, queue_size=1)
 
 	cx = waypoints[:, 0]; cy = waypoints[:, 1]
 
@@ -152,17 +157,17 @@ def pure_pursuit():
 			y_delta = target_y - yc
 			alpha = np.arctan2(y_delta , x_delta) - yaw
 
-			# front of the vehicle is 0 degrees right +90 and left -90 hence we need to convert our alpha
-			if alpha > np.pi / 2:
-				alpha -= np.pi
-			if alpha < -np.pi / 2:
-				alpha += np.pi
+			# # front of the vehicle is 0 degrees right +90 and left -90 hence we need to convert our alpha
+			# if alpha > np.pi / 2:
+			# 	alpha -= np.pi
+			# if alpha < -np.pi / 2:
+			# 	alpha += np.pi
 
 			# Set the lookahead distance depending on the speed
 			lookahead = find_distance(target_x, target_y)
 			steering_angle = np.arctan2((2 * WB * np.sin(alpha)) , lookahead)
 			# Set max wheel turning angle (in radians, ~30 degrees = 0.524 rad)
-			max_steering = np.deg2rad(30.0)
+			max_steering = np.deg2rad(20.0)
 			if steering_angle > max_steering:
 				steering_angle = max_steering
 			elif steering_angle < -max_steering:
@@ -170,8 +175,8 @@ def pure_pursuit():
 			# Publish AckermannDriveStamped message
 			ackermann_msg.header.stamp = rospy.Time.now()
 			ackermann_msg.header.frame_id = "base_link"
-			ackermann_msg.drive.speed = velocity  # velocity in m/s
-			ackermann_msg.drive.steering_angle = -steering_angle  # steering angle in radians
+			ackermann_msg.drive.speed = 3.0  # velocity in m/s
+			ackermann_msg.drive.steering_angle = steering_angle  # steering angle in radians
 			ackermann_pub.publish(ackermann_msg)
 			print("Steering Angle (rad): ", ackermann_msg.drive.steering_angle, "Velocity (m/s): ", ackermann_msg.drive.speed)
 			# Plot map progression
