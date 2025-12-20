@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: bayes_race
+Version: 1.0
+Author: Achin Jain
+Author-email: achinj@seas.upenn.edu
+License-File: LICENSE.md
+Requires-Dist: pandas
+Requires-Dist: cvxpy
+Requires-Dist: casadi
+Requires-Dist: botorch
+Requires-Dist: gpytorch
+Requires-Dist: matplotlib
+Requires-Dist: scikit-learn
+Requires-Dist: tikzplotlib
+Dynamic: author
+Dynamic: author-email
+Dynamic: license-file
+Dynamic: requires-dist

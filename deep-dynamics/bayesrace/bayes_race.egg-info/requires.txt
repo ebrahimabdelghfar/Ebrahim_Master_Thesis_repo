@@ -1,0 +1,8 @@
+pandas
+cvxpy
+casadi
+botorch
+gpytorch
+matplotlib
+scikit-learn
+tikzplotlib
