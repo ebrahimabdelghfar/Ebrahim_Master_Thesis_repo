@@ -14,7 +14,7 @@ The workflow includes:
 
 ### Clone the Main Repository
 ```bash
-git clone https://github.com/eabdelghany/deep-dynamics.git
+git clone [https://github.com/eabdelghany/deep-dynamics.git](https://github.com/ebrahimabdelghfar/Ebrahim_Master_Thesis_repo.git)
 cd deep-dynamics
 ```
 Create and Activate Conda Environment
@@ -23,29 +23,10 @@ Create and Activate Conda Environment
 conda create -n deep_dynamics python=3.10 -y
 conda activate deep_dynamics
 ```
-Install bayesrace Dependency
-
-```bash
-git clone https://github.com/jainachin/bayesrace.git
-cd bayesrace
-```
-
-Important Manual Step
-
-Edit setup.py and remove all strict version pins (==VERSION) from install_requires:
-
-```bash
-nano setup.py
-```
 Then install:
 
 ```bash
-pip install -e . --no-deps
-cd ..
-```
-Install Remaining Core Libraries if not installed
-```bash
-pip install torch torchvision torchaudio casadi cvxpy yaml matplotlib pandas scikit-learn
+pip install -r requirements.txt
 ```
 
 2. Data Preparation
