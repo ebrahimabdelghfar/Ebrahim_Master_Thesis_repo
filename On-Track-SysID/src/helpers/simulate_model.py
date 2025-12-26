@@ -3,7 +3,7 @@ from helpers.load_model import get_dotdict
 from scipy.integrate import odeint
 import numpy as np
 import matplotlib.pyplot as plt
-# from mpl_toolkits.mplot3d import Axes3D # Removed to avoid version conflict
+from mpl_toolkits.mplot3d import Axes3D
 import os
 
 # Use ament_index for package path lookup (ROS2)
@@ -132,15 +132,8 @@ class LookupGenerator:
 
   def plot_lookup(self):
     # Plot the lookup table as a surface3d with velocitz and steering angle on x and y axis
-    try:
-        from mpl_toolkits.mplot3d import Axes3D
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-    except (ImportError, ValueError, KeyError) as e:
-        print(f"[WARN] 3D plotting unavailable due to Matplotlib error: {e}")
-        print("[WARN] Skipping plot generation but proceeding to save lookup table.")
-        return
-
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
     ax.set_xlabel(r'$v_x$ [m/s]')
     ax.set_ylabel(r'$\delta$ [rad]')
     # add some space between y label and y axis
