@@ -33,7 +33,7 @@ waypoints = []
 
 def read_points():
    # CHANGE THIS PATH TO WHERE YOU HAVE SAVED YOUR CSV FILES
-   file_name = 'wp_file.csv' #'racecar_walker.csv'
+   file_name = 'driving_style2.csv' #'racecar_walker.csv'
    file_path = file_name
    with open(file_path) as f: # see if i can open it  as a numpy array
       path_points = np.loadtxt(file_path, delimiter = ',')
