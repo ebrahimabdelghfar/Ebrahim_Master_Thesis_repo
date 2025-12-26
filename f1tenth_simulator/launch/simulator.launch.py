@@ -97,13 +97,14 @@ def generate_launch_description():
         output='screen'
     )
 
-    # Keyboard node
+    # Keyboard node - launch in xterm to capture input
     keyboard_node = Node(
         package='f1tenth_simulator',
         executable='keyboard',
         name='keyboard',
         parameters=[params_file],
-        output='screen'
+        output='screen',
+        prefix=['xterm -e']
     )
 
     # RViz2 node

@@ -225,18 +225,7 @@ Visualization Manager:
         {}
       Queue Size: 100
       Value: true
-    - Class: rviz_default_plugins/Image
-      Enabled: false
-      Topic: /converted_scan
-      Max Value: 1
-      Median window: 5
-      Min Value: 0
-      Name: Image
-      Normalize Range: true
-      Queue Size: 2
-      Transport Hint: raw
-      Unreliable: false
-      Value: false
+
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
