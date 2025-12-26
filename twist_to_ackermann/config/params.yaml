@@ -1,0 +1,6 @@
+twist_to_ackermann:
+  ros__parameters:
+    twist_topic: "cmd_vel"
+    ackermann_topic: "ack_vel"
+    wheelbase: 1.57
+    use_stamps: false
