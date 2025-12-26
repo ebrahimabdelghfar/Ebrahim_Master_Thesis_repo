@@ -19,7 +19,7 @@ def generate_launch_description():
     
     lookahead_arg = DeclareLaunchArgument(
         'lookahead_distance',
-        default_value='2.0',
+        default_value='1.5',
         description='Lookahead distance for pure pursuit'
     )
     

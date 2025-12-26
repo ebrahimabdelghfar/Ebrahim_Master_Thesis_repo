@@ -34,7 +34,7 @@ class PurePursuitNode(Node):
         self.yaw = 0.0
         self.vel = 0.0
         self.v_prev_error = 0.0
-        self.freqs = 2
+        self.freqs = 50
         
         # Declare parameters
         self.declare_parameter('waypoint_file', 'driving_style2.csv')
@@ -63,7 +63,7 @@ class PurePursuitNode(Node):
             Odometry,
             odom_topic,
             self.pose_callback,
-            10
+            1
         )
         
         self.ackermann_pub = self.create_publisher(
