@@ -1,107 +1,159 @@
-cmake_minimum_required(VERSION 3.1)
-
+cmake_minimum_required(VERSION 3.8)
 project(f1tenth_simulator)
 
-set(CMAKE_CXX_STANDARD 11)
-
-if(NOT CMAKE_BUILD_TYPE)
-  set (CMAKE_BUILD_TYPE Release)
+# Default to C++20 (needed for designated initializers)
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 20)
 endif()
 
-set(CMAKE_CXX_FLAGS "-Wall -Wextra")
-set(CMAKE_CXX_FLAGS_DEBUG "-g") 
-set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
 
-find_package(Eigen3)
+# Find dependencies
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(ackermann_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(interactive_markers REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(ament_index_cpp REQUIRED)
+find_package(Eigen3 REQUIRED)
+
+set(dependencies
+  rclcpp
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
+  ackermann_msgs
+  nav_msgs
+  sensor_msgs
+  geometry_msgs
+  interactive_markers
+  visualization_msgs
+  std_msgs
+  ament_index_cpp
+)
 
 ######################################
-# Compile the library >
+# Build the core library
 ######################################
 
-# Add includes
+# Include directories
 include_directories(include)
-file(GLOB SRC_FILES src/*.cpp)
-add_library(${PROJECT_NAME} ${SRC_FILES})
-target_link_libraries(${PROJECT_NAME} ${LIBS})
-set(LIBS ${LIBS} ${PROJECT_NAME})
 
-# Install the library to CMAKE_INSTALL_PREFIX
-# which defaults to /usr/local
-install(TARGETS ${PROJECT_NAME}
-        DESTINATION lib)
-install(DIRECTORY include/${PROJECT_NAME}
-        DESTINATION include)
+# Collect source files for the library
+file(GLOB LIB_SRC_FILES src/*.cpp)
 
-######################################
-# < End compile the library
-######################################
+# Create the library
+add_library(${PROJECT_NAME}_lib ${LIB_SRC_FILES})
+target_include_directories(${PROJECT_NAME}_lib PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+ament_target_dependencies(${PROJECT_NAME}_lib ${dependencies})
 
 ######################################
-# ROS >
+# Build the node executables
 ######################################
 
-# Only run this code in the catkin environment
-if(DEFINED CATKIN_DEVEL_PREFIX)
-  find_package(catkin REQUIRED COMPONENTS
-    roslib
-    roscpp
-    tf2
-    tf2_ros
-    tf2_geometry_msgs
-    ackermann_msgs
-    nav_msgs
-    sensor_msgs
-    geometry_msgs
+# Simulator node
+add_executable(simulator node/simulator.cpp)
+target_link_libraries(simulator ${PROJECT_NAME}_lib)
+ament_target_dependencies(simulator ${dependencies})
 
-    interactive_markers
-    visualization_msgs
+# Mux node
+add_executable(mux node/mux.cpp)
+target_link_libraries(mux ${PROJECT_NAME}_lib)
+ament_target_dependencies(mux ${dependencies})
 
-    std_msgs
-    message_generation
-    )
+# Behavior controller node
+add_executable(behavior_controller node/behavior_controller.cpp)
+target_link_libraries(behavior_controller ${PROJECT_NAME}_lib)
+ament_target_dependencies(behavior_controller ${dependencies})
 
-  generate_messages(
-    DEPENDENCIES
-    std_msgs
-    nav_msgs
-    sensor_msgs
-    )
+# Random walk node
+add_executable(random_walk node/random_walk.cpp)
+target_link_libraries(random_walk ${PROJECT_NAME}_lib)
+ament_target_dependencies(random_walk ${dependencies})
 
+# Keyboard node
+add_executable(keyboard node/keyboard.cpp)
+target_link_libraries(keyboard ${PROJECT_NAME}_lib)
+ament_target_dependencies(keyboard ${dependencies})
 
+######################################
+# Install targets
+######################################
 
+# Install library
+install(TARGETS ${PROJECT_NAME}_lib
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
 
-  # Include catkin_libraries
-  catkin_package(
-      INCLUDE_DIRS include
-      LIBRARIES ${PROJECT_NAME}
-      CATKIN_DEPENDS message_runtime
-  )
-  set(LIBS ${LIBS} ${catkin_LIBRARIES})
-  include_directories(include ${catkin_INCLUDE_DIRS})
+# Install executables
+install(TARGETS
+  simulator
+  mux
+  behavior_controller
+  random_walk
+  keyboard
+  DESTINATION lib/${PROJECT_NAME}
+)
 
+# Install header files
+install(DIRECTORY include/
+  DESTINATION include
+)
 
-  
+# Install launch files
+install(DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+)
 
-  # Add the nodes
-  file(GLOB NODE_SRC_FILES node/*.cpp)
-  foreach(_node_file ${NODE_SRC_FILES})
-      get_filename_component(_node_name ${_node_file} NAME_WE)
-      add_executable(${_node_name} ${_node_file})
-      target_link_libraries(${_node_name} ${LIBS})
-      add_dependencies(${_node_name} f1tenth_simulator_generate_messages_cpp)
-  endforeach()
+# Install param files
+install(FILES params.yaml
+  DESTINATION share/${PROJECT_NAME}
+)
 
-  # Install the library
-  install(TARGETS ${PROJECT_NAME}
-      ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-      LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-      RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-  )
-  install(DIRECTORY include/${PROJECT_NAME}/
-      DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
-  )
+# Install map files
+install(DIRECTORY maps/
+  DESTINATION share/${PROJECT_NAME}/maps
+)
+
+# Install URDF/Xacro files
+install(FILES racecar.xacro
+  DESTINATION share/${PROJECT_NAME}
+)
+
+# Install rviz config
+install(DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+  FILES_MATCHING PATTERN "*.rviz"
+)
+
+# Create logs directory in share
+install(DIRECTORY DESTINATION share/${PROJECT_NAME}/logs)
+
+######################################
+# Export and finalize
+######################################
+
+ament_export_include_directories(include)
+ament_export_libraries(${PROJECT_NAME}_lib)
+ament_export_dependencies(${dependencies})
+
+if(BUILD_TESTING)
+  find_package(ament_lint_auto REQUIRED)
+  ament_lint_auto_find_test_dependencies()
 endif()
 
-######################################
-# < End ROS
-######################################
+ament_package()

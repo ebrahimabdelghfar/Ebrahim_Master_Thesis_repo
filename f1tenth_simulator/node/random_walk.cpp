@@ -1,12 +1,12 @@
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
 
 // Publish to a topic with this message type
-#include <ackermann_msgs/AckermannDriveStamped.h>
+#include <ackermann_msgs/msg/ackermann_drive_stamped.hpp>
 // AckermannDriveStamped messages include this message type
-#include <ackermann_msgs/AckermannDrive.h>
+#include <ackermann_msgs/msg/ackermann_drive.hpp>
 
 // Subscribe to a topic with this message type
-#include <nav_msgs/Odometry.h>
+#include <nav_msgs/msg/odometry.hpp>
 
 // for printing
 #include <iostream>
@@ -14,54 +14,57 @@
 // for RAND_MAX
 #include <cstdlib>
 
-class RandomWalker {
-private:
-    // A ROS node
-    ros::NodeHandle n;
+#include <memory>
+#include <functional>
 
+using std::placeholders::_1;
+
+class RandomWalker : public rclcpp::Node {
+private:
     // car parameters
     double max_speed, max_steering_angle;
 
     // Listen for odom messages
-    ros::Subscriber odom_sub;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
 
     // Publish drive data
-    ros::Publisher drive_pub;
+    rclcpp::Publisher<ackermann_msgs::msg::AckermannDriveStamped>::SharedPtr drive_pub;
 
     // previous desired steering angle
-    double prev_angle=0.0;
+    double prev_angle = 0.0;
 
 
 public:
-    RandomWalker() {
-        // Initialize the node handle
-        n = ros::NodeHandle("~");
+    RandomWalker() : Node("random_walker") {
+        // Declare and get topic names
+        this->declare_parameter<std::string>("rand_drive_topic", "/rand_drive");
+        this->declare_parameter<std::string>("odom_topic", "/odom");
+        std::string drive_topic = this->get_parameter("rand_drive_topic").as_string();
+        std::string odom_topic = this->get_parameter("odom_topic").as_string();
 
-        // get topic names
-        std::string drive_topic, odom_topic;
-        n.getParam("rand_drive_topic", drive_topic);
-        n.getParam("odom_topic", odom_topic);
-
-        // get car parameters
-        n.getParam("max_speed", max_speed);
-        n.getParam("max_steering_angle", max_steering_angle);
+        // Declare and get car parameters
+        this->declare_parameter<double>("max_speed", 7.0);
+        this->declare_parameter<double>("max_steering_angle", 0.4189);
+        max_speed = this->get_parameter("max_speed").as_double();
+        max_steering_angle = this->get_parameter("max_steering_angle").as_double();
 
         // Make a publisher for drive messages
-        drive_pub = n.advertise<ackermann_msgs::AckermannDriveStamped>(drive_topic, 10);
+        drive_pub = this->create_publisher<ackermann_msgs::msg::AckermannDriveStamped>(drive_topic, 10);
 
         // Start a subscriber to listen to odom messages
-        odom_sub = n.subscribe(odom_topic, 1, &RandomWalker::odom_callback, this);
+        odom_sub = this->create_subscription<nav_msgs::msg::Odometry>(
+            odom_topic, 1, std::bind(&RandomWalker::odom_callback, this, _1));
 
-
+        RCLCPP_INFO(this->get_logger(), "Random walker initialized");
     }
 
 
-    void odom_callback(const nav_msgs::Odometry & msg) {
-        // publishing is done in odom callback just so it's at the same rate as the sim
+    void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg) {
+        (void)msg;  // Unused parameter - publishing is done in odom callback just so it's at the same rate as the sim
 
         // initialize message to be published
-        ackermann_msgs::AckermannDriveStamped drive_st_msg;
-        ackermann_msgs::AckermannDrive drive_msg;
+        ackermann_msgs::msg::AckermannDriveStamped drive_st_msg;
+        ackermann_msgs::msg::AckermannDrive drive_msg;
 
         /// SPEED CALCULATION:
         // set constant speed to be half of max speed
@@ -94,17 +97,16 @@ public:
         drive_st_msg.drive = drive_msg;
 
         // publish AckermannDriveStamped message to drive topic
-        drive_pub.publish(drive_st_msg);
-
-
+        drive_pub->publish(drive_st_msg);
     }
 
 }; // end of class definition
 
 
 int main(int argc, char ** argv) {
-    ros::init(argc, argv, "random_walker");
-    RandomWalker rw;
-    ros::spin();
+    rclcpp::init(argc, argv);
+    auto node = std::make_shared<RandomWalker>();
+    rclcpp::spin(node);
+    rclcpp::shutdown();
     return 0;
 }
