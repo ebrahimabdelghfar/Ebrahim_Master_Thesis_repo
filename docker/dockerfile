@@ -34,7 +34,7 @@ RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkg
     && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
 ADD environment.yml .
 RUN conda env create -f environment.yml
-RUN echo "source activate env_pytorch" >> ~/.bashrc
+RUN echo "source activate ros2_env" >> ~/.bashrc
 RUN pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 WORKDIR /workspace
 CMD ["bash"]

@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   ros2_eth:
-    image: eth_sys:latest
+    image: eth_sys:ros2
     stdin_open: true # keep stdin open
     privileged: true
     network_mode: host # Critical for ROS2 DDS discovery
