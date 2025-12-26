@@ -1,10 +1,12 @@
 version: "3.9"
 
 services:
-  ros1_eth:
+  ros2_eth:
     image: eth_sys:latest
     stdin_open: true # keep stdin open
     privileged: true
+    network_mode: host # Critical for ROS2 DDS discovery
+    ipc: host # Share host IPC (good for performance with host networking)
     environment:
       - DISPLAY
       - XAUTHORITY=/tmp/.Xauthority
