@@ -28,9 +28,9 @@ class WaypointLogger(Node):
         
         self.subscription = self.create_subscription(
             Odometry,
-            '/odom',
+            '/carmaker/odom',
             self.save_waypoint,
-            10
+            1
         )
         
         atexit.register(self.shutdown)

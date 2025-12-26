@@ -1,0 +1,11 @@
+joy_to_ackermann_node:
+  ros__parameters:
+    axis_speed: 4          # Left stick vertical
+    axis_steering: 3       # Right stick horizontal
+    scale_speed: 20.0       # Normal max speed (m/s)
+    scale_speed_turbo: 2.0 # Turbo max speed (m/s)
+    scale_steering: 3.5    # Max steering angle (radians)
+    enable_button: 5       # L2 shoulder button
+    enable_turbo_button: 4 # L1 shoulder button
+    require_enable_button: false
+    frame_id: "base_link"

@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>joy_to_ackermann</name>
+  <version>1.0.0</version>
+  <description>Joystick teleop for Ackermann steering robots.</description>
+  <maintainer email="ebrahim@example.com">Ebrahim</maintainer>
+
+  <license>BSD</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>ackermann_msgs</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>sensor_msgs</depend>
+
+  <exec_depend>joy</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
