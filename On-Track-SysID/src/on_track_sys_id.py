@@ -8,7 +8,7 @@ import yaml
 import csv
 from nav_msgs.msg import Odometry
 from ackermann_msgs.msg import AckermannDriveStamped
-from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Float64MultiArray, String
 from datetime import datetime
 import sys # Ensure sys is imported
 from tqdm import tqdm
@@ -19,6 +19,7 @@ from ament_index_python.packages import get_package_share_directory
 try:
     from helpers.train_model import nn_train, get_model_param
     from helpers.pacejka_formula import pacejka_formula
+    from helpers.benchmarking_metrics import OnlineBenchmark
 except ImportError:
     import sys
     # Add the src directory to path for development
@@ -27,6 +28,7 @@ except ImportError:
         sys.path.insert(0, src_path)
     from helpers.train_model import nn_train, get_model_param
     from helpers.pacejka_formula import pacejka_formula
+    from helpers.benchmarking_metrics import OnlineBenchmark
 
 
 class OnTrackSysId(Node):
@@ -38,12 +40,14 @@ class OnTrackSysId(Node):
         self.declare_parameter('plot_model', False)
         self.declare_parameter('odom_topic', '/odom')
         self.declare_parameter('ackermann_cmd_topic', '/drive')
+        self.declare_parameter('benchmarking_log_interval', 100)
         # Get parameters
         self.racecar_version = self.get_parameter('racecar_version').value
         self.save_LUT_name = self.get_parameter('save_LUT_name').value
         self.plot_model = self.get_parameter('plot_model').value
         odom_topic = self.get_parameter('odom_topic').value
         ackermann_topic = self.get_parameter('ackermann_cmd_topic').value
+        self.bench_log_interval = self.get_parameter('benchmarking_log_interval').value
         # Print parameters
         self.get_logger().info(f"Racecar_version: {self.racecar_version}")
         self.get_logger().info(f"Save_LUT_name: {self.save_LUT_name}")
@@ -75,6 +79,19 @@ class OnTrackSysId(Node):
         self.est_state_pub = self.create_publisher(Float64MultiArray, '/estimated_state', 1)
         self.sensor_state_pub = self.create_publisher(Float64MultiArray, '/sensor_state', 1)
         self.error_pub = self.create_publisher(Float64MultiArray, '/estimation_error', 1)
+
+        # Academic benchmarking publishers
+        self.bench_vy_pub = self.create_publisher(
+            Float64MultiArray, '/benchmarking/vy_metrics', 1)
+        self.bench_omega_pub = self.create_publisher(
+            Float64MultiArray, '/benchmarking/omega_metrics', 1)
+        self.bench_summary_pub = self.create_publisher(
+            String, '/benchmarking/summary', 1)
+
+        # Online benchmarking accumulators
+        self.bench_vy = OnlineBenchmark(name='v_y (lateral velocity)')
+        self.bench_omega = OnlineBenchmark(name='omega (yaw rate)')
+        self.bench_sample_count = 0
 
         # Load model parameters for estimation
         try:
@@ -261,10 +278,39 @@ class OnTrackSysId(Node):
         est_msg.data = [v_x, v_y_pred, omega_pred]
         self.est_state_pub.publish(est_msg)
 
-        # Publish Error
+        # Publish Error (backward-compatible)
         err_msg = Float64MultiArray()
         err_msg.data = [abs(v_y_real - v_y_pred), abs(omega_real - omega_pred)]
         self.error_pub.publish(err_msg)
+
+        # --- Academic Benchmarking ---
+        self.bench_vy.update(v_y_real, v_y_pred)
+        self.bench_omega.update(omega_real, omega_pred)
+        self.bench_sample_count += 1
+
+        # Publish metric arrays [RMSE, MAE, NRMSE, MaxAE, Bias, StdDev, R²]
+        vy_metrics_msg = Float64MultiArray()
+        vy_metrics_msg.data = self.bench_vy.get_metrics_array()
+        self.bench_vy_pub.publish(vy_metrics_msg)
+
+        omega_metrics_msg = Float64MultiArray()
+        omega_metrics_msg.data = self.bench_omega.get_metrics_array()
+        self.bench_omega_pub.publish(omega_metrics_msg)
+
+        # Publish human-readable summary
+        summary_msg = String()
+        summary_msg.data = (
+            self.bench_vy.get_summary_string() + '\n' +
+            self.bench_omega.get_summary_string()
+        )
+        self.bench_summary_pub.publish(summary_msg)
+
+        # Periodic logging to terminal
+        if self.bench_sample_count % self.bench_log_interval == 0:
+            self.get_logger().info(
+                '\n' + self.bench_vy.get_summary_string() +
+                '\n' + self.bench_omega.get_summary_string()
+            )
 
     def loop_callback(self):
         """
