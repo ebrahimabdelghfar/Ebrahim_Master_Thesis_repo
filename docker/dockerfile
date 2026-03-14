@@ -36,5 +36,9 @@ ADD environment.yml .
 RUN conda env create -f environment.yml
 RUN echo "source activate ros2_env" >> ~/.bashrc
 RUN pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+RUN pip3 install transforms3d --break-system-packages
+RUN apt-get update -y && apt-get install -y --no-install-recommends \
+    ros-jazzy-tf-transformations \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace
 CMD ["bash"]

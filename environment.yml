@@ -36,3 +36,4 @@ dependencies:
     - tqdm
     - catkin-pkg
     - pyyaml
+    - transforms3d
