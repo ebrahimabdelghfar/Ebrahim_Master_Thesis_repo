@@ -1,0 +1,85 @@
+import math
+
+
+class OnlineBenchmark:
+    def __init__(self, name: str = 'signal'):
+        self.name = name
+        self.reset()
+
+    def reset(self):
+        self._n = 0
+        self._sum_sq_err = 0.0
+        self._sum_abs_err = 0.0
+        self._mean_err = 0.0
+        self._m2_err = 0.0
+        self._max_abs_err = 0.0
+        self._mean_real = 0.0
+        self._m2_real = 0.0
+
+    def update(self, real: float, predicted: float):
+        self._n += 1
+        n = self._n
+        err = real - predicted
+
+        self._sum_sq_err += err * err
+        self._sum_abs_err += abs(err)
+        self._max_abs_err = max(self._max_abs_err, abs(err))
+
+        delta_err = err - self._mean_err
+        self._mean_err += delta_err / n
+        delta_err2 = err - self._mean_err
+        self._m2_err += delta_err * delta_err2
+
+        delta_real = real - self._mean_real
+        self._mean_real += delta_real / n
+        delta_real2 = real - self._mean_real
+        self._m2_real += delta_real * delta_real2
+
+    def metrics(self) -> dict:
+        if self._n == 0:
+            return {
+                'rmse': 0.0,
+                'mae': 0.0,
+                'nrmse': float('nan'),
+                'max_ae': 0.0,
+                'bias': 0.0,
+                'std_dev': 0.0,
+                'r_squared': float('nan'),
+                'n_samples': 0,
+            }
+
+        n = self._n
+        mse = self._sum_sq_err / n
+        rmse = math.sqrt(mse)
+        mae = self._sum_abs_err / n
+        bias = self._mean_err
+        var_err = self._m2_err / n if n > 1 else 0.0
+        std_dev = math.sqrt(var_err)
+        nrmse = rmse / abs(self._mean_real) if abs(self._mean_real) > 1e-12 else float('nan')
+        ss_tot = self._m2_real
+        r_squared = 1.0 - (self._sum_sq_err / ss_tot) if ss_tot > 1e-12 else float('nan')
+
+        return {
+            'rmse': rmse,
+            'mae': mae,
+            'nrmse': nrmse,
+            'max_ae': self._max_abs_err,
+            'bias': bias,
+            'std_dev': std_dev,
+            'r_squared': r_squared,
+            'n_samples': n,
+        }
+
+    def summary(self) -> str:
+        m = self.metrics()
+        if m['n_samples'] == 0:
+            return f'[{self.name}] no samples'
+
+        r2 = f"{m['r_squared']:.4f}" if not math.isnan(m['r_squared']) else 'N/A'
+        nrmse = f"{m['nrmse']:.4f}" if not math.isnan(m['nrmse']) else 'N/A'
+
+        return (
+            f"[{self.name}] N={m['n_samples']} RMSE={m['rmse']:.3f} MAE={m['mae']:.3f} "
+            f"NRMSE={nrmse} MaxAE={m['max_ae']:.3f} Bias={m['bias']:.3f} "
+            f"Std={m['std_dev']:.3f} R2={r2}"
+        )
