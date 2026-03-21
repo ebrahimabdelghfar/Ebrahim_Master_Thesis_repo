@@ -2,15 +2,54 @@
 
 This package provides a framework for real-time validation and benchmarking of vehicle dynamics state estimation natively inside ROS2. It was designed to validate the predictive quality of dynamic single-track models iteratively identified by the `On-Track-SysID` package.
 
-## Core Concepts
+## Features
+- **Configurable Multi-Step Prediction**: Evaluate model accuracy over any time horizon (e.g., 1-step, 5-step, 10-step lookahead).
+- **Robust Numerical Integration**: Choose between Euler, Heun (RK2), or Runge-Kutta (RK4) solvers to integrate the non-linear Pacejka tire models.
+- **Academic Benchmarking Metrics**: Computes RMSE, MAE, NRMSE, MaxAE, Bias, Standard Deviation, and R² natively in real-time using Welford's online algorithm (O(1) memory and time).
+- **Time-Synchronized buffers**: Uses a timestamped circular buffer to strictly align historical state predictions against future sensor ground truths.
+- **Tire Force Validation**: Optional ground-truth validation against IPG CarMaker `/tire_forces`.
 
-The benchmarking node continuously listens to odometry (`/odom`) and steering commands (`/drive`). To compute error metrics, it compares **what the model predicts will happen** with **what actually happens on the track**.
+---
 
-### How Prediction Benchmarking Works (Pseudo-Code)
+## Node API: `estimation_benchmark_node`
 
-Because sensors and commands arrive at different times and frequencies, the node maintains a synchronized, timestamped sliding window (circular buffer) of historical states.
+The node acts as a standalone evaluation pipeline. It explicitly waits for the `On-Track-SysID` package to finish its NN training phase and publish the identified Pacejka parameters. Once triggered, it begins continuous real-time performance evaluation.
 
-#### 1. Data Buffering & Time Synchronization
+### Subscribed Topics
+- `/odom` (`nav_msgs/Odometry`): Vehicle state ground truth (velocity, yaw rate).
+- `/drive` (`ackermann_msgs/AckermannDriveStamped`): Incoming control steering commands.
+- `/sysid/training_complete` (`std_msgs/String`): Latched topic from `On-Track-SysID` containing a YAML dict of identified `C_Pf` and `C_Pr` Pacejka params. **Benchmarking remains dormant until this message is received.**
+- `/tire_forces` (`hellocm_msgs/TireForcesArray`): CarMaker ground-truth forces. *Only monitored if `enable_tire_force_benchmark` is true.*
+
+### Published Topics
+- `/estimation_benchmark/vy_{N}step_metrics` (`std_msgs/Float64MultiArray`): A flattened 7-element array corresponding to `[RMSE, MAE, NRMSE, MaxAE, Bias, StdDev, R²]` for lateral velocity predictions. One topic is published for every step $N$ defined in the configuration.
+- `/estimation_benchmark/omega_{N}step_metrics` (`std_msgs/Float64MultiArray`): Identical to the above, measuring yaw rate tracking.
+- `/estimation_benchmark/summary` (`std_msgs/String`): A human-readable text block summarizing the metrics, grouped by prediction step, published every $X$ samples.
+- `/estimation_benchmark/tire_force_summary` (`std_msgs/String`): Equivalent human-readable summary for tire force comparisons.
+
+### Key Parameters
+Parameters can be tweaked endlessly via `config/benchmark_config.yaml` or passed sequentially as ROS2 launch arguments.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `prediction_steps` | `int_array` | `[1, 5, 10]` | Time horizons to evaluate. e.g. at 50Hz, `10` = 0.20s into the future. |
+| `integration_method`| `string` | `"rk4"` | The numerical physics solver: `"euler"`, `"heun"`, or `"rk4"`. |
+| `dt` | `float` | `0.02` | Discretization/Sample time in seconds (50 Hz). |
+| `timestamp_tolerance`| `float` | `0.05` | Maximum allowable time delta when syncing `odom` and `drive` messages. |
+| `data_buffer_size` | `int` | `200` | Size of the historical sliding window. Must be $\ge \text{max}(prediction\_steps)$. |
+| `enable_tire_force_benchmark`| `bool` | `false`| Require `hellocm_msgs` to validate slip-angle driven Pacejka outputs. |
+| `min_velocity` | `float` | `0.5` | Minimum longitudinal velocity required to perform metrics. Used to avoid singularity points at low speeds. |
+| `log_interval` | `int` | `100` | Sample interval before publishing the string `summary` topics. |
+
+---
+
+## Core Concepts (Methodology)
+
+To compute error metrics natively on the fly, the benchmarking node compares **what the model predicts will happen** with **what sensors actually record on the track**. 
+
+Because sensors and commands arrive at varying frequencies, the node maintains a synchronized, timestamped sliding window (circular buffer) of historical states.
+
+### 1. Data Buffering & Time Synchronization
 ```python
 # Runs continuously as /odom and /drive messages arrive
 function on_sensor_data(v_x, v_y, omega, delta, current_timestamp):
@@ -23,12 +62,12 @@ function on_sensor_data(v_x, v_y, omega, delta, current_timestamp):
         delta: delta
     })
     
-    # Run the benchmarking matching logic
+    # Trigger the benchmarking matching logic
     run_benchmarking_step()
 ```
 
-#### 2. Multi-Step Benchmarking Loop
-For every new odometry sample, we look back exactly $N$ steps into the buffer. We take that historical state and ask the model to predict forward $N$ steps. We then compare that prediction to the *current* measured state.
+### 2. Multi-Step Benchmarking Loop
+For every new odometry sample, we look back exactly $N$ steps into the buffer. We take that historical state and ask the model to predict forward $N$ steps open-loop. We then compare that multi-step prediction to the *current* measured ground-truth state.
 
 ```python
 function run_benchmarking_step():
@@ -62,7 +101,7 @@ function run_benchmarking_step():
         )
 ```
 
-#### 3. Open-Loop Roll-Forward (The Physics Engine)
+### 3. Open-Loop Roll-Forward (The Physics Engine)
 This is the core physics prediction implemented in `multi_step_predictor.py`. It discretely steps the continuous Pacejka differential equations forward in time using a **configurable numerical integrator**.
 
 Crucially, in a multi-step prediction ($N > 1$), **the model feeds its own predictions back into itself** for the next step, without any interim sensor corrections.
@@ -102,11 +141,11 @@ function predict_multi_step(initial_v_y, initial_omega, v_x, delta, steps, dt, m
 
 ### Configurable Integration Methods
 
-The package supports three numerical integrators, set via `integration_method` in `benchmark_config.yaml`:
+The package supports three numerical integrators:
 
 | Method | Order | Dynamics Evals / Step | Formula | Best For |
 |--------|-------|----------------------|---------|----------|
-| `euler` | 1st | 1 | $x_{k+1} = x_k + dt \cdot f(x_k)$ | Speed, paper baseline |
+| `euler` | 1st | 1 | $x_{k+1} = x_k + dt \cdot f(x_k)$ | Speed, matching paper baseline |
 | `heun` | 2nd | 2 | $x_{k+1} = x_k + \frac{dt}{2}(f(x_k) + f(x_k + dt \cdot f(x_k)))$ | Accuracy/speed balance |
 | `rk4` | 4th | 4 | $x_{k+1} = x_k + \frac{dt}{6}(k_1 + 2k_2 + 2k_3 + k_4)$ | Maximum accuracy |
 
@@ -134,7 +173,7 @@ function step_rk4(v_x, v_y, omega, delta, dt):
            omega + dt/6 * (k1_om + 2*k2_om + 2*k3_om + k4_om)
 ```
 
-**Why does this matter?** Euler uses one slope sample (the start), Heun averages the start and end slopes, and RK4 samples four points across the interval. With stiff tire dynamics and aggressive cornering, higher-order methods produce significantly more accurate predictions per step.
+**Why does this matter?** Euler uses one slope sample (the start), Heun averages the start and end slopes, and RK4 samples four points across the interval. With stiff tire dynamics and aggressive cornering, higher-order methods produce significantly more accurate predictions per discrete step without compounding excessive overshoots.
 
 ---
 
@@ -159,31 +198,29 @@ Exactly $0.20$ seconds later ($10$ steps $\times 0.02s$), our sensors report the
 Did our model know this was going to happen? To find out, the benchmarking node pulls the historical data from $T = 1.00s$ out of the buffer and runs the `predict_multi_step` function.
 
 ### The Open-Loop Simulation (Inside the node)
-The algorithm locks in the steering angle ($0.15$ rad) and the speed ($3.0$ m/s) from $T=1.00s$. It then simulates the physics for 10 loops:
+The algorithm locks in the steering angle ($0.15$ rad) and the speed ($3.0$ m/s) from $T=1.00s$. It then simulates the physics for 10 sequential loops using the chosen integration method:
 
 * **Loop 1 (Predicting $T=1.02s$):**
-  Uses $v_y=0.10, \omega=0.20$. Calculates slip angles, pushes them through Pacejka tire curves to get lateral forces, and calculates acceleration. Euler integration updates the state. 
-  *Result*: predicted $v_y=0.105, \omega=0.206$
+  Uses $v_y=0.10, \omega=0.20$. Calculates slip angles, pushes them through Pacejka tire curves to get lateral forces, and calculates acceleration. The integrator updates the state. 
+  *Example RK4 Result*: predicted $v_y=0.105, \omega=0.206$
 
 * **Loop 2 (Predicting $T=1.04s$):**
-  Uses the *predicted* $v_y=0.105, \omega=0.206$ from Loop 1 (no sensor update here!). Calculates new slip angles and forces.
-  *Result*: predicted $v_y=0.110, \omega=0.211$
+  Uses the *predicted* $v_y=0.105, \omega=0.206$ from Loop 1 (no sensor update!). Calculates new slip angles and forces.
+  *Example RK4 Result*: predicted $v_y=0.110, \omega=0.211$
 
 * ...(Loops 3 through 9 continue feeding predictions into themselves)...
 
 * **Loop 10 (Predicting $T=1.20s$):**
   Uses the *predicted* states from Loop 9. Calculates final forces and integration.
-  *Final Result*: predicted $v_y=0.138, \omega=0.246$
+  *Example RK4 Final Result*: predicted $v_y=0.138, \omega=0.246$
 
 ### The Benchmarking Evaluation
-The algorithm immediately compares the final prediction against the actual recorded state at $T=1.20s$:
+The algorithm instantly aligns the final prediction alongside the actual recorded state at $T=1.20s$:
 - **Prediction**: $v_y=0.138, \omega=0.246$
 - **Actual**: $v_y=0.140, \omega=0.250$
 - **Errors**: $e_{vy} = 0.002$ m/s, $e_{\omega} = 0.004$ rad/s
 
-These errors are then fed into Welford's online algorithm to instantly update the running benchmarking statistics (RMSE, MAE, R², etc.) published on the ROS2 topic for the `10-step` metric.
-
-By running this continuously across hundreds of samples, the package provides a highly robust, statistically significant measure of how accurate the Pacejka vehicle model truly is over a given time horizon.
+These raw errors are immediately swallowed by Welford's algorithm to update the running $10step$ network statistics, pushing the newly minted RMSE and R² vectors directly onto ROS2 topics.
 
 ---
 
