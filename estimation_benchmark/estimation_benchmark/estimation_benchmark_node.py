@@ -47,6 +47,7 @@ class EstimationBenchmarkNode(Node):
         self.declare_parameter('training_complete_topic', '/sysid/training_complete')
         self.declare_parameter('prediction_steps', [1, 5, 10])
         self.declare_parameter('dt', 0.02)
+        self.declare_parameter('integration_method', 'rk4')
         self.declare_parameter('mass', 3.47)
         self.declare_parameter('I_z', 0.04712)
         self.declare_parameter('l_f', 0.15875)
@@ -68,6 +69,15 @@ class EstimationBenchmarkNode(Node):
         training_topic = self.get_parameter('training_complete_topic').value
         self.prediction_steps = list(self.get_parameter('prediction_steps').value)
         self.dt = float(self.get_parameter('dt').value)
+        self.integration_method = str(self.get_parameter('integration_method').value).strip().lower()
+
+        # Validate integration method
+        from estimation_benchmark.multi_step_predictor import VALID_METHODS
+        if self.integration_method not in VALID_METHODS:
+            self.get_logger().error(
+                f"Invalid integration_method '{self.integration_method}'. "
+                f"Must be one of: {', '.join(VALID_METHODS)}. Defaulting to 'rk4'.")
+            self.integration_method = 'rk4'
         self.min_velocity = float(self.get_parameter('min_velocity').value)
         self.log_interval = int(self.get_parameter('log_interval').value)
         self.csv_output_path = str(self.get_parameter('csv_output_path').value)
@@ -173,6 +183,7 @@ class EstimationBenchmarkNode(Node):
         self.get_logger().info(f'  Training signal: {training_topic}')
         self.get_logger().info(f'  Prediction steps: {self.prediction_steps}')
         self.get_logger().info(f'  dt: {self.dt} s')
+        self.get_logger().info(f'  Integration method: {self.integration_method}')
         self.get_logger().info(f'  Tire force benchmark: {self.enable_tire_force}')
         self.get_logger().info('Waiting for training completion signal...')
 
@@ -314,6 +325,7 @@ class EstimationBenchmarkNode(Node):
                 v_x_past, v_y_past, omega_past, delta_past,
                 self.C_Pf, self.C_Pr,
                 self.vehicle_params, self.dt, step,
+                method=self.integration_method,
             )
 
             # Update metrics

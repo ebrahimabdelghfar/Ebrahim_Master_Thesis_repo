@@ -62,38 +62,79 @@ function run_benchmarking_step():
         )
 ```
 
-#### 3. Open-Loop Euler Roll-Forward (The Physics Engine)
-This is the core physics prediction implemented in `multi_step_predictor.py`. It uses Euler integration to discretely step the continuous Pacejka differential equations forward in time. 
+#### 3. Open-Loop Roll-Forward (The Physics Engine)
+This is the core physics prediction implemented in `multi_step_predictor.py`. It discretely steps the continuous Pacejka differential equations forward in time using a **configurable numerical integrator**.
 
 Crucially, in a multi-step prediction ($N > 1$), **the model feeds its own predictions back into itself** for the next step, without any interim sensor corrections.
 
+All integrators share the same dynamics function $f(x)$ that computes the state derivatives:
+
 ```python
-function predict_multi_step(initial_v_y, initial_omega, constant_v_x, constant_delta, steps_to_predict, dt):
-    # Initialize state
+function dynamics(v_x, v_y, omega, delta) -> (v_y_dot, omega_dot):
+    # 1. Calculate slip angles (kinematics)
+    alpha_front = -arctan( (v_y + omega * length_front) / v_x ) + delta
+    alpha_rear  = -arctan( (v_y - omega * length_rear)  / v_x )
+    
+    # 2. Calculate tire lateral forces using Pacejka Magic Formula
+    Force_front = Pacejka(C_Pf, alpha_front, F_z_front)
+    Force_rear  = Pacejka(C_Pr, alpha_rear,  F_z_rear)
+    
+    # 3. Calculate accelerations (dynamics derivatives)
+    v_y_dot   = (1 / mass) * (Force_rear + Force_front * cos(delta) - mass * v_x * omega)
+    omega_dot = (1 / inertia_z) * (Force_front * length_front * cos(delta) - Force_rear * length_rear)
+    
+    return v_y_dot, omega_dot
+```
+
+The integrator then uses this to step the state forward. The `integration_method` config parameter selects which:
+
+```python
+function predict_multi_step(initial_v_y, initial_omega, v_x, delta, steps, dt, method):
     v_y = initial_v_y
     omega = initial_omega
+    step_fn = get_integrator(method)  # "euler", "heun", or "rk4"
     
-    # Roll forward the physics model 'steps_to_predict' times (open-loop)
-    for step = 1 to steps_to_predict:
-        
-        # 1. Calculate slip angles (kinematics)
-        alpha_front = -arctan( (v_y + omega * length_front) / constant_v_x ) + constant_delta
-        alpha_rear  = -arctan( (v_y - omega * length_rear)  / constant_v_x )
-        
-        # 2. Calculate tire lateral forces using Pacejka Magic Formula
-        Force_front = Pacejka(C_Pf, alpha_front, F_z_front)
-        Force_rear  = Pacejka(C_Pr, alpha_rear,  F_z_rear)
-        
-        # 3. Calculate accelerations (dynamics derivatives)
-        v_y_dot   = (1 / mass) * (Force_rear + Force_front * cos(constant_delta) - mass * constant_v_x * omega)
-        omega_dot = (1 / inertia_z) * (Force_front * length_front * cos(constant_delta) - Force_rear * length_rear)
-        
-        # 4. Euler Integration to find the state at the next sub-step
-        v_y   = v_y + (v_y_dot * dt)
-        omega = omega + (omega_dot * dt)
+    for step = 1 to steps:
+        v_y, omega = step_fn(v_x, v_y, omega, delta, dt)  # Each calls dynamics() internally
         
     return v_y, omega
 ```
+
+### Configurable Integration Methods
+
+The package supports three numerical integrators, set via `integration_method` in `benchmark_config.yaml`:
+
+| Method | Order | Dynamics Evals / Step | Formula | Best For |
+|--------|-------|----------------------|---------|----------|
+| `euler` | 1st | 1 | $x_{k+1} = x_k + dt \cdot f(x_k)$ | Speed, paper baseline |
+| `heun` | 2nd | 2 | $x_{k+1} = x_k + \frac{dt}{2}(f(x_k) + f(x_k + dt \cdot f(x_k)))$ | Accuracy/speed balance |
+| `rk4` | 4th | 4 | $x_{k+1} = x_k + \frac{dt}{6}(k_1 + 2k_2 + 2k_3 + k_4)$ | Maximum accuracy |
+
+**How each works in pseudo-code:**
+
+```python
+# --- Forward Euler (1st-order) ---
+function step_euler(v_x, v_y, omega, delta, dt):
+    k1_vy, k1_om = dynamics(v_x, v_y, omega, delta)
+    return v_y + dt * k1_vy, omega + dt * k1_om
+
+# --- Heun / Improved Euler (2nd-order) ---
+function step_heun(v_x, v_y, omega, delta, dt):
+    k1_vy, k1_om = dynamics(v_x, v_y, omega, delta)                            # Slope at start
+    k2_vy, k2_om = dynamics(v_x, v_y + dt*k1_vy, omega + dt*k1_om, delta)      # Slope at end
+    return v_y + dt/2 * (k1_vy + k2_vy), omega + dt/2 * (k1_om + k2_om)        # Average
+
+# --- Classic Runge-Kutta (4th-order) ---
+function step_rk4(v_x, v_y, omega, delta, dt):
+    k1_vy, k1_om = dynamics(v_x, v_y,                     omega,                     delta)
+    k2_vy, k2_om = dynamics(v_x, v_y + dt/2 * k1_vy,      omega + dt/2 * k1_om,      delta)
+    k3_vy, k3_om = dynamics(v_x, v_y + dt/2 * k2_vy,      omega + dt/2 * k2_om,      delta)
+    k4_vy, k4_om = dynamics(v_x, v_y + dt   * k3_vy,      omega + dt   * k3_om,      delta)
+    return v_y   + dt/6 * (k1_vy + 2*k2_vy + 2*k3_vy + k4_vy),
+           omega + dt/6 * (k1_om + 2*k2_om + 2*k3_om + k4_om)
+```
+
+**Why does this matter?** Euler uses one slope sample (the start), Heun averages the start and end slopes, and RK4 samples four points across the interval. With stiff tire dynamics and aggressive cornering, higher-order methods produce significantly more accurate predictions per step.
 
 ---
 
@@ -149,8 +190,14 @@ By running this continuously across hundreds of samples, the package provides a 
 ## Launch Instructions
 
 ```bash
-# Basic start (waits for On-Track-SysID to finish training)
+# Basic start with RK4 (default, waits for On-Track-SysID to finish training)
 ros2 launch estimation_benchmark estimation_benchmark.launch.py
+
+# Use Heun integrator instead
+ros2 launch estimation_benchmark estimation_benchmark.launch.py integration_method:=heun
+
+# Use Euler (matches original paper implementation)
+ros2 launch estimation_benchmark estimation_benchmark.launch.py integration_method:=euler
 
 # With CarMaker ground truth tire force benchmarking enabled
 ros2 launch estimation_benchmark estimation_benchmark.launch.py enable_tire_force_benchmark:=true

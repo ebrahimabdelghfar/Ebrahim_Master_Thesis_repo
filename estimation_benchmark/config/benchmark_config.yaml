@@ -16,6 +16,13 @@ training_complete_topic: "/sysid/training_complete"
 prediction_steps: [1, 5, 10]
 dt: 0.02  # Sampling time in seconds (50 Hz)
 
+# --- Integration method ---
+# Numerical integrator for the state prediction roll-forward.
+#   "euler" : Forward Euler        (1st-order, fastest, least accurate)
+#   "heun"  : Heun / Improved Euler (2nd-order, good accuracy/speed balance)
+#   "rk4"   : Classic Runge-Kutta   (4th-order, most accurate, 4× dynamics evals)
+integration_method: "rk4"
+
 # --- Vehicle parameters (defaults; overridden by training_complete message) ---
 mass: 3.47
 I_z: 0.04712
