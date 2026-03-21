@@ -2,6 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 import numpy as np
 import os
 import yaml
@@ -87,6 +88,15 @@ class OnTrackSysId(Node):
             Float64MultiArray, '/benchmarking/omega_metrics', 1)
         self.bench_summary_pub = self.create_publisher(
             String, '/benchmarking/summary', 1)
+
+        # Training completion signal (latched / transient_local)
+        qos_latched = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self.training_complete_pub = self.create_publisher(
+            String, '/sysid/training_complete', qos_latched)
 
         # Online benchmarking accumulators
         self.bench_vy = OnlineBenchmark(name='v_y (lateral velocity)')
@@ -337,6 +347,16 @@ class OnTrackSysId(Node):
             
             self.training_complete = True
             self.last_time = self.current_time
+
+            # Publish training completion signal with identified params
+            tc_msg = String()
+            tc_msg.data = yaml.dump({
+                'C_Pf': [float(v) for v in self.C_Pf_model],
+                'C_Pr': [float(v) for v in self.C_Pr_model],
+                'racecar_version': self.racecar_version,
+            })
+            self.training_complete_pub.publish(tc_msg)
+            self.get_logger().info("Published training completion signal.")
             self.get_logger().info("Starting estimation loop...")
             
         else:

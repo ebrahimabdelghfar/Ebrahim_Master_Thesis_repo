@@ -1,0 +1,41 @@
+# ============================================================================
+# Estimation Benchmark Configuration
+# ============================================================================
+# This config controls the estimation_benchmark ROS2 node.
+# All parameters can also be overridden via launch arguments.
+
+# --- Core topics ---
+odom_topic: "/odom"
+ackermann_cmd_topic: "/drive"
+training_complete_topic: "/sysid/training_complete"
+
+# --- Prediction steps ---
+# List of prediction horizons to evaluate.
+#   1 = one-step prediction (matches paper Section IV-B-1)
+#   N = N-step open-loop Euler roll-forward prediction
+prediction_steps: [1, 5, 10]
+dt: 0.02  # Sampling time in seconds (50 Hz)
+
+# --- Vehicle parameters (defaults; overridden by training_complete message) ---
+mass: 3.47
+I_z: 0.04712
+l_f: 0.15875
+l_r: 0.17145
+l_wb: 0.3302
+
+# --- Default Pacejka params [B, C, D, E] (overridden by SysID result) ---
+C_Pf: [7.17, 1.56, 0.69, 0.53]
+C_Pr: [8.29, 2.11, 0.68, 0.40]
+
+# --- Tire force benchmarking ---
+# Set to true to enable tire force estimation benchmarking against CarMaker
+# ground truth on /tire_forces (requires hellocm_msgs).
+enable_tire_force_benchmark: false
+tire_forces_topic: "/tire_forces"
+
+# --- Benchmarking control ---
+min_velocity: 0.5       # Skip benchmarking when v_x below this [m/s]
+log_interval: 100       # Number of samples between logged summaries
+csv_output_path: ""     # Optional: path to CSV output file (empty = disabled)
+data_buffer_size: 200   # Circular buffer size for multi-step time sync
+timestamp_tolerance: 0.05  # Max dt [s] between odom and ackermann for pairing
