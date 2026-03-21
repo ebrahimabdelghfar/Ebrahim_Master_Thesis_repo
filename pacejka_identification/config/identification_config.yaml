@@ -1,0 +1,52 @@
+# =============================================================================
+# Pacejka Magic Formula Coefficient Identification — Configuration
+# =============================================================================
+
+# ---- Data Collection ----
+data_collection:
+  duration_seconds: 60          # How long to collect data (seconds)
+  min_velocity: 0.5             # Minimum belt_velocity to accept a sample (m/s)
+  require_on_road: true         # Only keep samples where the tire contacts the road
+  min_fz_threshold: 50.0        # Minimum |Fz| to accept a sample (N)
+
+# ---- Identification Settings ----
+identification:
+  # Method: trust_region | differential_evolution | dual | genetic_algorithm | ga_trust_region
+  # "dual" (recommended) runs differential_evolution first, then refines with trust_region
+  # "genetic_algorithm" runs a custom real-coded GA (tournament selection, BLX-α crossover)
+  # "ga_trust_region" runs GA first, then refines with trust_region
+  method: "dual"
+
+  # Identification mode:
+  # sequential   (recommended) → fixes C to physics-based values, fits B, D, E
+  #                               breaks known parameter degeneracy
+  # simultaneous → fits all [B, C, D, E] at once (B/C/E may be correlated)
+  identification_mode: "sequential"
+
+  # Which Pacejka relationships to identify
+  formulas:
+    - lateral_fy               # Fy = f(slip_angle, Fz)
+    - longitudinal_fx          # Fx = f(long_slip, Fz)
+    - self_aligning_mz         # Mz = f(slip_angle, Fz)
+
+  # How to group wheels for identification
+  # per_wheel  → FL, FR, RL, RR fitted independently
+  # per_axle   → front wheels pooled, rear wheels pooled
+  # combined   → all four wheels pooled into one fit
+  axle_grouping: "per_axle"
+
+  # Initial guesses for [B, C, D, E]  (used by trust_region and as seed for dual)
+  initial_guess_fy: [10.0, 1.5, 1.0, 0.5]
+  initial_guess_fx: [10.0, 1.65, 1.0, 0.5]
+  initial_guess_mz: [10.0, 1.5, 0.1, 0.5]
+
+  # Parameter bounds for [B, C, D, E]
+  lower_bounds: [0.1, 0.1, 0.01, -2.0]
+  upper_bounds: [50.0, 5.0, 5.0, 2.0]
+
+# ---- Output Settings ----
+output:
+  csv_export: true              # Export raw dataset to CSV
+  csv_path: ""                  # Empty → auto-generated path with timestamp
+  yaml_export: true             # Export identified coefficients to YAML
+  yaml_path: ""                 # Empty → auto-generated path with timestamp
