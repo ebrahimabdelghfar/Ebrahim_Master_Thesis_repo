@@ -286,14 +286,33 @@ class CoefficientIdentifier:
     Parameters
     ----------
     method : str
-        Fitting strategy: 'trust_region', 'differential_evolution', or 'dual'.
+        Fitting strategy: 'trust_region', 'differential_evolution', 'dual',
+        'genetic_algorithm', or 'ga_trust_region'.
     identification_mode : str
         'sequential' (recommended, fixes C) or 'simultaneous' (fits all 4).
     fixed_C : dict or None
         Override default C values, e.g. {'fy': 1.3, 'fx': 1.65, 'mz': 2.4}.
     lower_bounds / upper_bounds : list
         Bounds for [B, C, D, E] (simultaneous) or [B, D, E] (sequential).
+    tr_params : dict or None
+        Trust-Region hyperparameters: {max_nfev}.
+    de_params : dict or None
+        Differential Evolution hyperparameters: {maxiter, tol, seed, polish}.
+    ga_params : dict or None
+        Genetic Algorithm hyperparameters:
+        {pop_size, n_generations, crossover_rate, mutation_rate,
+         mutation_scale, elite_frac, tournament_size, seed}.
     """
+
+    # Default hyperparameters for each algorithm
+    _DEFAULT_TR = {'max_nfev': 10000}
+    _DEFAULT_DE = {'maxiter': 1000, 'tol': 1e-12, 'seed': 42, 'polish': True}
+    _DEFAULT_GA = {
+        'pop_size': 120, 'n_generations': 400,
+        'crossover_rate': 0.85, 'mutation_rate': 0.15,
+        'mutation_scale': 0.10, 'elite_frac': 0.05,
+        'tournament_size': 3, 'seed': 42,
+    }
 
     def __init__(
         self,
@@ -302,6 +321,9 @@ class CoefficientIdentifier:
         fixed_C=None,
         lower_bounds=None,
         upper_bounds=None,
+        tr_params=None,
+        de_params=None,
+        ga_params=None,
     ):
         allowed_methods = {
             'trust_region', 'differential_evolution', 'dual',
@@ -325,6 +347,17 @@ class CoefficientIdentifier:
         # Bounds — full [B, C, D, E]
         self.lb = np.array(lower_bounds if lower_bounds else [0.1, 0.1, 0.01, -2.0])
         self.ub = np.array(upper_bounds if upper_bounds else [50.0, 5.0, 5.0, 2.0])
+
+        # Algorithm hyperparameters (merge user overrides onto defaults)
+        self.tr = {**self._DEFAULT_TR, **(tr_params or {})}
+        self.de = {**self._DEFAULT_DE, **(de_params or {})}
+        self.ga = {**self._DEFAULT_GA, **(ga_params or {})}
+
+        # Handle seed=-1 → None (non-deterministic)
+        if self.de['seed'] == -1:
+            self.de['seed'] = None
+        if self.ga['seed'] == -1:
+            self.ga['seed'] = None
 
     # ──────────────────────────────────────────────────────────────────
     # Public API
@@ -409,7 +442,8 @@ class CoefficientIdentifier:
     def _tr_bde(self, C, bde0, lb, ub, slip, fz, y):
         res = least_squares(
             _residuals_BDE, bde0, args=(C, slip, fz, y),
-            bounds=(lb, ub), method='trf', max_nfev=10000,
+            bounds=(lb, ub), method='trf',
+            max_nfev=self.tr['max_nfev'],
         )
         return res.x
 
@@ -417,7 +451,8 @@ class CoefficientIdentifier:
         bounds_list = list(zip(lb, ub))
         res = differential_evolution(
             _cost_BDE, bounds=bounds_list, args=(C, slip, fz, y),
-            seed=42, maxiter=1000, tol=1e-12, polish=True,
+            seed=self.de['seed'], maxiter=self.de['maxiter'],
+            tol=self.de['tol'], polish=self.de['polish'],
         )
         return res.x
 
@@ -427,14 +462,14 @@ class CoefficientIdentifier:
             cost_fn=_cost_BDE,
             bounds=bounds_list,
             args=(C, slip, fz, y),
-            pop_size=120,
-            n_generations=400,
-            crossover_rate=0.85,
-            mutation_rate=0.15,
-            mutation_scale=0.10,
-            elite_frac=0.05,
-            tournament_size=3,
-            seed=42,
+            pop_size=self.ga['pop_size'],
+            n_generations=self.ga['n_generations'],
+            crossover_rate=self.ga['crossover_rate'],
+            mutation_rate=self.ga['mutation_rate'],
+            mutation_scale=self.ga['mutation_scale'],
+            elite_frac=self.ga['elite_frac'],
+            tournament_size=self.ga['tournament_size'],
+            seed=self.ga['seed'],
         )
         best_sol, _ = ga.run()
         return best_sol
@@ -461,7 +496,8 @@ class CoefficientIdentifier:
     def _tr_all(self, x0, slip, fz, y):
         res = least_squares(
             _residuals, x0, args=(slip, fz, y),
-            bounds=(self.lb, self.ub), method='trf', max_nfev=10000,
+            bounds=(self.lb, self.ub), method='trf',
+            max_nfev=self.tr['max_nfev'],
         )
         return res.x
 
@@ -469,7 +505,8 @@ class CoefficientIdentifier:
         bounds_list = list(zip(self.lb, self.ub))
         res = differential_evolution(
             _cost, bounds=bounds_list, args=(slip, fz, y),
-            seed=42, maxiter=1000, tol=1e-12, polish=True,
+            seed=self.de['seed'], maxiter=self.de['maxiter'],
+            tol=self.de['tol'], polish=self.de['polish'],
         )
         return res.x
 
@@ -479,14 +516,14 @@ class CoefficientIdentifier:
             cost_fn=_cost,
             bounds=bounds_list,
             args=(slip, fz, y),
-            pop_size=120,
-            n_generations=400,
-            crossover_rate=0.85,
-            mutation_rate=0.15,
-            mutation_scale=0.10,
-            elite_frac=0.05,
-            tournament_size=3,
-            seed=42,
+            pop_size=self.ga['pop_size'],
+            n_generations=self.ga['n_generations'],
+            crossover_rate=self.ga['crossover_rate'],
+            mutation_rate=self.ga['mutation_rate'],
+            mutation_scale=self.ga['mutation_scale'],
+            elite_frac=self.ga['elite_frac'],
+            tournament_size=self.ga['tournament_size'],
+            seed=self.ga['seed'],
         )
         best_sol, _ = ga.run()
         return best_sol

@@ -33,7 +33,7 @@ identification:
   # per_wheel  → FL, FR, RL, RR fitted independently
   # per_axle   → front wheels pooled, rear wheels pooled
   # combined   → all four wheels pooled into one fit
-  axle_grouping: "per_axle"
+  axle_grouping: "per_wheel"
 
   # Initial guesses for [B, C, D, E]  (used by trust_region and as seed for dual)
   initial_guess_fy: [10.0, 1.5, 1.0, 0.5]
@@ -43,6 +43,43 @@ identification:
   # Parameter bounds for [B, C, D, E]
   lower_bounds: [0.1, 0.1, 0.01, -2.0]
   upper_bounds: [50.0, 5.0, 5.0, 2.0]
+
+# ---- Algorithm Hyperparameters ----
+# These control the internal behaviour of each optimiser.
+# The active hyperparameters depend on the chosen 'method' above.
+# Hybrid methods (dual, ga_trust_region) use both the global and trust_region settings.
+
+trust_region:
+  # Maximum number of function evaluations (scipy least_squares TRF)
+  max_nfev: 10000
+
+differential_evolution:
+  # Maximum number of DE generations
+  maxiter: 1000
+  # Convergence tolerance — solver stops early if relative improvement < tol
+  tol: 1.0e-12
+  # Random seed for reproducibility (set to -1 for non-deterministic)
+  seed: 42
+  # Whether to polish the DE result with L-BFGS-B (local refinement)
+  polish: true
+
+genetic_algorithm:
+  # Number of individuals in the population
+  pop_size: 120
+  # Number of generations to evolve
+  n_generations: 400
+  # Probability of BLX-α crossover between two parents
+  crossover_rate: 0.85
+  # Per-gene probability of Gaussian mutation
+  mutation_rate: 0.15
+  # Std-dev of mutation as a fraction of the parameter range
+  mutation_scale: 0.10
+  # Fraction of top individuals preserved via elitism each generation
+  elite_frac: 0.05
+  # Number of individuals competing in tournament selection
+  tournament_size: 3
+  # Random seed for reproducibility (set to -1 for non-deterministic)
+  seed: 42
 
 # ---- Output Settings ----
 output:

@@ -64,6 +64,23 @@ class IdentificationNode(Node):
         self.declare_parameter('yaml_export', True)
         self.declare_parameter('yaml_path', '')
 
+        # Algorithm hyperparameters
+        self.declare_parameter('tr_max_nfev', 10000)
+
+        self.declare_parameter('de_maxiter', 1000)
+        self.declare_parameter('de_tol', 1e-12)
+        self.declare_parameter('de_seed', 42)
+        self.declare_parameter('de_polish', True)
+
+        self.declare_parameter('ga_pop_size', 120)
+        self.declare_parameter('ga_n_generations', 400)
+        self.declare_parameter('ga_crossover_rate', 0.85)
+        self.declare_parameter('ga_mutation_rate', 0.15)
+        self.declare_parameter('ga_mutation_scale', 0.10)
+        self.declare_parameter('ga_elite_frac', 0.05)
+        self.declare_parameter('ga_tournament_size', 3)
+        self.declare_parameter('ga_seed', 42)
+
         # ── Read parameters ──────────────────────────────────────────────
         self.topic = self.get_parameter('tire_forces_topic').value
         self.duration = int(self.get_parameter('duration_seconds').value)
@@ -85,6 +102,27 @@ class IdentificationNode(Node):
         self.csv_path = str(self.get_parameter('csv_path').value)
         self.yaml_export = bool(self.get_parameter('yaml_export').value)
         self.yaml_path = str(self.get_parameter('yaml_path').value)
+
+        # Read algorithm hyperparameters
+        self.tr_params = {
+            'max_nfev': int(self.get_parameter('tr_max_nfev').value),
+        }
+        self.de_params = {
+            'maxiter': int(self.get_parameter('de_maxiter').value),
+            'tol': float(self.get_parameter('de_tol').value),
+            'seed': int(self.get_parameter('de_seed').value),
+            'polish': bool(self.get_parameter('de_polish').value),
+        }
+        self.ga_params = {
+            'pop_size': int(self.get_parameter('ga_pop_size').value),
+            'n_generations': int(self.get_parameter('ga_n_generations').value),
+            'crossover_rate': float(self.get_parameter('ga_crossover_rate').value),
+            'mutation_rate': float(self.get_parameter('ga_mutation_rate').value),
+            'mutation_scale': float(self.get_parameter('ga_mutation_scale').value),
+            'elite_frac': float(self.get_parameter('ga_elite_frac').value),
+            'tournament_size': int(self.get_parameter('ga_tournament_size').value),
+            'seed': int(self.get_parameter('ga_seed').value),
+        }
 
         # ── Data storage ─────────────────────────────────────────────────
         self.data = {w: {c: [] for c in PER_WHEEL_COLS} for w in WHEEL_NAMES}
@@ -205,6 +243,9 @@ class IdentificationNode(Node):
             identification_mode=self.id_mode,
             lower_bounds=self.lb,
             upper_bounds=self.ub,
+            tr_params=self.tr_params,
+            de_params=self.de_params,
+            ga_params=self.ga_params,
         )
 
         all_results = {}
