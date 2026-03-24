@@ -1,0 +1,205 @@
+# GRU-Based Improvement Ideas for On-Track-SysID
+
+## Current Architecture Summary
+
+The current pipeline follows the paper *2411.17508v1*:
+
+```mermaid
+flowchart LR
+    A[Collect on-track data<br>vx, vy, ω, δ] --> B[Nominal Pacejka<br>one-step prediction]
+    B --> C[Compute residual<br>e = measured − predicted]
+    C --> D["SimpleNN (4→8→8→2)<br>learn residuals"]
+    D --> E[Corrected simulation<br>nominal + NN residual]
+    E --> F[Fit Pacejka via<br>least-squares]
+    F -->|update C_Pf, C_Pr| B
+    style D fill:#f96,stroke:#333
+```
+
+The **SimpleNN** is a memoryless feedforward network:
+- **Input**: `[vx, vy, ω, δ]` (single timestep)
+- **Architecture**: `4 → 8 → 8 → 2` (LeakyReLU)
+- **Output**: residuals `[Δvy, Δω]`
+
+> [!IMPORTANT]
+> The NN sees **one sample at a time** — it has no temporal context. This is the fundamental limitation to address.
+
+---
+
+## Why GRU Is a Strong Upgrade
+
+| Aspect | SimpleNN (current) | GRU (proposed) |
+|--------|-------------------|----------------|
+| Temporal context | None (single sample) | Sliding window of past states |
+| Modeling capability | Static residual mapping | Dynamic, history-dependent residual |
+| Transient dynamics | Missed entirely | Captured through hidden state |
+| Parameter count | ~130 params | ~500–2000 (still lightweight) |
+| Training complexity | Standard MSE | Standard MSE + sequence batching |
+| Inference speed | Very fast | Still fast (single forward pass with hidden state carry) |
+
+Vehicle lateral dynamics are inherently **temporal** — tire forces depend on slip history, not just instantaneous slip. A GRU can naturally model:
+- Tire relaxation length effects (force lags behind slip angle changes)
+- Transient load transfer dynamics
+- Actuator delays (steering column dynamics)
+- Unmodeled friction state changes
+
+---
+
+## Proposed Ideas (Ranked by Impact vs. Complexity)
+
+### 💡 Idea 1: Drop-in GRU Residual Model (Recommended Starting Point)
+
+Replace [SimpleNN](file:///home/ebrahim/Ebrahim_Master_Thesis_repo/On-Track-SysID/src/helpers/SimpleNN.py#4-33) with a `ResidualGRU` that processes **sequences** (windows of recent samples) instead of individual samples.
+
+```
+Input sequence: [(vx, vy, ω, δ)_t-W, ..., (vx, vy, ω, δ)_t]  →  GRU  →  [Δvy, Δω]_t
+```
+
+**Key design choices:**
+- **Window size W = 10–25** (0.2–0.5s at 50 Hz) — enough to capture tire relaxation without excessive memory
+- **GRU hidden size = 16–32** — keep it small for fast adaptation (paper's key selling point)
+- **Single GRU layer** — avoids overfitting on ~30s of data
+- **Linear output head** after GRU's final hidden state
+
+**Changes required:**
+1. New `GRU_NN.py` model file alongside [SimpleNN.py](file:///home/ebrahim/Ebrahim_Master_Thesis_repo/On-Track-SysID/src/helpers/SimpleNN.py)
+2. Modify [generate_inputs_errors.py](file:///home/ebrahim/Ebrahim_Master_Thesis_repo/On-Track-SysID/src/helpers/generate_inputs_errors.py) to produce **overlapping sequences** instead of individual samples
+3. Modify training loop in [train_model.py](file:///home/ebrahim/Ebrahim_Master_Thesis_repo/On-Track-SysID/src/helpers/train_model.py) to handle sequence batching
+4. Modify [simulated_data_gen()](file:///home/ebrahim/Ebrahim_Master_Thesis_repo/On-Track-SysID/src/helpers/train_model.py#108-153) to carry GRU hidden state across simulation steps
+5. Add `model_type` and `sequence_length` to [nn_params.yaml](file:///home/ebrahim/Ebrahim_Master_Thesis_repo/On-Track-SysID/params/nn_params.yaml)
+
+> [!TIP]
+> This is the **easiest** to implement and validate since it only touches the NN part of the pipeline. The Pacejka fitting loop stays identical.
+
+---
+
+### 💡 Idea 2: GRU with Physics-Informed Input Augmentation
+
+Extend the GRU input with **physics-derived features** in addition to raw states:
+
+```
+Input per timestep: [vx, vy, ω, δ, αf, αr, Ff_nominal, Fr_nominal]  →  8-dim input
+```
+
+Where `αf`, `αr` are slip angles and `Ff`, `Fr` are the nominal Pacejka forces. This gives the GRU explicit access to the current model's "opinion," making it easier to learn **corrections** rather than full dynamics.
+
+**Advantages over Idea 1:**
+- Faster convergence (residual learning is easier with physics features)
+- More interpretable — you can analyze which physics features the GRU relies on
+- Better generalization to unseen operating points
+
+**Additional changes:**
+- Modify [generate_inputs_errors.py](file:///home/ebrahim/Ebrahim_Master_Thesis_repo/On-Track-SysID/src/helpers/generate_inputs_errors.py) to compute and append physics features
+- Adjust input dimension in the GRU model (`input_size = 8` instead of `4`)
+
+---
+
+### 💡 Idea 3: Stateful GRU for Online Estimation
+
+Instead of re-training a window-based model, use a **stateful GRU** during the online estimation phase ([publish_estimates](file:///home/ebrahim/Ebrahim_Master_Thesis_repo/On-Track-SysID/src/on_track_sys_id.py#223-324)):
+
+```
+At each timestep:
+  h_t = GRU([vx, vy, ω, δ]_t, h_{t-1})
+  [Δvy, Δω] = Linear(h_t)
+  predicted = nominal_model + [Δvy, Δω]
+```
+
+The hidden state `h_t` is carried forward between callbacks, acting as a **learned state estimator** that continuously adapts.
+
+**Advantages:**
+- No need to store/manage sliding windows at runtime
+- Hidden state accumulates information naturally
+- Better for real-time ROS2 deployment (one forward pass per callback)
+
+**Changes to [on_track_sys_id.py](file:///home/ebrahim/Ebrahim_Master_Thesis_repo/On-Track-SysID/src/on_track_sys_id.py):**
+- Store `self.gru_hidden_state` as a persistent tensor
+- Pass it through GRU at each [publish_estimates](file:///home/ebrahim/Ebrahim_Master_Thesis_repo/On-Track-SysID/src/on_track_sys_id.py#223-324) call
+- Reset hidden state on large `dt` gaps (>0.2s)
+
+---
+
+### 💡 Idea 4: Multi-Horizon GRU Training
+
+Train the GRU to predict residuals at **multiple future horizons** simultaneously:
+
+```
+Output: [Δvy_t+1, Δω_t+1, Δvy_t+5, Δω_t+5, Δvy_t+10, Δω_t+10]
+```
+
+**Rationale:** The current approach only does 1-step prediction. Multi-horizon training forces the GRU to learn dynamics that are consistent over longer periods, which:
+- Improves the quality of virtual steady-state simulation (step 5 of the algorithm)
+- Makes the Pacejka fitting more robust
+- Provides richer gradient signal during training
+
+> [!WARNING]
+> This requires generating multi-step prediction targets, which is more complex to implement and validate. Recommend trying after Idea 1 works.
+
+---
+
+### 💡 Idea 5: Bidirectional GRU for Offline Training Phase
+
+Since the training data is **collected offline** (30s batch), you can use a **Bidirectional GRU** during training to leverage both past and future context:
+
+```
+BiGRU processes the entire 30s sequence forward and backward
+→ Better residual estimates during training
+→ Produces higher quality corrections for Pacejka fitting
+```
+
+At inference/simulation time, switch to a **unidirectional GRU** (causal). The bidirectional version is only used to improve the training targets.
+
+---
+
+## Recommended Implementation Order
+
+```mermaid
+flowchart TD
+    A["Idea 1: Drop-in GRU Residual<br>(core architecture change)"] --> B["Idea 3: Stateful Online GRU<br>(runtime improvement)"]
+    A --> C["Idea 2: Physics-Informed Inputs<br>(input feature engineering)"]
+    B --> D["Idea 4: Multi-Horizon Training<br>(training objective improvement)"]
+    C --> D
+    D --> E["Idea 5: BiGRU Offline Training<br>(advanced, if needed)"]
+```
+
+| Idea | Impact | Complexity | Recommended? |
+|------|--------|------------|--------------|
+| 1. Drop-in GRU | ⭐⭐⭐⭐ | Low | ✅ Start here |
+| 2. Physics inputs | ⭐⭐⭐ | Low-Med | ✅ Easy add-on |
+| 3. Stateful online | ⭐⭐⭐ | Medium | ✅ For deployment |
+| 4. Multi-horizon | ⭐⭐⭐⭐ | Medium-High | ⚠️ After validation |
+| 5. BiGRU offline | ⭐⭐ | High | ❌ Only if needed |
+
+---
+
+## Key Hyperparameters to Add to [nn_params.yaml](file:///home/ebrahim/Ebrahim_Master_Thesis_repo/On-Track-SysID/params/nn_params.yaml)
+
+```yaml
+# Existing params
+data_collection_duration: 30
+num_of_iterations: 6
+num_of_epochs: 100
+lr: 0.0005
+weight_decay: 0.0
+
+# New GRU params
+model_type: "GRU"            # "SimpleNN" or "GRU"
+sequence_length: 15           # sliding window size (timesteps)
+gru_hidden_size: 16           # GRU hidden dimension
+gru_num_layers: 1             # number of stacked GRU layers
+gru_dropout: 0.0              # dropout between GRU layers (only if num_layers > 1)
+use_physics_features: false   # Idea 2: augment input with slip angles & forces
+```
+
+---
+
+## Risks and Mitigations
+
+| Risk | Mitigation |
+|------|-----------|
+| Overfitting on 30s of data | Keep GRU small (hidden=16), use weight decay, early stopping |
+| Slower training | Single GRU layer + small hidden size keeps training under 10s |
+| Sequence edge effects | Discard first W samples from loss computation |
+| Hidden state divergence in simulation | Clip hidden state values, reset on NaN detection |
+| Breaking existing pipeline | Make `model_type` configurable — keep SimpleNN as fallback |
+
+Would you like me to implement any of these ideas?

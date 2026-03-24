@@ -145,7 +145,7 @@ def main():
     fz_var = np.random.uniform(1500, 5000, 2000)  # varying Fz
 
     # Ground-truth coefficients [B, C, D, E]
-    true_fy = [7.17, 1.30, 0.69, 0.53]
+    true_fy = [12.17, 1.30, 0.69, 0.53]
     true_fx = [12.0, 1.65, 1.1, 0.3]
     true_mz = [8.0, 2.40, 0.05, 0.6]
 
