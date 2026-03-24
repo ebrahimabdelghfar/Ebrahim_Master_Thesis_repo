@@ -81,6 +81,13 @@ class IdentificationNode(Node):
         self.declare_parameter('ga_tournament_size', 3)
         self.declare_parameter('ga_seed', 42)
 
+        self.declare_parameter('jade_pop_size', 100)
+        self.declare_parameter('jade_n_generations', 400)
+        self.declare_parameter('jade_p', 0.1)
+        self.declare_parameter('jade_c', 0.1)
+        self.declare_parameter('jade_archive_ratio', 1.0)
+        self.declare_parameter('jade_seed', 42)
+
         # ── Read parameters ──────────────────────────────────────────────
         self.topic = self.get_parameter('tire_forces_topic').value
         self.duration = int(self.get_parameter('duration_seconds').value)
@@ -122,6 +129,14 @@ class IdentificationNode(Node):
             'elite_frac': float(self.get_parameter('ga_elite_frac').value),
             'tournament_size': int(self.get_parameter('ga_tournament_size').value),
             'seed': int(self.get_parameter('ga_seed').value),
+        }
+        self.jade_params = {
+            'pop_size': int(self.get_parameter('jade_pop_size').value),
+            'n_generations': int(self.get_parameter('jade_n_generations').value),
+            'p': float(self.get_parameter('jade_p').value),
+            'c': float(self.get_parameter('jade_c').value),
+            'archive_ratio': float(self.get_parameter('jade_archive_ratio').value),
+            'seed': int(self.get_parameter('jade_seed').value),
         }
 
         # ── Data storage ─────────────────────────────────────────────────
@@ -246,6 +261,7 @@ class IdentificationNode(Node):
             tr_params=self.tr_params,
             de_params=self.de_params,
             ga_params=self.ga_params,
+            jade_params=self.jade_params,
         )
 
         all_results = {}

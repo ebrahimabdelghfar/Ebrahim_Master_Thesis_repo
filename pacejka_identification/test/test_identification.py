@@ -81,8 +81,8 @@ def test_sequential(formula_name, pacejka_fn, true_params, slip, fz, initial_gue
         else:
             errors[name] = abs(est_val - true_val) * 100
 
-    # GA-based methods get relaxed tolerance (10 %) since they are stochastic
-    tol = 10.0 if 'genetic' in method or 'ga_' in method else 5.0
+    # Stochastic methods (GA, JADE) get relaxed tolerance (10 %)
+    tol = 10.0 if 'genetic' in method or 'ga_' in method or 'adaptive' in method else 5.0
     passed = c_match and all(e < tol for e in errors.values()) and metrics['R2'] > 0.999
 
     print(f"\n{'='*65}")
@@ -152,7 +152,8 @@ def main():
     results = []
 
     # ── Sequential tests — all methods ──
-    ALL_METHODS = ['trust_region', 'dual', 'genetic_algorithm', 'ga_trust_region']
+    ALL_METHODS = ['trust_region', 'dual', 'genetic_algorithm', 'ga_trust_region',
+                    'adaptive_de', 'adaptive_de_trust_region']
 
     for method in ALL_METHODS:
         results.append(test_sequential(
@@ -168,7 +169,7 @@ def main():
             [10.0, 1.5, 0.1, 0.5], method, 'mz',
         ))
 
-    # ── Simultaneous tests — GA methods (curve-fit quality only) ──
+    # ── Simultaneous tests — GA and JADE methods (curve-fit quality only) ──
     results.append(test_simultaneous_curve(
         'Fy (GA simult.)', pacejka_fy, [7.17, 1.56, 0.69, 0.53],
         alpha, fz_const, [10.0, 1.5, 1.0, 0.5], 'genetic_algorithm',
@@ -176,6 +177,14 @@ def main():
     results.append(test_simultaneous_curve(
         'Fy (GA→TR simult.)', pacejka_fy, [7.17, 1.56, 0.69, 0.53],
         alpha, fz_const, [10.0, 1.5, 1.0, 0.5], 'ga_trust_region',
+    ))
+    results.append(test_simultaneous_curve(
+        'Fy (JADE simult.)', pacejka_fy, [7.17, 1.56, 0.69, 0.53],
+        alpha, fz_const, [10.0, 1.5, 1.0, 0.5], 'adaptive_de',
+    ))
+    results.append(test_simultaneous_curve(
+        'Fy (JADE→TR simult.)', pacejka_fy, [7.17, 1.56, 0.69, 0.53],
+        alpha, fz_const, [10.0, 1.5, 1.0, 0.5], 'adaptive_de_trust_region',
     ))
 
     # ── Summary ──

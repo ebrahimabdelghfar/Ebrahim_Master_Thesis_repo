@@ -19,6 +19,8 @@ Supported optimisers for the fitting step:
   - dual                     (DE → TRF, best accuracy)
   - genetic_algorithm        (custom real-coded GA, global)
   - ga_trust_region          (GA → TRF, hybrid global-local)
+  - adaptive_de              (JADE — self-adaptive F/CR, global)
+  - adaptive_de_trust_region (JADE → TRF, hybrid global-local)
 
 Reference: Pacejka, H.B. "Tire and Vehicle Dynamics", 3rd Ed., Ch. 4.
 """
@@ -170,6 +172,171 @@ class GeneticAlgorithm:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# JADE — Adaptive Differential Evolution (Zhang & Sanderson, 2009)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class JADE:
+    """
+    JADE: Adaptive Differential Evolution with optional external archive.
+
+    Reference:
+        J. Zhang and A.C. Sanderson, "JADE: Adaptive Differential Evolution
+        with Optional External Archive", IEEE Trans. Evol. Comput., 2009.
+
+    Key innovations over standard DE:
+      1. **current-to-pbest/1 mutation** — uses the top-p fraction of the
+         population rather than the single best, improving diversity.
+      2. **Self-adaptive F and CR** — each individual draws its own F from
+         a Cauchy distribution and CR from a Normal distribution.  After
+         each generation the location parameters (μF, μCR) are updated
+         using only the *successful* F/CR values (Lehmer mean for F,
+         arithmetic mean for CR).
+      3. **External archive** — replaced (inferior) individuals are stored
+         in an archive and can be used during mutation, further increasing
+         exploration.
+
+    Parameters
+    ----------
+    cost_fn : callable(params, *args) → float
+    bounds  : list of (lower, upper)
+    args    : tuple
+    pop_size      : int   — population size (NP)
+    n_generations : int   — maximum generations
+    p             : float — top-p fraction for pbest selection (0 < p ≤ 1)
+    c             : float — adaptation rate for μF, μCR  (0 < c ≤ 1)
+    archive_ratio : float — max archive size as fraction of pop_size
+    seed          : int or None
+    """
+
+    def __init__(
+        self,
+        cost_fn,
+        bounds,
+        args=(),
+        pop_size=100,
+        n_generations=400,
+        p=0.1,
+        c=0.1,
+        archive_ratio=1.0,
+        seed=42,
+    ):
+        self.cost_fn = cost_fn
+        self.bounds = np.array(bounds, dtype=np.float64)
+        self.args = args
+        self.n_params = len(bounds)
+        self.NP = pop_size
+        self.n_gen = n_generations
+        self.p = max(p, 2.0 / pop_size)  # at least 2 individuals in pbest
+        self.c = c
+        self.max_archive = int(archive_ratio * pop_size)
+        self.rng = np.random.default_rng(seed)
+
+    def run(self):
+        lb = self.bounds[:, 0]
+        ub = self.bounds[:, 1]
+
+        # Initialise population
+        pop = self.rng.uniform(lb, ub, size=(self.NP, self.n_params))
+        fitness = np.array([self.cost_fn(ind, *self.args) for ind in pop])
+
+        # Adaptive location parameters
+        mu_CR = 0.5
+        mu_F = 0.5
+
+        # External archive
+        archive = []
+
+        best_idx = np.argmin(fitness)
+        best_sol = pop[best_idx].copy()
+        best_cost = fitness[best_idx]
+
+        for gen in range(self.n_gen):
+            S_CR = []  # successful CR values this generation
+            S_F = []   # successful F values this generation
+
+            trial_pop = np.empty_like(pop)
+
+            for i in range(self.NP):
+                # --- Generate CR_i ~ N(mu_CR, 0.1), clipped to [0, 1] ---
+                CR_i = np.clip(self.rng.normal(mu_CR, 0.1), 0.0, 1.0)
+
+                # --- Generate F_i ~ Cauchy(mu_F, 0.1), truncated to (0, 1] ---
+                F_i = self._rand_cauchy(mu_F, 0.1)
+
+                # --- current-to-pbest/1 mutation ---
+                # Select x_pbest: random from top-p fraction
+                n_pbest = max(2, int(self.p * self.NP))
+                pbest_indices = np.argsort(fitness)[:n_pbest]
+                pbest = pop[self.rng.choice(pbest_indices)]
+
+                # Select r1 != i from population
+                r1 = i
+                while r1 == i:
+                    r1 = self.rng.integers(0, self.NP)
+
+                # Select r2 != i, r1 from population ∪ archive
+                pool = list(range(self.NP)) + list(range(self.NP, self.NP + len(archive)))
+                r2 = i
+                while r2 == i or r2 == r1:
+                    r2_idx = self.rng.integers(0, len(pool))
+                    r2 = pool[r2_idx]
+
+                x_r2 = pop[r2] if r2 < self.NP else archive[r2 - self.NP]
+
+                # Mutation: v = x_i + F*(x_pbest - x_i) + F*(x_r1 - x_r2)
+                v = pop[i] + F_i * (pbest - pop[i]) + F_i * (pop[r1] - x_r2)
+                v = np.clip(v, lb, ub)
+
+                # --- Binomial crossover ---
+                j_rand = self.rng.integers(0, self.n_params)
+                mask = (self.rng.random(self.n_params) < CR_i)
+                mask[j_rand] = True  # ensure at least one parameter from mutant
+                trial = np.where(mask, v, pop[i])
+
+                trial_pop[i] = trial
+
+            # --- Selection ---
+            trial_fitness = np.array([self.cost_fn(t, *self.args) for t in trial_pop])
+
+            for i in range(self.NP):
+                if trial_fitness[i] <= fitness[i]:
+                    # Store replaced individual in archive
+                    if len(archive) < self.max_archive:
+                        archive.append(pop[i].copy())
+                    else:
+                        # Replace random archive member
+                        idx = self.rng.integers(0, self.max_archive)
+                        archive[idx] = pop[i].copy()
+
+                    pop[i] = trial_pop[i]
+                    fitness[i] = trial_fitness[i]
+                    S_CR.append(CR_i)
+                    S_F.append(F_i)
+
+            # --- Update μCR and μF using successful values ---
+            if S_CR and S_F:
+                mu_CR = (1 - self.c) * mu_CR + self.c * np.mean(S_CR)
+                # Lehmer mean for F (weighted toward larger values)
+                S_F = np.array(S_F)
+                mu_F = (1 - self.c) * mu_F + self.c * (np.sum(S_F ** 2) / np.sum(S_F))
+
+            # Track global best
+            gen_best = np.argmin(fitness)
+            if fitness[gen_best] < best_cost:
+                best_cost = fitness[gen_best]
+                best_sol = pop[gen_best].copy()
+
+        return best_sol, best_cost
+
+    def _rand_cauchy(self, loc, scale):
+        """Draw from Cauchy(loc, scale), truncated to (0, 1]."""
+        while True:
+            x = loc + scale * np.tan(np.pi * (self.rng.random() - 0.5))
+            if 0 < x <= 1:
+                return x
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Residual / cost helpers
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -313,6 +480,10 @@ class CoefficientIdentifier:
         'mutation_scale': 0.10, 'elite_frac': 0.05,
         'tournament_size': 3, 'seed': 42,
     }
+    _DEFAULT_JADE = {
+        'pop_size': 100, 'n_generations': 400,
+        'p': 0.1, 'c': 0.1, 'archive_ratio': 1.0, 'seed': 42,
+    }
 
     def __init__(
         self,
@@ -324,10 +495,12 @@ class CoefficientIdentifier:
         tr_params=None,
         de_params=None,
         ga_params=None,
+        jade_params=None,
     ):
         allowed_methods = {
             'trust_region', 'differential_evolution', 'dual',
             'genetic_algorithm', 'ga_trust_region',
+            'adaptive_de', 'adaptive_de_trust_region',
         }
         if method not in allowed_methods:
             raise ValueError(f"method must be one of {allowed_methods}")
@@ -352,12 +525,15 @@ class CoefficientIdentifier:
         self.tr = {**self._DEFAULT_TR, **(tr_params or {})}
         self.de = {**self._DEFAULT_DE, **(de_params or {})}
         self.ga = {**self._DEFAULT_GA, **(ga_params or {})}
+        self.jade = {**self._DEFAULT_JADE, **(jade_params or {})}
 
         # Handle seed=-1 → None (non-deterministic)
         if self.de['seed'] == -1:
             self.de['seed'] = None
         if self.ga['seed'] == -1:
             self.ga['seed'] = None
+        if self.jade['seed'] == -1:
+            self.jade['seed'] = None
 
     # ──────────────────────────────────────────────────────────────────
     # Public API
@@ -432,6 +608,11 @@ class CoefficientIdentifier:
         elif self.method == 'ga_trust_region':
             bde_ga = self._ga_bde(C, lb_bde, ub_bde, slip, fz, y_meas)
             bde = self._tr_bde(C, bde_ga, lb_bde, ub_bde, slip, fz, y_meas)
+        elif self.method == 'adaptive_de':
+            bde = self._jade_bde(C, lb_bde, ub_bde, slip, fz, y_meas)
+        elif self.method == 'adaptive_de_trust_region':
+            bde_jade = self._jade_bde(C, lb_bde, ub_bde, slip, fz, y_meas)
+            bde = self._tr_bde(C, bde_jade, lb_bde, ub_bde, slip, fz, y_meas)
         else:  # dual (DE → TR)
             bde_global = self._de_bde(C, lb_bde, ub_bde, slip, fz, y_meas)
             bde = self._tr_bde(C, bde_global, lb_bde, ub_bde, slip, fz, y_meas)
@@ -474,6 +655,22 @@ class CoefficientIdentifier:
         best_sol, _ = ga.run()
         return best_sol
 
+    def _jade_bde(self, C, lb, ub, slip, fz, y):
+        bounds_list = list(zip(lb, ub))
+        jade = JADE(
+            cost_fn=_cost_BDE,
+            bounds=bounds_list,
+            args=(C, slip, fz, y),
+            pop_size=self.jade['pop_size'],
+            n_generations=self.jade['n_generations'],
+            p=self.jade['p'],
+            c=self.jade['c'],
+            archive_ratio=self.jade['archive_ratio'],
+            seed=self.jade['seed'],
+        )
+        best_sol, _ = jade.run()
+        return best_sol
+
     # ──────────────────────────────────────────────────────────────────
     # Simultaneous identification (all 4 params at once)
     # ──────────────────────────────────────────────────────────────────
@@ -489,6 +686,11 @@ class CoefficientIdentifier:
         elif self.method == 'ga_trust_region':
             ga_x = self._ga_all(slip, fz, y_meas)
             return self._tr_all(ga_x, slip, fz, y_meas)
+        elif self.method == 'adaptive_de':
+            return self._jade_all(slip, fz, y_meas)
+        elif self.method == 'adaptive_de_trust_region':
+            jade_x = self._jade_all(slip, fz, y_meas)
+            return self._tr_all(jade_x, slip, fz, y_meas)
         else:  # dual (DE → TR)
             de_x = self._de_all(slip, fz, y_meas)
             return self._tr_all(de_x, slip, fz, y_meas)
@@ -526,4 +728,20 @@ class CoefficientIdentifier:
             seed=self.ga['seed'],
         )
         best_sol, _ = ga.run()
+        return best_sol
+
+    def _jade_all(self, slip, fz, y):
+        bounds_list = list(zip(self.lb, self.ub))
+        jade = JADE(
+            cost_fn=_cost,
+            bounds=bounds_list,
+            args=(slip, fz, y),
+            pop_size=self.jade['pop_size'],
+            n_generations=self.jade['n_generations'],
+            p=self.jade['p'],
+            c=self.jade['c'],
+            archive_ratio=self.jade['archive_ratio'],
+            seed=self.jade['seed'],
+        )
+        best_sol, _ = jade.run()
         return best_sol

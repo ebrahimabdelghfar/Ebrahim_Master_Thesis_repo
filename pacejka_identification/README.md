@@ -76,14 +76,47 @@ ros2 topic echo /pacejka_id/fit_metrics
 
 All parameters can be set via launch arguments or `config/identification_config.yaml`:
 
+### General Settings
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `duration_seconds` | 60 | Data collection duration |
 | `min_velocity` | 0.5 | Min belt velocity filter (m/s) |
 | `min_fz_threshold` | 50.0 | Min normal force filter (N) |
-| `method` | `dual` | `trust_region`, `differential_evolution`, `dual` |
+| `method` | `dual` | See **Identification Methods** below |
 | `axle_grouping` | `per_axle` | `per_wheel`, `per_axle`, `combined` |
 | `formulas` | all 3 | `lateral_fy`, `longitudinal_fx`, `self_aligning_mz` |
+
+### Algorithm Hyperparameters
+
+Each optimizer has specific hyperparameters exposed in `config/identification_config.yaml`. The hybrid methods (`dual`, `ga_trust_region`, `adaptive_de_trust_region`) combine the parameters of both their respective global and local stages.
+
+**Trust Region (`trust_region`)**
+- `max_nfev` (10000): Maximum function evaluations.
+
+**Differential Evolution (`differential_evolution`)**
+- `maxiter` (1000): Maximum iterations.
+- `tol` (1e-12): Convergence tolerance.
+- `polish` (true): Local refinement via L-BFGS-B at the end.
+- `seed` (42): Random seed (-1 for random).
+
+**Genetic Algorithm (`genetic_algorithm`)**
+- `pop_size` (120): Population size.
+- `n_generations` (400): Maximum generations.
+- `crossover_rate` (0.85): BLX-α crossover probability.
+- `mutation_rate` (0.15): Gaussian mutation probability per gene.
+- `mutation_scale` (0.10): Standard deviation of mutation (fraction of range).
+- `elite_frac` (0.05): Fraction of population preserved (elitism).
+- `tournament_size` (3): Selection pool size.
+- `seed` (42): Random seed (-1 for random).
+
+**Adaptive DE / JADE (`adaptive_de`)**
+- `pop_size` (100): Population size.
+- `n_generations` (400): Maximum generations.
+- `p` (0.1): Top-p fraction for the *current-to-pbest/1* mutation.
+- `c` (0.1): Adaptation rate for the F and CR distributions.
+- `archive_ratio` (1.0): Size of external archive relative to population.
+- `seed` (42): Random seed (-1 for random).
 
 ## Published Topics
 
@@ -136,14 +169,28 @@ coefficients:
 
 ## Identification Methods
 
-### Trust-Region-Reflective (`trust_region`)
-Local optimizer — fast but requires a good initial guess. Best for clean data.
+The `method` parameter allows you to select the backend optimization solver. The sequential mode breaks B-C-E coefficient parameter degeneracy, and these solvers find the optimal curve fit:
 
-### Differential Evolution (`differential_evolution`)
-Global optimizer — no initial guess needed. Slower but robust against local minima.
+### 1. Trust-Region-Reflective (`trust_region`)
+Local optimizer (TRF). Extremely fast but requires a good initial guess. Fails if the starting parameters are too far from the true curve. Best suited for clean, predictable data.
 
-### Dual (`dual`) — **Recommended**
-Runs Differential Evolution first for global search, then Trust-Region for local refinement. Provides the highest accuracy, ideal for ground-truth coefficient identification.
+### 2. Differential Evolution (`differential_evolution`)
+Classical global optimizer. Slower but robust against local minima. Reliable for identifying Pacejka curves when you have no good initial guess.
+
+### 3. Dual (`dual`) — **Recommended**
+Hybrid approach: runs Differential Evolution first for a robust global search, then passes the result to Trust-Region for extremely precise local refinement. Provides the highest overall accuracy.
+
+### 4. Genetic Algorithm (`genetic_algorithm`)
+Custom real-coded GA with tournament selection, BLX-α crossover, and Gaussian mutation. Operates strictly globally.
+
+### 5. GA + Trust-Region (`ga_trust_region`)
+Hybrid approach: runs the Genetic Algorithm first, then refines the output using Trust-Region. 
+
+### 6. Adaptive DE / JADE (`adaptive_de`)
+Advanced self-adaptive Differential Evolution (Zhang & Sanderson, 2009). Dynamically self-adapts its mutation (F) and crossover (CR) rates during optimization using Lehmer and arithmetic means respectively. Uses `current-to-pbest/1` mutation and an external archive of inferior solutions to maintain genetic diversity. Highly effective out-of-the-box global optimizer.
+
+### 7. JADE + Trust-Region (`adaptive_de_trust_region`)
+Hybrid approach: runs the Adaptive DE (JADE) first for robust, self-tuning global search, then refines the exact coefficients with Trust-Region.
 
 ## Architecture
 

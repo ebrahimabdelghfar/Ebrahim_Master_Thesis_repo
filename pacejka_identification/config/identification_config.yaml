@@ -11,10 +11,12 @@ data_collection:
 
 # ---- Identification Settings ----
 identification:
-  # Method: trust_region | differential_evolution | dual | genetic_algorithm | ga_trust_region
+  # Method: trust_region | differential_evolution | dual | genetic_algorithm | ga_trust_region | adaptive_de | adaptive_de_trust_region
   # "dual" (recommended) runs differential_evolution first, then refines with trust_region
   # "genetic_algorithm" runs a custom real-coded GA (tournament selection, BLX-α crossover)
   # "ga_trust_region" runs GA first, then refines with trust_region
+  # "adaptive_de" runs JADE (self-adaptive F/CR, current-to-pbest/1 mutation, external archive)
+  # "adaptive_de_trust_region" runs JADE first, then refines with trust_region
   method: "dual"
 
   # Identification mode:
@@ -78,6 +80,26 @@ genetic_algorithm:
   elite_frac: 0.05
   # Number of individuals competing in tournament selection
   tournament_size: 3
+  # Random seed for reproducibility (set to -1 for non-deterministic)
+  seed: 42
+
+adaptive_de:
+  # JADE: Adaptive Differential Evolution (Zhang & Sanderson, 2009)
+  # Self-adapts mutation factor F and crossover rate CR per individual.
+  # Uses "current-to-pbest/1" mutation and an external archive.
+  # Population size
+  pop_size: 100
+  # Maximum number of generations
+  n_generations: 400
+  # Top-p fraction for pbest selection (0 < p ≤ 1)
+  # Smaller p → more exploitation (greedy), larger p → more exploration
+  p: 0.1
+  # Adaptation rate for μF and μCR (0 < c ≤ 1)
+  # Smaller c → slower adaptation (more stable), larger c → faster adaptation
+  c: 0.1
+  # Max archive size as fraction of pop_size
+  # Archive stores replaced individuals to increase mutation diversity
+  archive_ratio: 1.0
   # Random seed for reproducibility (set to -1 for non-deterministic)
   seed: 42
 
