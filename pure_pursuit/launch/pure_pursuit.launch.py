@@ -25,7 +25,7 @@ def generate_launch_description():
     
     velocity_arg = DeclareLaunchArgument(
         'desired_velocity',
-        default_value='2.0',
+        default_value='3.0',
         description='Desired velocity in m/s'
     )
     

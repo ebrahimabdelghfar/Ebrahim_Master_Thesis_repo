@@ -5,3 +5,15 @@ pacejka_model:
 pacejka_ref:
   C_Pf_ref: [7.17, 1.56, 0.69, 0.53]
   C_Pr_ref: [8.29, 2.11, 0.68, 0.40]
+
+# Nonlinear least-squares settings for Pacejka identification.
+# Defaults are robust for noisy on-track data while keeping runtime low.
+pacejka_solver:
+  method: trf
+  loss: soft_l1
+  f_scale: null
+  x_scale: jac
+  max_nfev: null
+  num_starts: 1
+  start_jitter: 0.05
+  seed: null

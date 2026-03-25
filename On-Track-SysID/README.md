@@ -80,6 +80,158 @@ To use this node, follow these steps:
     - New LUT can be used after relaunching time trials with the new LUT name.
 6. (OPTIONAL) **Repeat**: Repeat all the steps if you can drive the car faster than before with the new generated LUT and you think going even faster is possible with a better model. This would presumably provide a better model that covers higher ranges of slip angles more accurately.
 
+## Physics-Informed Training (Implemented) + Ablation Switch
+
+This repository now includes a physics-informed training option for the residual NN, together with an ablation switch so you can compare it directly against the original MSE-only training.
+
+### What was implemented
+
+1. **Ablation switch in `nn_params.yaml`**
+    - `loss_mode: mse` -> original baseline behavior.
+    - `loss_mode: physics_informed` -> composite physics-informed loss.
+
+2. **Composite physics-informed loss terms**
+    - **Data term (`L_data`)**: same residual MSE used before.
+    - **Steady/dynamics consistency term (`L_steady`)**: penalizes mismatch with lateral and yaw dynamics consistency using the bicycle model + Pacejka forces.
+    - **Symmetry term (`L_symmetry`)**: enforces left/right mirrored consistency (compatible with the existing mirrored-data augmentation).
+    - **Smoothness term (`L_smoothness`)**: penalizes high sensitivity of residual outputs to input perturbations.
+
+3. **Configurable weights and thresholds**
+    - `physics_loss.lambda_steady`
+    - `physics_loss.lambda_symmetry`
+    - `physics_loss.lambda_smoothness`
+    - `physics_loss.steady_vy_dot_threshold`
+    - `physics_loss.steady_omega_dot_threshold`
+
+4. **Training logs for interpretability**
+    - During training, the selected `loss_mode` is printed.
+    - In `physics_informed` mode, final per-iteration component losses are printed (`data`, `steady`, `symmetry`, `smoothness`).
+
+### Equations used in `physics_informed` mode
+
+The implemented total loss is:
+
+$$
+\mathcal{L}_{total} = \mathcal{L}_{data} + \lambda_{steady}\,\mathcal{L}_{steady} + \lambda_{sym}\,\mathcal{L}_{sym} + \lambda_{smooth}\,\mathcal{L}_{smooth}
+$$
+
+where:
+
+1. **Data term (residual learning target)**
+
+$$
+\mathcal{L}_{data} = \frac{1}{N}\sum_{k=1}^{N}\left\|\hat e_k - e_k\right\|_2^2,
+\quad
+\hat e_k = \begin{bmatrix}\hat e_{v_y,k} \\ \hat e_{\omega,k}\end{bmatrix}
+$$
+
+2. **Steady/dynamics consistency term**
+
+Using the corrected one-step prediction from nominal model + NN residual:
+
+$$
+v_{y,k+1} = v^{nom}_{y,k+1} + \hat e_{v_y,k},
+\quad
+\omega_{k+1} = \omega^{nom}_{k+1} + \hat e_{\omega,k}
+$$
+
+and finite-difference rates:
+
+$$
+\dot v_{y,k} \approx \frac{v_{y,k+1}-v_{y,k}}{T_s},
+\quad
+\dot\omega_k \approx \frac{\omega_{k+1}-\omega_k}{T_s}
+$$
+
+the residual dynamics constraints are:
+
+$$
+r^{lat}_k = m\dot v_{y,k} + m v_{x,k}\omega_{k+1} - \left(F_{y,r,k} + F_{y,f,k}\cos\delta_k\right)
+$$
+
+$$
+r^{yaw}_k = I_z\dot\omega_k - \left(F_{y,f,k}l_f\cos\delta_k - F_{y,r,k}l_r\right)
+$$
+
+and the implemented steady loss is:
+
+$$
+\mathcal{L}_{steady} = \mathbb{E}\left[(r^{lat}_k)^2 + (r^{yaw}_k)^2\right]
+$$
+
+optionally masked to near-steady samples using `steady_vy_dot_threshold` and `steady_omega_dot_threshold`.
+
+3. **Symmetry term (left/right consistency)**
+
+For mirrored state/input
+$x_k'=[v_x, -v_y, -\omega, -\delta]$:
+
+$$
+\mathcal{L}_{sym} = \mathbb{E}\left[\left\|f_{NN}(x_k) + f_{NN}(x_k')\right\|_2^2\right]
+$$
+
+4. **Smoothness term (regularized sensitivity)**
+
+$$
+\mathcal{L}_{smooth} = \mathbb{E}\left[\left\|\nabla_x \hat e_{v_y}(x)\right\|_2^2 + \left\|\nabla_x \hat e_{\omega}(x)\right\|_2^2\right]
+$$
+
+5. **Pacejka lateral force used in the dynamics term**
+
+$$
+F_y(\alpha) = F_z D\,\sin\!\left(C\,\arctan\!\left(B\alpha - E\left(B\alpha-\arctan(B\alpha)\right)\right)\right)
+$$
+
+### Symbols
+
+- $v_x, v_y$: longitudinal and lateral velocity
+- $\omega$: yaw rate
+- $\delta$: steering angle
+- $m$: vehicle mass
+- $I_z$: yaw inertia
+- $l_f, l_r$: CoG distances to front/rear axle
+- $T_s$: sampling time
+- $F_{y,f}, F_{y,r}$: front/rear lateral tire forces
+
+### References
+
+1. Dikici et al., *Learning-Based On-Track System Identification for Scaled Autonomous Racing in Under a Minute*, arXiv:2411.17508, 2024. https://arxiv.org/abs/2411.17508
+2. Pacejka and Bakker, *The Magic Formula Tyre Model*, Vehicle System Dynamics, 1992.
+3. Chrosniak et al., *Deep Dynamics: Vehicle Dynamics Modeling with a Physics-Constrained Neural Network for Autonomous Racing*, arXiv:2312.04374, 2023. https://arxiv.org/abs/2312.04374
+4. Raissi et al., *Physics Informed Deep Learning (Part I)*, arXiv:1711.10561, 2017. https://arxiv.org/abs/1711.10561
+
+### How to use the ablation
+
+Edit `On-Track-SysID/params/nn_params.yaml`:
+
+```yaml
+loss_mode: mse  # or: physics_informed
+
+physics_loss:
+  lambda_steady: 0.1
+  lambda_symmetry: 0.05
+  lambda_smoothness: 0.0001
+  steady_vy_dot_threshold: 0.8
+  steady_omega_dot_threshold: 6.0
+```
+
+### Suggested experiment protocol
+
+Run two experiments on the same dataset and setup:
+
+1. `loss_mode: mse` (baseline)
+2. `loss_mode: physics_informed` (proposed)
+
+Then compare:
+
+- One-step prediction metrics (`v_y`, `omega` RMSE)
+- Identified Pacejka parameters over iterations
+- Closed-loop performance (lap time / tracking quality)
+
+### Important YAML note
+
+Use **spaces** for indentation in `nn_params.yaml` (do not use tabs), otherwise YAML parsing will fail at runtime.
+
 ## Usage (Short)
  - Make sure `race_stack/system_identification/on_track_sys_id/src/models/(racecar_version)/(racecar_version)_pacejka.txt` exist with correct parameters.
 

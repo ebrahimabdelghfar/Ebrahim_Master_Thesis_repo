@@ -105,6 +105,98 @@ def process_data(training_data, model):
     
     return negated_data
 
+def torch_pacejka_force(params, alpha, F_z):
+    """Compute Pacejka lateral force with torch tensors."""
+    B = float(params[0])
+    C = float(params[1])
+    D = float(params[2])
+    E = float(params[3])
+    return F_z * D * torch.sin(C * torch.atan(B * alpha - E * (B * alpha - torch.atan(B * alpha))))
+
+def compute_physics_informed_loss(nn_model, X_train, y_train, model, dt, lambda_cfg):
+    """
+    Composite physics-informed loss used for ablation against plain MSE.
+    """
+    criterion = nn.MSELoss()
+
+    outputs = nn_model(X_train)
+    data_loss = criterion(outputs, y_train)
+
+    v_x = X_train[:, 0]
+    v_y = X_train[:, 1]
+    omega = X_train[:, 2]
+    delta = X_train[:, 3]
+
+    m = float(model['m'])
+    I_z = float(model['I_z'])
+    l_f = float(model['l_f'])
+    l_r = float(model['l_r'])
+    l_wb = float(model['l_wb'])
+    g_ = 9.81
+    F_zf = m * g_ * l_r / l_wb
+    F_zr = m * g_ * l_f / l_wb
+
+    v_x_safe = torch.where(torch.abs(v_x) < 0.3, torch.sign(v_x) * 0.3, v_x)
+    v_x_safe = torch.where(v_x_safe == 0.0, torch.full_like(v_x_safe, 0.3), v_x_safe)
+
+    alpha_f_nom = -torch.atan((v_y + omega * l_f) / v_x_safe) + delta
+    alpha_r_nom = -torch.atan((v_y - omega * l_r) / v_x_safe)
+    F_f_nom = torch_pacejka_force(model['C_Pf_model'], alpha_f_nom, F_zf)
+    F_r_nom = torch_pacejka_force(model['C_Pr_model'], alpha_r_nom, F_zr)
+
+    v_y_dot_nom = (1.0 / m) * (F_r_nom + F_f_nom * torch.cos(delta) - m * v_x * omega)
+    omega_dot_nom = (1.0 / I_z) * (F_f_nom * l_f * torch.cos(delta) - F_r_nom * l_r)
+    v_y_next_nom = v_y + v_y_dot_nom * dt
+    omega_next_nom = omega + omega_dot_nom * dt
+
+    v_y_next = v_y_next_nom + outputs[:, 0]
+    omega_next = omega_next_nom + outputs[:, 1]
+    v_y_dot = (v_y_next - v_y) / dt
+    omega_dot = (omega_next - omega) / dt
+
+    alpha_f_next = -torch.atan((v_y_next + omega_next * l_f) / v_x_safe) + delta
+    alpha_r_next = -torch.atan((v_y_next - omega_next * l_r) / v_x_safe)
+    F_f_next = torch_pacejka_force(model['C_Pf_model'], alpha_f_next, F_zf)
+    F_r_next = torch_pacejka_force(model['C_Pr_model'], alpha_r_next, F_zr)
+
+    lat_dyn_residual = m * v_y_dot + m * v_x * omega_next - (F_r_next + F_f_next * torch.cos(delta))
+    yaw_dyn_residual = I_z * omega_dot - (F_f_next * l_f * torch.cos(delta) - F_r_next * l_r)
+
+    steady_vy_dot_th = float(lambda_cfg.get('steady_vy_dot_threshold', 0.8))
+    steady_omega_dot_th = float(lambda_cfg.get('steady_omega_dot_threshold', 6.0))
+    steady_mask = (torch.abs(v_y_dot) < steady_vy_dot_th) & (torch.abs(omega_dot) < steady_omega_dot_th)
+
+    if torch.any(steady_mask):
+        steady_loss = torch.mean(lat_dyn_residual[steady_mask] ** 2) + torch.mean(yaw_dyn_residual[steady_mask] ** 2)
+    else:
+        steady_loss = torch.mean(lat_dyn_residual ** 2) + torch.mean(yaw_dyn_residual ** 2)
+
+    X_mirror = X_train.clone()
+    X_mirror[:, 1] = -X_mirror[:, 1]
+    X_mirror[:, 2] = -X_mirror[:, 2]
+    X_mirror[:, 3] = -X_mirror[:, 3]
+    outputs_mirror = nn_model(X_mirror)
+    symmetry_loss = torch.mean((outputs + outputs_mirror) ** 2)
+
+    X_smooth = X_train.detach().clone().requires_grad_(True)
+    outputs_smooth = nn_model(X_smooth)
+    grad_vy = torch.autograd.grad(outputs_smooth[:, 0].sum(), X_smooth, create_graph=True)[0]
+    grad_omega = torch.autograd.grad(outputs_smooth[:, 1].sum(), X_smooth, create_graph=True)[0]
+    smoothness_loss = torch.mean(grad_vy ** 2) + torch.mean(grad_omega ** 2)
+
+    lambda_steady = float(lambda_cfg.get('lambda_steady', 0.1))
+    lambda_symmetry = float(lambda_cfg.get('lambda_symmetry', 0.05))
+    lambda_smoothness = float(lambda_cfg.get('lambda_smoothness', 1e-4))
+
+    total_loss = data_loss + lambda_steady * steady_loss + lambda_symmetry * symmetry_loss + lambda_smoothness * smoothness_loss
+    loss_terms = {
+        'data': float(data_loss.detach().cpu()),
+        'steady': float(steady_loss.detach().cpu()),
+        'symmetry': float(symmetry_loss.detach().cpu()),
+        'smoothness': float(smoothness_loss.detach().cpu())
+    }
+    return total_loss, loss_terms
+
 def simulated_data_gen(nn_model, model, avg_vel):
     C_Pf_model = model['C_Pf_model']
     C_Pr_model = model['C_Pr_model']
@@ -163,6 +255,8 @@ def get_model_param(racecar_version):
     yaml_file = os.path.join(package_path, 'params', 'pacejka_params.yaml')
     with open(yaml_file, 'r') as file:
         pacejka_params = yaml.safe_load(file)
+
+    solver_cfg = pacejka_params.get('pacejka_solver', {})
         
     # Load vehicle parameters
     yaml_file = os.path.join(package_path, 'models', racecar_version, racecar_version + '_pacejka.txt')
@@ -175,6 +269,14 @@ def get_model_param(racecar_version):
     "C_Pr_model": pacejka_params['pacejka_model']['C_Pr_model'],
     "C_Pf_ref": pacejka_params['pacejka_ref']['C_Pf_ref'],
     "C_Pr_ref": pacejka_params['pacejka_ref']['C_Pr_ref'],
+    "pacejka_method": solver_cfg.get('method', 'trf'),
+    "pacejka_loss": solver_cfg.get('loss', 'soft_l1'),
+    "pacejka_f_scale": solver_cfg.get('f_scale', None),
+    "pacejka_x_scale": solver_cfg.get('x_scale', 'jac'),
+    "pacejka_max_nfev": solver_cfg.get('max_nfev', None),
+    "pacejka_num_starts": solver_cfg.get('num_starts', 1),
+    "pacejka_start_jitter": solver_cfg.get('start_jitter', 0.05),
+    "pacejka_seed": solver_cfg.get('seed', None),
     "m": vehicle_params['m'],
     "I_z": vehicle_params['I_z'],
     "l_f": vehicle_params['l_f'],
@@ -241,6 +343,9 @@ def nn_train(training_data, racecar_version, save_LUT_name, plot_model):
     lr = nn_params['lr']
     weight_decay = nn_params['weight_decay']
     num_of_iterations = nn_params['num_of_iterations']
+    loss_mode = nn_params.get('loss_mode', 'mse')
+    physics_loss_cfg = nn_params.get('physics_loss', {})
+    dt = 0.02
 
     training_data = process_data(training_data, model)   
      
@@ -258,9 +363,14 @@ def nn_train(training_data, racecar_version, save_LUT_name, plot_model):
         # Initialize the network
         nn_model = SimpleNN(weight_decay = weight_decay)
 
-        # Loss and optimizer
-        criterion = nn.MSELoss()
+        # Optimizer and ablation-ready loss selection
         optimizer = Adam(nn_model.parameters(), lr=lr)
+
+        if loss_mode not in ['mse', 'physics_informed']:
+            log_warn(f"Unknown loss_mode '{loss_mode}'. Falling back to 'mse'.")
+            loss_mode = 'mse'
+
+        log_info(f"Training iteration {i}/{num_of_iterations} with loss_mode={loss_mode}")
 
         nn_model.train()
         pbar = tqdm(total=num_of_epochs, desc=f"Iteration: {i}/{num_of_iterations}, Epoch:", ascii=True)
@@ -269,8 +379,19 @@ def nn_train(training_data, racecar_version, save_LUT_name, plot_model):
         for epoch in range(1, num_of_epochs+1):
             pbar.update(1)
             # Forward pass on training data
-            outputs = nn_model(X_train)
-            train_loss = criterion(outputs, y_train)
+            if loss_mode == 'physics_informed':
+                train_loss, loss_terms = compute_physics_informed_loss(
+                    nn_model=nn_model,
+                    X_train=X_train,
+                    y_train=y_train,
+                    model=model,
+                    dt=dt,
+                    lambda_cfg=physics_loss_cfg
+                )
+            else:
+                outputs = nn_model(X_train)
+                train_loss = nn.MSELoss()(outputs, y_train)
+
             optimizer.zero_grad()
             train_loss.backward()
             optimizer.step()
@@ -279,6 +400,12 @@ def nn_train(training_data, racecar_version, save_LUT_name, plot_model):
             if (epoch == num_of_epochs):
                 pbar.close()
                 nn_model.eval()
+                if loss_mode == 'physics_informed':
+                    log_info(
+                        f"Final epoch losses | total={float(train_loss.detach().cpu()):.6f}, "
+                        f"data={loss_terms['data']:.6f}, steady={loss_terms['steady']:.6f}, "
+                        f"symmetry={loss_terms['symmetry']:.6f}, smoothness={loss_terms['smoothness']:.6f}"
+                    )
                 v_x, v_y, omega, delta = simulated_data_gen(nn_model, model, avg_vel)   
                 C_Pf_identified, C_Pr_identified = solve_pacejka(model, v_x, v_y, omega, delta)
 

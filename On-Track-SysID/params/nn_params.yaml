@@ -3,3 +3,10 @@ num_of_iterations: 6 # number of iterations for training
 num_of_epochs: 100 # number of epochs for training at each iteration
 lr: 0.0005 # learning rate
 weight_decay: 0.0 # weight decay
+loss_mode: physics_informed # ablation switch: mse | physics_informed
+physics_loss:
+  lambda_steady: 0.1
+  lambda_symmetry: 0.05
+  lambda_smoothness: 0.0001
+  steady_vy_dot_threshold: 0.8
+  steady_omega_dot_threshold: 6.0
