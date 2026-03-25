@@ -1,4 +1,21 @@
+"""
+Residual NN for On-Track Pacejka SysID.
+Paper: arXiv:2411.17508v1 — Learning-Based On-Track SysID for Scaled Autonomous Racing.
+
+Supported architectures (set via nn_params.yaml -> nn_architecture):
+  baseline        : 4->8->2  MLP, 58 params  [paper original]
+  wide            : 4->16->2 MLP, 114 params [drop-in, weight_decay regularized]
+  physics_inputs  : 6->8->2  MLP, 74 params  [slip-angle augmented inputs, RECOMMENDED]
+  ensemble        : 3x(4->8->2), 174 params  [averaged ensemble, best noise robustness]
+
+NN role: intermediate residual corrector only.
+Final model artifact: Pacejka parameters [Bf,Cf,Df,Ef,Br,Cr,Dr,Er].
+Signal contract: inputs [vx,vy,omega,delta], outputs [e_vy,e_omega].
+Units: m/s, m/s, rad/s, rad -> m/s, rad/s.
+"""
+
 import os
+import time
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
@@ -6,9 +23,10 @@ import torch.nn as nn
 import yaml
 from scipy.signal import butter, filtfilt
 from torch.optim import Adam
+from torch.utils.data import TensorDataset, DataLoader
 from helpers.generate_predictions import generate_predictions
 from helpers.generate_inputs_errors import generate_inputs_errors
-from helpers.SimpleNN import SimpleNN
+from helpers.data_processing import compute_slip_angles
 from helpers.pacejka_formula import pacejka_formula
 from helpers.plot_results import plot_results
 from helpers.solve_pacejka import solve_pacejka
@@ -24,89 +42,58 @@ try:
 except ImportError:
     USE_AMENT = False
 
-# For logging (works with or without ROS2)
 import logging
 logger = logging.getLogger(__name__)
 
 def log_info(msg):
-    """Log info message - works with or without ROS2"""
     logger.info(msg)
     print(f"[INFO] {msg}")
 
 def log_warn(msg):
-    """Log warning message - works with or without ROS2"""
     logger.warning(msg)
     print(f"[WARN] {msg}")
 
 def get_package_path(package_name='on_track_sys_id'):
-    """Get package path using ament_index or fallback to relative path"""
     if USE_AMENT:
         try:
             return get_package_share_directory(package_name)
         except Exception:
             pass
-    
-    # Fallback: try to find the package directory relative to this file
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    # Go up from helpers to src, then to package root
     package_root = os.path.dirname(os.path.dirname(current_dir))
     if os.path.exists(os.path.join(package_root, 'params')):
         return package_root
-    
-    # Another fallback - check if we're in the src folder
     package_root = os.path.dirname(current_dir)
     if os.path.exists(os.path.join(package_root, 'params')):
         return package_root
-    
     return current_dir
 
 def filter_data(training_data, model):
-    """
-    Filter training data.
-
-    Applies a low-pass Butterworth filter to each column of the training data array.
-    """
     b, a = butter(N=3, Wn=0.1, btype='low')
-    training_data[:,0] = filtfilt(b, a, training_data[:,0]) # v_x, longitudinal velocity
-    training_data[:,1] = filtfilt(b, a, training_data[:,1]) # v_y, lateral velocity
-    training_data[:,2] = filtfilt(b, a, training_data[:,2]) # omega, yaw rate
-    training_data[:,3] = filtfilt(b, a, training_data[:,3]) # delta, steering angle
+    training_data[:,0] = filtfilt(b, a, training_data[:,0])
+    training_data[:,1] = filtfilt(b, a, training_data[:,1])
+    training_data[:,2] = filtfilt(b, a, training_data[:,2])
+    training_data[:,3] = filtfilt(b, a, training_data[:,3])
     training_data[:,3] = np.roll(training_data[:,3], 5)
     training_data = training_data[5:,:]
-    
-    # If the model is not a simulation, adjusts lateral velocity based on the car's rear axle length.
     if model["racecar_version"] != "SIM":
         training_data[:,1] = training_data[:,1] + model["l_r"] * training_data[:,2]
-    
     return training_data
 
 def negate_data(training_data):
-    """
-    Negate training data along the y-axis.
-
-    Negates the lateral velocity (v_y), yaw rate (omega) and steering angle (delta) components of the training data
-    to generate additional training samples with the opposite direction.
-    """
     negate_data = np.zeros((2*training_data.shape[0], training_data.shape[1]))
     negate_data[:,0] = np.append(training_data[:,0], training_data[:,0])
     negate_data[:,1] = np.append(training_data[:,1], -training_data[:,1])
     negate_data[:,2] = np.append(training_data[:,2], -training_data[:,2])
     negate_data[:,3] = np.append(training_data[:,3], -training_data[:,3])
-    
     return negate_data
 
 def process_data(training_data, model):
-    """
-    Process training data.
-    Filters and negates the training data to prepare it for training the neural network.
-    """
     filtered_data = filter_data(training_data, model)
     negated_data = negate_data(filtered_data)
-    
     return negated_data
 
 def torch_pacejka_force(params, alpha, F_z):
-    """Compute Pacejka lateral force with torch tensors."""
     B = float(params[0])
     C = float(params[1])
     D = float(params[2])
@@ -114,11 +101,7 @@ def torch_pacejka_force(params, alpha, F_z):
     return F_z * D * torch.sin(C * torch.atan(B * alpha - E * (B * alpha - torch.atan(B * alpha))))
 
 def compute_physics_informed_loss(nn_model, X_train, y_train, model, dt, lambda_cfg):
-    """
-    Composite physics-informed loss used for ablation against plain MSE.
-    """
     criterion = nn.MSELoss()
-
     outputs = nn_model(X_train)
     data_loss = criterion(outputs, y_train)
 
@@ -175,6 +158,9 @@ def compute_physics_informed_loss(nn_model, X_train, y_train, model, dt, lambda_
     X_mirror[:, 1] = -X_mirror[:, 1]
     X_mirror[:, 2] = -X_mirror[:, 2]
     X_mirror[:, 3] = -X_mirror[:, 3]
+    if X_mirror.shape[1] >= 6:
+        X_mirror[:, 4] = -X_mirror[:, 4]
+        X_mirror[:, 5] = -X_mirror[:, 5]
     outputs_mirror = nn_model(X_mirror)
     symmetry_loss = torch.mean((outputs + outputs_mirror) ** 2)
 
@@ -197,60 +183,302 @@ def compute_physics_informed_loss(nn_model, X_train, y_train, model, dt, lambda_
     }
     return total_loss, loss_terms
 
-def simulated_data_gen(nn_model, model, avg_vel):
-    C_Pf_model = model['C_Pf_model']
-    C_Pr_model = model['C_Pr_model']
+# --- ARCHITECTURES ---
+def init_weights(m):
+    if isinstance(m, nn.Linear):
+        nn.init.normal_(m.weight, mean=0.0, std=0.01)
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0.0)
 
-    l_f = model['l_f']
-    l_r = model['l_r']
-    l_wb = model['l_wb']
-    m = model['m']
-    I_z = model['I_z']
+class BaselineMLP(nn.Module):
+    def __init__(self, leaky_relu_slope):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(4, 8),
+            nn.LeakyReLU(leaky_relu_slope),
+            nn.Linear(8, 2)
+        )
+        self.apply(init_weights)
+    def forward(self, x):
+        return self.net(x)
+
+class WideMLP(nn.Module):
+    def __init__(self, leaky_relu_slope):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(4, 16),
+            nn.LeakyReLU(leaky_relu_slope),
+            nn.Linear(16, 2)
+        )
+        self.apply(init_weights)
+    def forward(self, x):
+        return self.net(x)
+
+class PhysicsInputMLP(nn.Module):
+    def __init__(self, leaky_relu_slope, lf, lr):
+        super().__init__()
+        self.lf = lf
+        self.lr = lr
+        self.net = nn.Sequential(
+            nn.Linear(6, 8),
+            nn.LeakyReLU(leaky_relu_slope),
+            nn.Linear(8, 2)
+        )
+        self.apply(init_weights)
+    def forward(self, x):
+        return self.net(x)
+
+class EnsembleMLP(nn.Module):
+    def __init__(self, leaky_relu_slope, n_members, base_seed):
+        super().__init__()
+        self.n_members = n_members
+        self.base_seed = base_seed
+        self.members = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(4, 8),
+                nn.LeakyReLU(leaky_relu_slope),
+                nn.Linear(8, 2)
+            ) for _ in range(n_members)
+        ])
+        self.apply(init_weights)
+    def forward(self, x):
+        preds = torch.stack([member(x) for member in self.members], dim=0)
+        return torch.mean(preds, dim=0)
+
+def build_model(params: dict) -> nn.Module:
+    arch = params.get('nn_architecture', 'baseline')
+    slope = params.get('leaky_relu_slope', 0.01)
+    if arch == 'baseline':
+        return BaselineMLP(slope)
+    elif arch == 'wide':
+        return WideMLP(slope)
+    elif arch == 'physics_inputs':
+        lf = params.get('physics_inputs_lf', 0.15795)
+        lr = params.get('physics_inputs_lr', 0.17205)
+        return PhysicsInputMLP(slope, lf, lr)
+    elif arch == 'ensemble':
+        n_members = params.get('ensemble_n_members', 3)
+        base_seed = params.get('ensemble_base_seed', 42)
+        return EnsembleMLP(slope, n_members, base_seed)
+    else:
+        raise ValueError(f"Unknown architecture: {arch}")
+
+def preprocess_inputs(X_raw, params: dict, vehicle_model=None) -> np.ndarray:
+    arch = params.get('nn_architecture', 'baseline')
+    
+    if isinstance(X_raw, torch.Tensor):
+        X_np = X_raw.detach().cpu().numpy()
+    else:
+        X_np = np.asarray(X_raw)
+        
+    if arch == 'physics_inputs':
+        if vehicle_model is not None:
+            lf = vehicle_model['l_f']
+            lr = vehicle_model['l_r']
+        else:
+            lf = params.get('physics_inputs_lf', 0.15795)
+            lr = params.get('physics_inputs_lr', 0.17205)
+        
+        if X_np.ndim == 1:
+            vx, vy, omega, delta = X_np[0], X_np[1], X_np[2], X_np[3]
+        else:
+            vx, vy, omega, delta = X_np[:, 0], X_np[:, 1], X_np[:, 2], X_np[:, 3]
+            
+        alpha_f, alpha_r = compute_slip_angles(vx, vy, omega, delta, lf, lr)
+        
+        if X_np.ndim == 1:
+            return np.concatenate([X_np, [alpha_f, alpha_r]])
+        else:
+            return np.column_stack([X_np, alpha_f, alpha_r])
+    else:
+        return X_np
+
+def train_residual_nn(X_train_raw, y_train, params: dict, vehicle_model=None, current_iteration=None, total_iterations=None) -> nn.Module:
+    model = build_model(params)
+    
+    X_train_np = preprocess_inputs(X_train_raw, params, vehicle_model)
+    X_t = torch.tensor(X_train_np, dtype=torch.float32)
+    y_t = torch.tensor(y_train, dtype=torch.float32) if not isinstance(y_train, torch.Tensor) else y_train.clone().detach().to(torch.float32)
+    
+    arch = params.get('nn_architecture', 'baseline')
+    epochs = params.get('epochs', 200)
+    lr = params.get('learning_rate', 0.0005)
+    batch_size = params.get('batch_size', -1)
+    weight_decay = 1e-4 if arch == 'wide' else params.get('weight_decay', 0.0)
+    early_stopping = params.get('early_stopping', False)
+    patience = params.get('early_stopping_patience', 20)
+    min_delta = params.get('early_stopping_min_delta', 1e-6)
+    log_per_iteration = params.get('log_per_iteration', True)
+    loss_mode = params.get('loss_mode', 'mse')
+    physics_loss_cfg = params.get('physics_loss', {})
+    
+    if arch == 'ensemble':
+        members_to_train = list(model.members)
+        seeds = [model.base_seed + i for i in range(model.n_members)]
+    else:
+        members_to_train = [model]
+        seeds = [42]
+    
+    for m_idx, member in enumerate(members_to_train):
+        torch.manual_seed(seeds[m_idx])
+        np.random.seed(seeds[m_idx])
+        optimizer = Adam(member.parameters(), lr=lr, weight_decay=weight_decay)
+        criterion = nn.MSELoss()
+        
+        best_loss = float('inf')
+        patience_counter = 0
+        
+        if batch_size > 0:
+            dataset = TensorDataset(X_t, y_t)
+            loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+            
+        desc_str = "Epochs:"
+        if current_iteration is not None and total_iterations is not None:
+            desc_str = f"Iter: {current_iteration}/{total_iterations}"
+        if arch == 'ensemble':
+            desc_str += f", Memb: {m_idx+1}/{len(members_to_train)}"
+        
+        pbar = tqdm(total=epochs, desc=desc_str, ascii=True)
+        
+        for epoch in range(1, epochs + 1):
+            pbar.update(1)
+            member.train()
+            epoch_loss = 0.0
+            
+            if batch_size > 0:
+                for xb, yb in loader:
+                    optimizer.zero_grad()
+                    if loss_mode == 'physics_informed' and vehicle_model is not None:
+                        loss, terms = compute_physics_informed_loss(member, xb, yb, vehicle_model, 0.02, physics_loss_cfg)
+                    else:
+                        out = member(xb)
+                        loss = criterion(out, yb)
+                    loss.backward()
+                    optimizer.step()
+                    epoch_loss += loss.item() * xb.size(0)
+                epoch_loss /= len(X_t)
+            else:
+                optimizer.zero_grad()
+                if loss_mode == 'physics_informed' and vehicle_model is not None:
+                    loss, terms = compute_physics_informed_loss(member, X_t, y_t, vehicle_model, 0.02, physics_loss_cfg)
+                else:
+                    out = member(X_t)
+                    loss = criterion(out, y_t)
+                loss.backward()
+                optimizer.step()
+                epoch_loss = loss.item()
+            
+            if early_stopping:
+                if best_loss - epoch_loss > min_delta:
+                    best_loss = epoch_loss
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                
+                if patience_counter >= patience:
+                    break
+                    
+        pbar.close()
+        
+        if log_per_iteration:
+            print(f"Arch: {arch} | Member {m_idx} | iter loss: {epoch_loss:.6f}")
+    
+    return model
+
+def simulated_data_gen(nn_model, vehicle_model, avg_vel, nn_params):
+    C_Pf_model = vehicle_model['C_Pf_model']
+    C_Pr_model = vehicle_model['C_Pr_model']
+
+    l_f = vehicle_model['l_f']
+    l_r = vehicle_model['l_r']
+    l_wb = vehicle_model['l_wb']
+    m = vehicle_model['m']
+    I_z = vehicle_model['I_z']
     F_zf = m * 9.81 * l_r / l_wb
     F_zr = m * 9.81 * l_f / l_wb
-    dt = 0.02 # 0.02 for 50 Hz
+    dt = 0.02
+    ode_solver = nn_params.get('ode_solver', 'euler').lower()
 
-    timesteps = 500 # Number of timesteps to simulate
+    timesteps = 500
     
-    v_y = np.zeros(timesteps)  # Initial lateral velocity
-    omega = np.zeros(timesteps)  # Initial yaw rate
-    alpha_f = np.zeros(timesteps)  # Initial lateral velocity
-    alpha_r = np.zeros(timesteps)  # Initial yaw rate
-    
-    v_x = np.ones(timesteps)*avg_vel  # Constant longitudinal velocity
+    v_y = np.zeros(timesteps)
+    omega = np.zeros(timesteps)
+    v_x = np.ones(timesteps)*avg_vel
     delta = np.linspace(0.0, 0.4, timesteps)
     
-    # Simulation loop
+    nn_model.eval()
+    
+    def dynamics(vy_val, omega_val, vx_val, delta_val):
+        alpha_f_val = -np.arctan((vy_val + omega_val * l_f) / vx_val) + delta_val
+        alpha_r_val = -np.arctan((vy_val - omega_val * l_r) / vx_val)
+
+        F_f_val = pacejka_formula(C_Pf_model, alpha_f_val, F_zf)
+        F_r_val = pacejka_formula(C_Pr_model, alpha_r_val, F_zr)
+        
+        v_y_dot = (1/m) * (F_r_val + F_f_val * np.cos(delta_val) - m * vx_val * omega_val)
+        omega_dot = (1/I_z) * (F_f_val * l_f * np.cos(delta_val) - F_r_val * l_r)
+        
+        return v_y_dot, omega_dot
+    
     for t in range(timesteps-1):
-        alpha_f[t] = -np.arctan((v_y[t] + omega[t] * l_f) / v_x[t]) + delta[t]
-        alpha_r[t] = -np.arctan((v_y[t] - omega[t] * l_r) / v_x[t])
-
-        # Calculate Pacejka lateral forces
-        F_f = pacejka_formula(C_Pf_model, alpha_f[t], F_zf)
-        F_r = pacejka_formula(C_Pr_model, alpha_r[t], F_zr)
-        input = torch.tensor([v_x[t], v_y[t], omega[t], delta[t]], dtype=torch.float32)
-
-        # Making predictions
+        vx_t = v_x[t]
+        vy_t = v_y[t]
+        omega_t = omega[t]
+        delta_t = delta[t]
+        
+        if ode_solver == 'euler':
+            v_y_dot, omega_dot = dynamics(vy_t, omega_t, vx_t, delta_t)
+            vy_next = vy_t + v_y_dot * dt
+            omega_next = omega_t + omega_dot * dt
+        elif ode_solver == 'rk2':
+            k1_vy, k1_omega = dynamics(vy_t, omega_t, vx_t, delta_t)
+            vy_mid = vy_t + k1_vy * dt
+            omega_mid = omega_t + k1_omega * dt
+            
+            delta_next = delta[t+1]
+            k2_vy, k2_omega = dynamics(vy_mid, omega_mid, vx_t, delta_next)
+            
+            vy_next = vy_t + (k1_vy + k2_vy) * dt / 2.0
+            omega_next = omega_t + (k1_omega + k2_omega) * dt / 2.0
+        elif ode_solver == 'rk4':
+            k1_vy, k1_omega = dynamics(vy_t, omega_t, vx_t, delta_t)
+            
+            delta_half = (delta[t] + delta[t+1])/2.0
+            vy_k2 = vy_t + k1_vy * dt / 2.0
+            omega_k2 = omega_t + k1_omega * dt / 2.0
+            k2_vy, k2_omega = dynamics(vy_k2, omega_k2, vx_t, delta_half)
+            
+            vy_k3 = vy_t + k2_vy * dt / 2.0
+            omega_k3 = omega_t + k2_omega * dt / 2.0
+            k3_vy, k3_omega = dynamics(vy_k3, omega_k3, vx_t, delta_half)
+            
+            delta_next = delta[t+1]
+            vy_k4 = vy_t + k3_vy * dt
+            omega_k4 = omega_t + k3_omega * dt
+            k4_vy, k4_omega = dynamics(vy_k4, omega_k4, vx_t, delta_next)
+            
+            vy_next = vy_t + (k1_vy + 2*k2_vy + 2*k3_vy + k4_vy) * dt / 6.0
+            omega_next = omega_t + (k1_omega + 2*k2_omega + 2*k3_omega + k4_omega) * dt / 6.0
+        else:
+            raise ValueError(f"Unknown ODE solver: {ode_solver}")
+            
+        input_raw = torch.tensor([vx_t, vy_t, omega_t, delta_t], dtype=torch.float32)
+        input_proc = preprocess_inputs(input_raw, nn_params, vehicle_model)
+        input_proc_t = torch.tensor(input_proc, dtype=torch.float32)
+        if input_proc_t.dim() == 1:
+            input_proc_t = input_proc_t.unsqueeze(0)
+            
         with torch.no_grad():
-            predicted_means = nn_model(input)
-        # Update vehicle states using the dynamics equations
-        v_y_dot = (1/m) * (F_r + F_f * np.cos(delta[t]) - m * v_x[t]* omega[t])
-        omega_dot = (1/I_z) * (F_f * l_f * np.cos(delta[t]) - F_r * l_r)
-
-        # Euler integration for the next state
-        v_y[t+1] = v_y[t] + v_y_dot * dt + predicted_means[0]
-        omega[t+1] = omega[t] + omega_dot * dt + predicted_means[1]
+            predicted_means = nn_model(input_proc_t)
+            if predicted_means.dim() == 2:
+                predicted_means = predicted_means.squeeze(0)
+                
+        v_y[t+1] = vy_next + predicted_means[0].item()
+        omega[t+1] = omega_next + predicted_means[1].item()
     
     return v_x, v_y, omega, delta
 
 def get_model_param(racecar_version):
-    """
-    Retrieve model parameters for a given racecar version.
-    Loads Pacejka tire and vehicle parameters from YAML files and constructs a model dictionary.
-    
-    Returns:
-        dict: Model parameters including tire and vehicle properties.
-    """
     package_path = get_package_path('on_track_sys_id')
     yaml_file = os.path.join(package_path, 'params', 'pacejka_params.yaml')
     with open(yaml_file, 'r') as file:
@@ -258,175 +486,90 @@ def get_model_param(racecar_version):
 
     solver_cfg = pacejka_params.get('pacejka_solver', {})
         
-    # Load vehicle parameters
     yaml_file = os.path.join(package_path, 'models', racecar_version, racecar_version + '_pacejka.txt')
     with open(yaml_file, 'r') as file:
         vehicle_params = yaml.safe_load(file)
 
-    # Construct model dictionary
     model = {
-    "C_Pf_model": pacejka_params['pacejka_model']['C_Pf_model'],
-    "C_Pr_model": pacejka_params['pacejka_model']['C_Pr_model'],
-    "C_Pf_ref": pacejka_params['pacejka_ref']['C_Pf_ref'],
-    "C_Pr_ref": pacejka_params['pacejka_ref']['C_Pr_ref'],
-    "pacejka_method": solver_cfg.get('method', 'trf'),
-    "pacejka_loss": solver_cfg.get('loss', 'soft_l1'),
-    "pacejka_f_scale": solver_cfg.get('f_scale', None),
-    "pacejka_x_scale": solver_cfg.get('x_scale', 'jac'),
-    "pacejka_max_nfev": solver_cfg.get('max_nfev', None),
-    "pacejka_num_starts": solver_cfg.get('num_starts', 1),
-    "pacejka_start_jitter": solver_cfg.get('start_jitter', 0.05),
-    "pacejka_seed": solver_cfg.get('seed', None),
-    "m": vehicle_params['m'],
-    "I_z": vehicle_params['I_z'],
-    "l_f": vehicle_params['l_f'],
-    "l_r": vehicle_params['l_r'],
-    "l_wb": vehicle_params['l_wb'],
-    "racecar_version": racecar_version
+        "C_Pf_model": pacejka_params['pacejka_model']['C_Pf_model'],
+        "C_Pr_model": pacejka_params['pacejka_model']['C_Pr_model'],
+        "C_Pf_ref": pacejka_params['pacejka_ref']['C_Pf_ref'],
+        "C_Pr_ref": pacejka_params['pacejka_ref']['C_Pr_ref'],
+        "pacejka_method": solver_cfg.get('method', 'trf'),
+        "pacejka_loss": solver_cfg.get('loss', 'soft_l1'),
+        "pacejka_f_scale": solver_cfg.get('f_scale', None),
+        "pacejka_x_scale": solver_cfg.get('x_scale', 'jac'),
+        "pacejka_max_nfev": solver_cfg.get('max_nfev', None),
+        "pacejka_num_starts": solver_cfg.get('num_starts', 1),
+        "pacejka_start_jitter": solver_cfg.get('start_jitter', 0.05),
+        "pacejka_seed": solver_cfg.get('seed', None),
+        "m": vehicle_params['m'],
+        "I_z": vehicle_params['I_z'],
+        "l_f": vehicle_params['l_f'],
+        "l_r": vehicle_params['l_r'],
+        "l_wb": vehicle_params['l_wb'],
+        "racecar_version": racecar_version
     }
     return model
 
 def get_nn_params():
-    """
-    Retrieve neural network parameters.
-
-    Loads neural network parameters from a YAML file.
-
-    Returns:
-        dict: Neural network parameters.
-    """
     package_path = get_package_path('on_track_sys_id')
     yaml_file = os.path.join(package_path, 'params', 'nn_params.yaml')
     with open(yaml_file, 'r') as file:
         nn_params = yaml.safe_load(file)
-        
     return nn_params
 
 def generate_training_set(training_data, model):
-    """
-    Generate training set for neural network training.
-
-    Predicts the next step's lateral velocity and yaw rate using the vehicle model.
-    Constructs input tensors and error tensors for training the neural network.
-
-    Args:
-        training_data (numpy.ndarray): Input training data with shape (n_samples, n_features).
-        model (dict): Dictionary containing vehicle model parameters.
-
-    Returns:
-        tuple: Tuple containing input tensor and target error tensor for training.
-    """
-    
-    # Generate predictions for the next step's lateral velocity and yaw rate
     v_y_next_pred, omega_next_pred = generate_predictions(training_data, model)
-    
-    # Generate input tensors and error tensors for training
     X_train, y_train = generate_inputs_errors(v_y_next_pred, omega_next_pred, training_data)
-    
     return X_train, y_train
 
 def nn_train(training_data, racecar_version, save_LUT_name, plot_model):
-    """
-    Train the neural network.
-    
-    Trains the neural network using the provided training data and model parameters.
-    After training, it simulates the car behavior with the trained model and identifies
-    Pacejka tire model coefficients. Then it iteratively refines the model and repeats
-    the training process. Finally, it saves the trained model and generates a
-    Look-Up Table (LUT) for the controller. 
-
-    """
-    # Get model and neural network parameters
     model = get_model_param(racecar_version)
     nn_params = get_nn_params()
-    num_of_epochs = nn_params['num_of_epochs']
-    lr = nn_params['lr']
-    weight_decay = nn_params['weight_decay']
-    num_of_iterations = nn_params['num_of_iterations']
-    loss_mode = nn_params.get('loss_mode', 'mse')
-    physics_loss_cfg = nn_params.get('physics_loss', {})
-    dt = 0.02
-
+    
+    num_of_iterations = 6
+    arch = nn_params.get('nn_architecture', 'baseline')
+    
     training_data = process_data(training_data, model)   
      
-    avg_vel = np.mean(training_data[:,0]) # Defining average velocity for the simulation, NN will have more accurate predictions
-    avg_vel = np.clip(avg_vel, 2.0, 4) # Clip average velocity to be within a reasonable range (2.75 m/s to 4 m/s)
+    avg_vel = np.mean(training_data[:,0])
+    avg_vel = np.clip(avg_vel, 2.0, 4)
     
-    # Iterative training loop
     for i in range(1, num_of_iterations+1):
-        if i == num_of_iterations: # Determine if it's the last iteration to enable plotting (if plot_model is False)
+        if i == num_of_iterations:
             plot_model = True
             
-        # Process training data and generate inputs and targets
         X_train, y_train = generate_training_set(training_data, model)
         
-        # Initialize the network
-        nn_model = SimpleNN(weight_decay = weight_decay)
+        log_info(f"Training iteration {i}/{num_of_iterations} | Architecture: {arch} | Loss Mode: {nn_params.get('loss_mode', 'mse')}")
+        
+        t0 = time.perf_counter()
+        nn_model = train_residual_nn(X_train, y_train, nn_params, vehicle_model=model, current_iteration=i, total_iterations=num_of_iterations)
+        t1 = time.perf_counter()
+        log_info(f"Training completed in {t1 - t0:.3f} seconds.")
+        
+        v_x, v_y, omega, delta = simulated_data_gen(nn_model, model, avg_vel, nn_params)
+        C_Pf_identified, C_Pr_identified = solve_pacejka(model, v_x, v_y, omega, delta)
 
-        # Optimizer and ablation-ready loss selection
-        optimizer = Adam(nn_model.parameters(), lr=lr)
-
-        if loss_mode not in ['mse', 'physics_informed']:
-            log_warn(f"Unknown loss_mode '{loss_mode}'. Falling back to 'mse'.")
-            loss_mode = 'mse'
-
-        log_info(f"Training iteration {i}/{num_of_iterations} with loss_mode={loss_mode}")
-
-        nn_model.train()
-        pbar = tqdm(total=num_of_epochs, desc=f"Iteration: {i}/{num_of_iterations}, Epoch:", ascii=True)
-
-        # Training loop
-        for epoch in range(1, num_of_epochs+1):
-            pbar.update(1)
-            # Forward pass on training data
-            if loss_mode == 'physics_informed':
-                train_loss, loss_terms = compute_physics_informed_loss(
-                    nn_model=nn_model,
-                    X_train=X_train,
-                    y_train=y_train,
-                    model=model,
-                    dt=dt,
-                    lambda_cfg=physics_loss_cfg
-                )
-            else:
-                outputs = nn_model(X_train)
-                train_loss = nn.MSELoss()(outputs, y_train)
-
-            optimizer.zero_grad()
-            train_loss.backward()
-            optimizer.step()
+        # Print the identified Pacejka coefficients clearly using ROS logger
+        log_info(f"=========== ITERATION {i} RESULTS ===========")
+        log_info(f"C_Pf_identified: {C_Pf_identified}")
+        log_info(f"C_Pr_identified: {C_Pr_identified}")
+        log_info(f"==========================================")
+        
+        if plot_model:
+            log_warn("Close the plot window (press Q) to continue... ")
+            plot_results(model, v_x, v_y, omega, delta, C_Pf_identified, C_Pr_identified, i)   
             
-            # If it's the last epoch, simulate car behavior and identify model coefficients
-            if (epoch == num_of_epochs):
-                pbar.close()
-                nn_model.eval()
-                if loss_mode == 'physics_informed':
-                    log_info(
-                        f"Final epoch losses | total={float(train_loss.detach().cpu()):.6f}, "
-                        f"data={loss_terms['data']:.6f}, steady={loss_terms['steady']:.6f}, "
-                        f"symmetry={loss_terms['symmetry']:.6f}, smoothness={loss_terms['smoothness']:.6f}"
-                    )
-                v_x, v_y, omega, delta = simulated_data_gen(nn_model, model, avg_vel)   
-                C_Pf_identified, C_Pr_identified = solve_pacejka(model, v_x, v_y, omega, delta)
-
-                print(f"C_Pf_identified at Iteration {i}:", C_Pf_identified)
-                print(f"C_Pr_identified at Iteration {i}:", C_Pr_identified)
+        model['C_Pf_model'] = C_Pf_identified
+        model['C_Pr_model'] = C_Pr_identified
                 
-                if plot_model:
-                    log_warn("Close the plot window (press Q) to continue... ")
-                    plot_results(model, v_x, v_y, omega, delta, C_Pf_identified, C_Pr_identified, i)   
-                    
-                # Update model with identified coefficients
-                model['C_Pf_model'] = C_Pf_identified
-                model['C_Pr_model'] = C_Pr_identified
-                
-    # Save the trained model with identified coefficients
     model_name = racecar_version +"_pacejka"
     car_model = get_dotdict(model_name)
     car_model.C_Pf = C_Pf_identified
     car_model.C_Pr = C_Pr_identified
     save(car_model)
     
-    # Generate Look-Up Table (LUT) with the updated model
     log_info("LUT is being generated...")
     LookupGenerator(racecar_version, save_LUT_name).run_generator()

@@ -1,12 +1,36 @@
-data_collection_duration: 30 # seconds
-num_of_iterations: 6 # number of iterations for training
-num_of_epochs: 100 # number of epochs for training at each iteration
-lr: 0.0005 # learning rate
-weight_decay: 0.0 # weight decay
-loss_mode: physics_informed # ablation switch: mse | physics_informed
+data_collection_duration: 30
+nn_architecture: "physics_inputs"   # options: baseline | wide | physics_inputs | ensemble
+
+ode_solver: "rk4" # options: euler | rk2 | rk4
+
+loss_mode: physics_informed # options: mse | physics_informed
 physics_loss:
   lambda_steady: 0.1
   lambda_symmetry: 0.05
-  lambda_smoothness: 0.0001
+  lambda_smoothness: 1e-4
   steady_vy_dot_threshold: 0.8
   steady_omega_dot_threshold: 6.0
+
+# Shared hyperparameters (apply to all architectures)
+learning_rate: 0.0005
+epochs: 200
+batch_size: -1          # -1 = full batch (entire dataset), positive int = mini-batch
+weight_decay: 0.0       # global default; overridden to 1e-4 for "wide" internally
+leaky_relu_slope: 0.01
+
+# Ensemble-specific
+ensemble_n_members: 3
+ensemble_base_seed: 42
+
+# Physics-inputs-specific
+physics_inputs_lf: 0.15795   # meters — MUST match pacejka_params.yaml lf value
+physics_inputs_lr: 0.17205   # meters — MUST match pacejka_params.yaml lr value
+
+# Training behavior
+early_stopping: false          # set true to enable early stopping
+early_stopping_patience: 20    # epochs without improvement before stop
+early_stopping_min_delta: 1e-6
+
+# Logging
+log_per_iteration: true        # print loss per iteration to ROS logger
+save_model_on_train: true      # save .pt file after each iteration
