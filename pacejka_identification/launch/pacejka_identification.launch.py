@@ -1,3 +1,6 @@
+import os
+from ament_index_python.packages import get_package_share_directory
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
@@ -7,7 +10,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
 
     topic_arg = DeclareLaunchArgument(
-        'tire_forces_topic', default_value='/tire_forces',
+        'tire_forces_topic', default_value='/carmaker/tire_forces',
         description='Topic publishing hellocm_msgs/TireForcesArray',
     )
     duration_arg = DeclareLaunchArgument(
@@ -19,7 +22,7 @@ def generate_launch_description():
         description='Min belt_velocity to accept a sample (m/s)',
     )
     method_arg = DeclareLaunchArgument(
-        'method', default_value='dual',
+        'method', default_value='adaptive_de_trust_region',
         description='Identification method: trust_region | differential_evolution | dual',
     )
     formulas_arg = DeclareLaunchArgument(
@@ -28,7 +31,7 @@ def generate_launch_description():
         description='Pacejka formulas to identify',
     )
     grouping_arg = DeclareLaunchArgument(
-        'axle_grouping', default_value='per_axle',
+        'axle_grouping', default_value='per_wheel',
         description='per_wheel | per_axle | combined',
     )
     csv_path_arg = DeclareLaunchArgument(
@@ -40,20 +43,29 @@ def generate_launch_description():
         description='YAML output path (empty = auto-generate)',
     )
 
+    config_file = os.path.join(
+        get_package_share_directory('pacejka_identification'),
+        'config',
+        'identification_config.yaml'
+    )
+
     node = Node(
         package='pacejka_identification',
         executable='identification_node',
         name='pacejka_identification_node',
         output='screen',
-        parameters=[{
-            'tire_forces_topic': LaunchConfiguration('tire_forces_topic'),
-            'duration_seconds': LaunchConfiguration('duration_seconds'),
-            'min_velocity': LaunchConfiguration('min_velocity'),
-            'method': LaunchConfiguration('method'),
-            'axle_grouping': LaunchConfiguration('axle_grouping'),
-            'csv_path': LaunchConfiguration('csv_path'),
-            'yaml_path': LaunchConfiguration('yaml_path'),
-        }],
+        parameters=[
+            config_file,
+            {
+                'tire_forces_topic': LaunchConfiguration('tire_forces_topic'),
+                'data_collection.duration_seconds': LaunchConfiguration('duration_seconds'),
+                'data_collection.min_velocity': LaunchConfiguration('min_velocity'),
+                'identification.method': LaunchConfiguration('method'),
+                'identification.axle_grouping': LaunchConfiguration('axle_grouping'),
+                'output.csv_path': LaunchConfiguration('csv_path'),
+                'output.yaml_path': LaunchConfiguration('yaml_path'),
+            }
+        ],
     )
 
     return LaunchDescription([

@@ -44,99 +44,99 @@ class IdentificationNode(Node):
 
         # ── Declare parameters ───────────────────────────────────────────
         self.declare_parameter('tire_forces_topic', '/tire_forces')
-        self.declare_parameter('duration_seconds', 60)
-        self.declare_parameter('min_velocity', 0.5)
-        self.declare_parameter('require_on_road', True)
-        self.declare_parameter('min_fz_threshold', 50.0)
+        self.declare_parameter('data_collection.duration_seconds', 60)
+        self.declare_parameter('data_collection.min_velocity', 0.5)
+        self.declare_parameter('data_collection.require_on_road', True)
+        self.declare_parameter('data_collection.min_fz_threshold', 50.0)
 
-        self.declare_parameter('method', 'dual')
-        self.declare_parameter('identification_mode', 'sequential')
-        self.declare_parameter('formulas', ['lateral_fy', 'longitudinal_fx', 'self_aligning_mz'])
-        self.declare_parameter('axle_grouping', 'per_axle')
-        self.declare_parameter('initial_guess_fy', [10.0, 1.5, 1.0, 0.5])
-        self.declare_parameter('initial_guess_fx', [10.0, 1.65, 1.0, 0.5])
-        self.declare_parameter('initial_guess_mz', [10.0, 1.5, 0.1, 0.5])
-        self.declare_parameter('lower_bounds', [0.1, 0.1, 0.01, -2.0])
-        self.declare_parameter('upper_bounds', [50.0, 5.0, 5.0, 2.0])
+        self.declare_parameter('identification.method', 'dual')
+        self.declare_parameter('identification.identification_mode', 'sequential')
+        self.declare_parameter('identification.formulas', ['lateral_fy', 'longitudinal_fx', 'self_aligning_mz'])
+        self.declare_parameter('identification.axle_grouping', 'per_axle')
+        self.declare_parameter('identification.initial_guess_fy', [10.0, 1.5, 1.0, 0.5])
+        self.declare_parameter('identification.initial_guess_fx', [10.0, 1.65, 1.0, 0.5])
+        self.declare_parameter('identification.initial_guess_mz', [10.0, 1.5, 0.1, 0.5])
+        self.declare_parameter('identification.lower_bounds', [0.1, 0.1, 0.01, -2.0])
+        self.declare_parameter('identification.upper_bounds', [50.0, 5.0, 5.0, 2.0])
 
-        self.declare_parameter('csv_export', True)
-        self.declare_parameter('csv_path', '')
-        self.declare_parameter('yaml_export', True)
-        self.declare_parameter('yaml_path', '')
+        self.declare_parameter('output.csv_export', True)
+        self.declare_parameter('output.csv_path', '')
+        self.declare_parameter('output.yaml_export', True)
+        self.declare_parameter('output.yaml_path', '')
 
         # Algorithm hyperparameters
-        self.declare_parameter('tr_max_nfev', 10000)
+        self.declare_parameter('trust_region.max_nfev', 10000)
 
-        self.declare_parameter('de_maxiter', 1000)
-        self.declare_parameter('de_tol', 1e-12)
-        self.declare_parameter('de_seed', 42)
-        self.declare_parameter('de_polish', True)
+        self.declare_parameter('differential_evolution.maxiter', 1000)
+        self.declare_parameter('differential_evolution.tol', 1e-12)
+        self.declare_parameter('differential_evolution.seed', 42)
+        self.declare_parameter('differential_evolution.polish', True)
 
-        self.declare_parameter('ga_pop_size', 120)
-        self.declare_parameter('ga_n_generations', 400)
-        self.declare_parameter('ga_crossover_rate', 0.85)
-        self.declare_parameter('ga_mutation_rate', 0.15)
-        self.declare_parameter('ga_mutation_scale', 0.10)
-        self.declare_parameter('ga_elite_frac', 0.05)
-        self.declare_parameter('ga_tournament_size', 3)
-        self.declare_parameter('ga_seed', 42)
+        self.declare_parameter('genetic_algorithm.pop_size', 120)
+        self.declare_parameter('genetic_algorithm.n_generations', 400)
+        self.declare_parameter('genetic_algorithm.crossover_rate', 0.85)
+        self.declare_parameter('genetic_algorithm.mutation_rate', 0.15)
+        self.declare_parameter('genetic_algorithm.mutation_scale', 0.10)
+        self.declare_parameter('genetic_algorithm.elite_frac', 0.05)
+        self.declare_parameter('genetic_algorithm.tournament_size', 3)
+        self.declare_parameter('genetic_algorithm.seed', 42)
 
-        self.declare_parameter('jade_pop_size', 100)
-        self.declare_parameter('jade_n_generations', 400)
-        self.declare_parameter('jade_p', 0.1)
-        self.declare_parameter('jade_c', 0.1)
-        self.declare_parameter('jade_archive_ratio', 1.0)
-        self.declare_parameter('jade_seed', 42)
+        self.declare_parameter('adaptive_de.pop_size', 100)
+        self.declare_parameter('adaptive_de.n_generations', 400)
+        self.declare_parameter('adaptive_de.p', 0.1)
+        self.declare_parameter('adaptive_de.c', 0.1)
+        self.declare_parameter('adaptive_de.archive_ratio', 1.0)
+        self.declare_parameter('adaptive_de.seed', 42)
 
         # ── Read parameters ──────────────────────────────────────────────
         self.topic = self.get_parameter('tire_forces_topic').value
-        self.duration = int(self.get_parameter('duration_seconds').value)
-        self.min_vel = float(self.get_parameter('min_velocity').value)
-        self.require_on_road = bool(self.get_parameter('require_on_road').value)
-        self.min_fz = float(self.get_parameter('min_fz_threshold').value)
+        self.duration = int(self.get_parameter('data_collection.duration_seconds').value)
+        self.min_vel = float(self.get_parameter('data_collection.min_velocity').value)
+        self.require_on_road = bool(self.get_parameter('data_collection.require_on_road').value)
+        self.min_fz = float(self.get_parameter('data_collection.min_fz_threshold').value)
 
-        self.method = str(self.get_parameter('method').value)
-        self.id_mode = str(self.get_parameter('identification_mode').value)
-        self.formulas = list(self.get_parameter('formulas').value)
-        self.axle_grouping = str(self.get_parameter('axle_grouping').value)
-        self.ig_fy = [float(v) for v in self.get_parameter('initial_guess_fy').value]
-        self.ig_fx = [float(v) for v in self.get_parameter('initial_guess_fx').value]
-        self.ig_mz = [float(v) for v in self.get_parameter('initial_guess_mz').value]
-        self.lb = [float(v) for v in self.get_parameter('lower_bounds').value]
-        self.ub = [float(v) for v in self.get_parameter('upper_bounds').value]
+        self.method = str(self.get_parameter('identification.method').value)
+        self.id_mode = str(self.get_parameter('identification.identification_mode').value)
+        self.formulas = list(self.get_parameter('identification.formulas').value)
+        self.axle_grouping = str(self.get_parameter('identification.axle_grouping').value)
+        self.ig_fy = [float(v) for v in self.get_parameter('identification.initial_guess_fy').value]
+        self.ig_fx = [float(v) for v in self.get_parameter('identification.initial_guess_fx').value]
+        self.ig_mz = [float(v) for v in self.get_parameter('identification.initial_guess_mz').value]
+        self.lb = [float(v) for v in self.get_parameter('identification.lower_bounds').value]
+        self.ub = [float(v) for v in self.get_parameter('identification.upper_bounds').value]
 
-        self.csv_export = bool(self.get_parameter('csv_export').value)
-        self.csv_path = str(self.get_parameter('csv_path').value)
-        self.yaml_export = bool(self.get_parameter('yaml_export').value)
-        self.yaml_path = str(self.get_parameter('yaml_path').value)
+        self.csv_export = bool(self.get_parameter('output.csv_export').value)
+        self.csv_path = str(self.get_parameter('output.csv_path').value)
+        self.yaml_export = bool(self.get_parameter('output.yaml_export').value)
+        self.yaml_path = str(self.get_parameter('output.yaml_path').value)
 
         # Read algorithm hyperparameters
         self.tr_params = {
-            'max_nfev': int(self.get_parameter('tr_max_nfev').value),
+            'max_nfev': int(self.get_parameter('trust_region.max_nfev').value),
         }
         self.de_params = {
-            'maxiter': int(self.get_parameter('de_maxiter').value),
-            'tol': float(self.get_parameter('de_tol').value),
-            'seed': int(self.get_parameter('de_seed').value),
-            'polish': bool(self.get_parameter('de_polish').value),
+            'maxiter': int(self.get_parameter('differential_evolution.maxiter').value),
+            'tol': float(self.get_parameter('differential_evolution.tol').value),
+            'seed': int(self.get_parameter('differential_evolution.seed').value),
+            'polish': bool(self.get_parameter('differential_evolution.polish').value),
         }
         self.ga_params = {
-            'pop_size': int(self.get_parameter('ga_pop_size').value),
-            'n_generations': int(self.get_parameter('ga_n_generations').value),
-            'crossover_rate': float(self.get_parameter('ga_crossover_rate').value),
-            'mutation_rate': float(self.get_parameter('ga_mutation_rate').value),
-            'mutation_scale': float(self.get_parameter('ga_mutation_scale').value),
-            'elite_frac': float(self.get_parameter('ga_elite_frac').value),
-            'tournament_size': int(self.get_parameter('ga_tournament_size').value),
-            'seed': int(self.get_parameter('ga_seed').value),
+            'pop_size': int(self.get_parameter('genetic_algorithm.pop_size').value),
+            'n_generations': int(self.get_parameter('genetic_algorithm.n_generations').value),
+            'crossover_rate': float(self.get_parameter('genetic_algorithm.crossover_rate').value),
+            'mutation_rate': float(self.get_parameter('genetic_algorithm.mutation_rate').value),
+            'mutation_scale': float(self.get_parameter('genetic_algorithm.mutation_scale').value),
+            'elite_frac': float(self.get_parameter('genetic_algorithm.elite_frac').value),
+            'tournament_size': int(self.get_parameter('genetic_algorithm.tournament_size').value),
+            'seed': int(self.get_parameter('genetic_algorithm.seed').value),
         }
         self.jade_params = {
-            'pop_size': int(self.get_parameter('jade_pop_size').value),
-            'n_generations': int(self.get_parameter('jade_n_generations').value),
-            'p': float(self.get_parameter('jade_p').value),
-            'c': float(self.get_parameter('jade_c').value),
-            'archive_ratio': float(self.get_parameter('jade_archive_ratio').value),
-            'seed': int(self.get_parameter('jade_seed').value),
+            'pop_size': int(self.get_parameter('adaptive_de.pop_size').value),
+            'n_generations': int(self.get_parameter('adaptive_de.n_generations').value),
+            'p': float(self.get_parameter('adaptive_de.p').value),
+            'c': float(self.get_parameter('adaptive_de.c').value),
+            'archive_ratio': float(self.get_parameter('adaptive_de.archive_ratio').value),
+            'seed': int(self.get_parameter('adaptive_de.seed').value),
         }
 
         # ── Data storage ─────────────────────────────────────────────────
