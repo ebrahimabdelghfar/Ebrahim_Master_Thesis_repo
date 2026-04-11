@@ -22,8 +22,8 @@ def generate_launch_description():
         description='Min belt_velocity to accept a sample (m/s)',
     )
     method_arg = DeclareLaunchArgument(
-        'method', default_value='adaptive_de_trust_region',
-        description='Identification method: trust_region | differential_evolution | dual',
+        'method', default_value='dual',
+        description='Identification method: trust_region | differential_evolution | dual | genetic_algorithm | ga_trust_region | adaptive_de | adaptive_de_trust_region',
     )
     formulas_arg = DeclareLaunchArgument(
         'formulas',

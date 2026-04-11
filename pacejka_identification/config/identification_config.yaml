@@ -25,7 +25,7 @@
       # sequential   (recommended) → fixes C to physics-based values, fits B, D, E
       #                               breaks known parameter degeneracy
       # simultaneous → fits all [B, C, D, E] at once (B/C/E may be correlated)
-      identification_mode: "simultaneous"
+      identification_mode: "sequential"
 
       # Which Pacejka relationships to identify
       formulas:
