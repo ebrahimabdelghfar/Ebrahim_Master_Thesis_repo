@@ -5,7 +5,7 @@
   <version>0.1.0</version>
   <description>ROS2 package for direct Pacejka Magic Formula coefficient identification using ground-truth tire force data from CarMaker.</description>
 
-  <maintainer email="ebrahim@local">Ebrahim</maintainer>
+  <maintainer email="ebrahim@local.com">Ebrahim</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_python</buildtool_depend>
