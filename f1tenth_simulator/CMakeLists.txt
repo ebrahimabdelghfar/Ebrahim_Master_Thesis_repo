@@ -131,7 +131,7 @@ install(DIRECTORY config/
 
 # Install scripts
 install(PROGRAMS 
-  scripts/spawn_publisher.py
+  scripts/track_publisher.py
   scripts/update_available_tracks.py
   DESTINATION lib/${PROJECT_NAME}
 )

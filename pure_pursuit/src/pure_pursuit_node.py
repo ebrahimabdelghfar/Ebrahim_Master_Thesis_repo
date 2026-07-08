@@ -15,6 +15,8 @@ from tf_transformations import euler_from_quaternion, quaternion_from_euler
 from geometry_msgs.msg import PoseStamped, Point, Twist, Quaternion, Pose, Vector3
 from ackermann_msgs.msg import AckermannDriveStamped, AckermannDrive
 from ament_index_python.packages import get_package_share_directory
+from f1tenth_msgs.msg import WaypointArray
+from rclpy.qos import QoSProfile, DurabilityPolicy
 
 
 class PurePursuitNode(Node):
@@ -37,26 +39,29 @@ class PurePursuitNode(Node):
         self.freqs = 50
         
         # Declare parameters
-        self.declare_parameter('waypoint_file', 'driving_style2.csv')
         self.declare_parameter('lookahead_distance', 1.5)
         self.declare_parameter('wheelbase', 0.3302)
-        self.declare_parameter('desired_velocity', 1.0)
-        self.declare_parameter('show_animation', True)
+        self.declare_parameter('kp_vel', 2.0)
+        self.declare_parameter('ki_vel', 0.05)
+        self.declare_parameter('kd_vel', 0.1)
+        self.declare_parameter('show_animation', False)
         self.declare_parameter('odom_topic', '/odom')
         self.declare_parameter('drive_topic', '/drive')
+        self.declare_parameter('waypoint_topic', '/raceline_waypoints')
         
         # Get parameters
-        waypoint_file = self.get_parameter('waypoint_file').value
         self.LOOKAHEAD = self.get_parameter('lookahead_distance').value
         self.WB = self.get_parameter('wheelbase').value
-        self.desired_velocity = self.get_parameter('desired_velocity').value
+        self.kp_vel = self.get_parameter('kp_vel').value
+        self.ki_vel = self.get_parameter('ki_vel').value
+        self.kd_vel = self.get_parameter('kd_vel').value
         self.show_animation = self.get_parameter('show_animation').value
         odom_topic = self.get_parameter('odom_topic').value
         drive_topic = self.get_parameter('drive_topic').value
+        waypoint_topic = self.get_parameter('waypoint_topic').value
         
-        # Load waypoints
-        self.waypoints = self.read_points(waypoint_file)
-        self.get_logger().info(f'Loaded {len(self.waypoints)} waypoints from {waypoint_file}')
+        self.waypoints = np.array([])
+        self.integral_error = 0.0
         
         # Create subscriber and publisher
         self.odom_sub = self.create_subscription(
@@ -64,6 +69,18 @@ class PurePursuitNode(Node):
             odom_topic,
             self.pose_callback,
             1
+        )
+        
+        # QoS for latched topic
+        latched_qos = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL
+        )
+        self.waypoint_sub = self.create_subscription(
+            WaypointArray,
+            waypoint_topic,
+            self.waypoint_callback,
+            latched_qos
         )
         
         self.ackermann_pub = self.create_publisher(
@@ -78,27 +95,20 @@ class PurePursuitNode(Node):
         
         self.get_logger().info('Pure Pursuit Node initialized')
 
-    def read_points(self, file_name):
+    def waypoint_callback(self, msg):
         """
-        Load waypoints from CSV file
+        Callback to receive raceline waypoints
         """
-        try:
-            # First try to find in package share directory
-            pkg_share = get_package_share_directory('pure_pursuit')
-            file_path = os.path.join(pkg_share, file_name)
-            if not os.path.exists(file_path):
-                # Try current directory
-                file_path = file_name
-            if not os.path.exists(file_path):
-                # Try parent directory
-                file_path = os.path.join('..', file_name)
+        if len(msg.waypoints) == 0:
+            return
             
-            with open(file_path) as f:
-                path_points = np.loadtxt(file_path, delimiter=',')
-            return path_points
-        except Exception as e:
-            self.get_logger().error(f'Failed to load waypoints: {e}')
-            return np.array([[0, 0]])
+        # Convert WaypointArray into a numpy array: [x, y, vx, ax]
+        waypoints_list = []
+        for wp in msg.waypoints:
+            waypoints_list.append([wp.x_m, wp.y_m, wp.vx_mps, wp.ax_mps2])
+            
+        self.waypoints = np.array(waypoints_list)
+        self.get_logger().info(f'Received {len(self.waypoints)} waypoints')
 
     def pose_callback(self, data):
         """
@@ -140,7 +150,7 @@ class PurePursuitNode(Node):
         curr_xy = np.array([self.xc, self.yc])
         waypoints_xy = self.waypoints[:, :2]
         nearest_idx = np.argmin(np.sum((curr_xy - waypoints_xy)**2, axis=1))
-        return nearest_idx - 1
+        return nearest_idx
 
     def idx_close_to_lookahead(self, idx):
         """
@@ -148,7 +158,7 @@ class PurePursuitNode(Node):
         Wraps around to the beginning of waypoints when reaching the end
         """
         max_iterations = len(self.waypoints)  # Prevent infinite loop
-        iterations = 5
+        iterations = 0
         while self.find_distance_index_based(idx) < self.LOOKAHEAD:
             idx += 1
             if idx >= len(self.waypoints):
@@ -186,19 +196,34 @@ class PurePursuitNode(Node):
         target_x = float(self.waypoints[idx_near_lookahead][0])
         target_y = float(self.waypoints[idx_near_lookahead][1])
         
-        # Velocity PID controller
-        kp = 1.0
-        kd = 0
-        ki = 0
-        dt = 1.0 / self.freqs
-        v_desired = self.desired_velocity
-        v_error = v_desired - self.vel
+        target_vx = float(self.waypoints[idx_near_lookahead][2])
+        target_ax = float(self.waypoints[idx_near_lookahead][3])
         
-        # PID controller for velocity
-        P_vel = kp * v_error
-        I_vel = ki * v_error * dt
-        D_vel = kd * (v_error - self.v_prev_error) / dt
-        velocity = P_vel + I_vel + D_vel
+        # Velocity PID controller
+        # The simulator only respects drive.speed (not drive.acceleration).
+        # It uses its own internal P controller to reach the commanded speed.
+        # Therefore, PID output must be used to compute the speed setpoint.
+        dt = 1.0 / self.freqs
+        v_error = target_vx - self.vel
+        self.integral_error += v_error * dt
+        
+        # Anti-windup
+        if self.integral_error > 5.0:
+            self.integral_error = 5.0
+        elif self.integral_error < -5.0:
+            self.integral_error = -5.0
+            
+        P_vel = self.kp_vel * v_error
+        I_vel = self.ki_vel * self.integral_error
+        D_vel = self.kd_vel * (v_error - self.v_prev_error) / dt
+        
+        # PID output acts as a velocity correction on top of current velocity
+        pid_output = P_vel + I_vel + D_vel
+        # Add feedforward from raceline acceleration
+        commanded_speed = self.vel + (pid_output + target_ax) * dt
+        # Clamp to non-negative speed
+        commanded_speed = max(0.0, commanded_speed)
+        
         self.v_prev_error = v_error
 
         """
@@ -213,8 +238,8 @@ class PurePursuitNode(Node):
         lookahead = self.find_distance(target_x, target_y)
         steering_angle = np.arctan2((2 * self.WB * np.sin(alpha)), lookahead)
         
-        # Set max wheel turning angle (in radians, ~30 degrees = 0.524 rad)
-        max_steering = np.deg2rad(20.0)
+        # Set max wheel turning angle (simulator limit is 0.4189 rad ≈ 24 deg)
+        max_steering = 0.4189
         if steering_angle > max_steering:
             steering_angle = max_steering
         elif steering_angle < -max_steering:
@@ -224,13 +249,15 @@ class PurePursuitNode(Node):
         ackermann_msg = AckermannDriveStamped()
         ackermann_msg.header.stamp = self.get_clock().now().to_msg()
         ackermann_msg.header.frame_id = "base_link"
-        ackermann_msg.drive.speed = self.desired_velocity
+        ackermann_msg.drive.speed = commanded_speed
         ackermann_msg.drive.steering_angle = steering_angle
         self.ackermann_pub.publish(ackermann_msg)
         
         self.get_logger().info(
-            f'Steering Angle (rad): {ackermann_msg.drive.steering_angle:.3f}, '
-            f'Velocity (m/s): {ackermann_msg.drive.speed:.3f}'
+            f'Steer: {steering_angle:.3f} rad, '
+            f'Cmd Speed: {commanded_speed:.2f}, '
+            f'Target Vx: {target_vx:.2f}, '
+            f'Current V: {self.vel:.2f}'
         )
         
         # Plot map progression

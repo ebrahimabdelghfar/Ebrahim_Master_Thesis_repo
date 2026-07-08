@@ -75,6 +75,7 @@ private:
     // for collision detection
     double ttc_threshold;
     bool in_collision = false;
+    bool collidable;
 
     // for collision logging
     std::ofstream collision_file;
@@ -173,7 +174,9 @@ public:
         this->declare_parameter<double>("wheelbase", 0.3302);
         this->declare_parameter<double>("scan_field_of_view", 6.2831853);
 
+        this->declare_parameter<bool>("collidable", true);
         ttc_threshold = this->get_parameter("ttc_threshold").as_double();
+        collidable = this->get_parameter("collidable").as_bool();
         int scan_beams = this->get_parameter("scan_beams").as_int();
         double scan_distance_to_base_link = this->get_parameter("scan_distance_to_base_link").as_double();
         double width = this->get_parameter("width").as_double();
@@ -241,7 +244,7 @@ public:
                 double ttc = (msg->ranges[i] - car_distances[i]) / proj_velocity;
 
                 // if it's small, there's a collision
-                if ((ttc < ttc_threshold) && (ttc >= 0.0)) { 
+                if (collidable && (ttc < ttc_threshold) && (ttc >= 0.0)) { 
                     // Send a blank mux and write to file
                     collision_helper();
 

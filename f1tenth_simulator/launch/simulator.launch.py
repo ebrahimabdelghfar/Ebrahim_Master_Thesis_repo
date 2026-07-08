@@ -17,11 +17,13 @@ def generate_launch_description():
     
     # Extract map_name to determine map path
     map_name = 'YasMarina'
+    waypoint_topic = '/raceline_waypoints'
     try:
         import yaml
         with open(params_file, 'r') as f:
             sim_config = yaml.safe_load(f)
             map_name = sim_config['/**']['ros__parameters'].get('map_name', 'YasMarina')
+            waypoint_topic = sim_config['/**']['ros__parameters'].get('waypoint_topic', '/raceline_waypoints')
     except Exception as e:
         print(f"Warning: Could not read map_name from {params_file}, defaulting to {map_name}. Error: {e}")
 
@@ -128,14 +130,15 @@ def generate_launch_description():
         prefix=['xterm -e']
     )
 
-    # Spawn publisher node to initialize car pose
-    spawn_publisher_node = Node(
+    # Track publisher node to initialize car pose and publish waypoints
+    track_publisher_node = Node(
         package='f1tenth_simulator',
-        executable='spawn_publisher.py',
-        name='spawn_publisher',
+        executable='track_publisher.py',
+        name='track_publisher',
         parameters=[{
             'map_name': map_name,
-            'racetracks_dir': racetracks_dir
+            'racetracks_dir': racetracks_dir,
+            'waypoint_topic': waypoint_topic
         }],
         output='screen'
     )
@@ -162,5 +165,5 @@ def generate_launch_description():
         random_walker_node,
         keyboard_node,
         rviz_node,
-        spawn_publisher_node,
+        track_publisher_node,
     ])

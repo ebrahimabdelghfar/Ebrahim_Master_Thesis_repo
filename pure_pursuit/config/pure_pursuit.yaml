@@ -1,0 +1,16 @@
+pure_pursuit:
+  ros__parameters:
+    lookahead_distance: 1.3
+    wheelbase: 0.3302
+    
+    # PID parameters for velocity control
+    kp_vel: 1.0
+    ki_vel: 0.0
+    kd_vel: 0.0
+    
+    # Topic names
+    odom_topic: "/odom"
+    drive_topic: "/drive"
+    waypoint_topic: "/raceline_waypoints"
+    
+    show_animation: true

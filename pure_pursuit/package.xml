@@ -17,6 +17,7 @@
   <exec_depend>ackermann_msgs</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
+  <exec_depend>f1tenth_msgs</exec_depend>
 
   <!-- For tf transformations in Python -->
   <exec_depend>tf_transformations</exec_depend>

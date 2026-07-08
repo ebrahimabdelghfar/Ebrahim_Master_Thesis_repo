@@ -47,28 +47,17 @@ def generate_launch_description():
         description='Whether to show matplotlib animation'
     )
 
+    config_file = os.path.join(pkg_share, 'config', 'pure_pursuit.yaml')
+
     # Pure pursuit node
     pure_pursuit_node = Node(
         package='pure_pursuit',
         executable='pure_pursuit_node.py',
         name='pure_pursuit',
-        parameters=[{
-            'waypoint_file': LaunchConfiguration('waypoint_file'),
-            'lookahead_distance': LaunchConfiguration('lookahead_distance'),
-            'desired_velocity': LaunchConfiguration('desired_velocity'),
-            'odom_topic': LaunchConfiguration('odom_topic'),
-            'drive_topic': LaunchConfiguration('drive_topic'),
-            'show_animation': LaunchConfiguration('show_animation'),
-        }],
+        parameters=[config_file],
         output='screen'
     )
 
     return LaunchDescription([
-        waypoint_file_arg,
-        lookahead_arg,
-        velocity_arg,
-        odom_topic_arg,
-        drive_topic_arg,
-        show_animation_arg,
         pure_pursuit_node,
     ])

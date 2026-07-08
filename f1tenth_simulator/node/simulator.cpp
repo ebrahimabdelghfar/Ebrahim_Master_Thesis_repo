@@ -122,6 +122,7 @@ private:
     // for collision check
     bool TTC = false;
     double ttc_threshold;
+    bool collidable;
 
     // steering delay
     int buffer_length;
@@ -283,8 +284,10 @@ public:
         // get collision safety margin
         this->declare_parameter<double>("coll_threshold", 0.0);
         this->declare_parameter<double>("ttc_threshold", 0.01);
+        this->declare_parameter<bool>("collidable", true);
         thresh = this->get_parameter("coll_threshold").as_double();
         ttc_threshold = this->get_parameter("ttc_threshold").as_double();
+        collidable = this->get_parameter("collidable").as_bool();
 
         scan_ang_incr = scan_simulator.get_angle_increment();
 
@@ -414,7 +417,7 @@ public:
                     double proj_velocity = state.velocity * cosines[i];
                     double ttc = (scan_[i] - car_distances[i]) / proj_velocity;
                     // if it's small enough to count as a collision
-                    if ((ttc < ttc_threshold) && (ttc >= 0.0)) { 
+                    if (collidable && (ttc < ttc_threshold) && (ttc >= 0.0)) { 
                         if (!TTC) {
                             first_ttc_actions();
                         }

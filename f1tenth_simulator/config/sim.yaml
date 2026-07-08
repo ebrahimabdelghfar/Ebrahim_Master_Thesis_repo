@@ -1,6 +1,7 @@
 /**:
   ros__parameters:
     map_name: YasMarina
+    waypoint_topic: /raceline_waypoints
     available_tracks:
     - Austin
     - BrandsHatch
@@ -47,6 +48,7 @@
     scan_std_dev: 0.01
     map_free_threshold: 0.8
     ttc_threshold: 0.01
+    collidable: false
     mux_size: 5
     joy_mux_idx: 0
     key_mux_idx: 1
