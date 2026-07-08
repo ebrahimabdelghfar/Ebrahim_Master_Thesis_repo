@@ -12,15 +12,36 @@ def generate_launch_description():
     # Get package share directory
     pkg_share = get_package_share_directory('f1tenth_simulator')
     
+    # Load parameters from sim.yaml
+    params_file = os.path.join(pkg_share, 'config', 'sim.yaml')
+    
+    # Extract map_name to determine map path
+    map_name = 'YasMarina'
+    try:
+        import yaml
+        with open(params_file, 'r') as f:
+            sim_config = yaml.safe_load(f)
+            map_name = sim_config['/**']['ros__parameters'].get('map_name', 'YasMarina')
+    except Exception as e:
+        print(f"Warning: Could not read map_name from {params_file}, defaulting to {map_name}. Error: {e}")
+
+    # Resolve racetracks_dir
+    # Usually pkg_share is in <workspace>/install/f1tenth_simulator/share/f1tenth_simulator
+    # We navigate up to find the workspace root
+    workspace_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(pkg_share))))
+    racetracks_dir = os.path.join(workspace_root, 'f1tenth_racetracks')
+    
+    default_map_path = os.path.join(racetracks_dir, map_name, f"{map_name}_map.yaml")
+    if not os.path.exists(default_map_path):
+        # Fallback to local maps if not found
+        default_map_path = os.path.join(pkg_share, 'maps', 'levine.yaml')
+
     # Declare launch arguments
     map_arg = DeclareLaunchArgument(
         'map',
-        default_value=os.path.join(pkg_share, 'maps', 'levine.yaml'),
+        default_value=default_map_path,
         description='Full path to the map yaml file'
     )
-
-    # Load parameters from params.yaml
-    params_file = os.path.join(pkg_share, 'params.yaml')
 
     # Joy node for joystick input
     joy_node = Node(
@@ -107,6 +128,18 @@ def generate_launch_description():
         prefix=['xterm -e']
     )
 
+    # Spawn publisher node to initialize car pose
+    spawn_publisher_node = Node(
+        package='f1tenth_simulator',
+        executable='spawn_publisher.py',
+        name='spawn_publisher',
+        parameters=[{
+            'map_name': map_name,
+            'racetracks_dir': racetracks_dir
+        }],
+        output='screen'
+    )
+
     # RViz2 node
     rviz_config_file = os.path.join(pkg_share, 'launch', 'simulator.rviz')
     rviz_node = Node(
@@ -129,4 +162,5 @@ def generate_launch_description():
         random_walker_node,
         keyboard_node,
         rviz_node,
+        spawn_publisher_node,
     ])
