@@ -28,7 +28,7 @@
     wheelbase: 0.3302
     width: 0.2032
     buffer_length: 5
-    max_speed: 7.0
+    max_speed: 9.0
     max_steering_angle: 0.4189
     max_accel: 7.51
     max_decel: 8.26

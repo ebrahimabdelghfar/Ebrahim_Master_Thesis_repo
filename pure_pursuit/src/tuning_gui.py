@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+import threading
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float64
@@ -48,9 +49,13 @@ class TuningNode(Node):
     def effort_cb(self, msg):
         self.control_effort = msg.data
 
-    def set_parameter(self, name, value, param_type):
-        if not self.param_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().warn('Service not available')
+    def send_parameter(self, name, value, param_type):
+        """Send a parameter update to the pure_pursuit node (non-blocking)."""
+        if not self.param_client.service_is_ready():
+            self.get_logger().warn(
+                f'Service /pure_pursuit/set_parameters not available! '
+                f'Is the pure_pursuit node running?'
+            )
             return
             
         req = SetParameters.Request()
@@ -63,7 +68,21 @@ class TuningNode(Node):
             
         req.parameters = [param]
         future = self.param_client.call_async(req)
-        future.add_done_callback(lambda fut: self.get_logger().info(f'Parameter {name} set to {value}'))
+        future.add_done_callback(
+            lambda fut: self._log_result(fut, name, value)
+        )
+
+    def _log_result(self, future, name, value):
+        """Log the result of a set_parameters service call."""
+        try:
+            response = future.result()
+            if response.results and response.results[0].successful:
+                self.get_logger().info(f'✓ Parameter {name} set to {value}')
+            else:
+                reason = response.results[0].reason if response.results else 'unknown'
+                self.get_logger().warn(f'✗ Failed to set {name}: {reason}')
+        except Exception as e:
+            self.get_logger().error(f'Service call failed for {name}: {e}')
 
 
 class TuningApp(QMainWindow):
@@ -136,7 +155,13 @@ class TuningApp(QMainWindow):
             row.addWidget(spinbox)
             row.addWidget(btn)
             param_layout.addLayout(row)
-            
+
+        # "Set All" button
+        set_all_btn = QPushButton("Set All Parameters")
+        set_all_btn.setStyleSheet("font-weight: bold; padding: 5px;")
+        set_all_btn.clicked.connect(self.send_all_params)
+        param_layout.addWidget(set_all_btn)
+
         param_group.setLayout(param_layout)
         layout.addWidget(param_group)
         
@@ -159,7 +184,12 @@ class TuningApp(QMainWindow):
         self.canvas.axes2.grid(True)
 
     def send_param(self, name, value):
-        self.ros_node.set_parameter(name, value, ParameterType.PARAMETER_DOUBLE)
+        self.ros_node.send_parameter(name, value, ParameterType.PARAMETER_DOUBLE)
+
+    def send_all_params(self):
+        """Send all current parameter values at once."""
+        for name, spinbox in self.spinboxes.items():
+            self.send_param(name, spinbox.value())
 
     def update_plot(self):
         self.t += 1
@@ -183,19 +213,20 @@ def main(args=None):
     rclpy.init(args=args)
     ros_node = TuningNode()
     
+    # Spin the ROS node in a background thread so service calls
+    # (call_async futures) are processed without blocking the Qt event loop.
+    spin_thread = threading.Thread(target=rclpy.spin, args=(ros_node,), daemon=True)
+    spin_thread.start()
+    
     app = QApplication(sys.argv)
     ex = TuningApp(ros_node)
     ex.show()
     
-    # Use QTimer to spin ROS node concurrently with Qt event loop
-    timer = QTimer()
-    timer.timeout.connect(lambda: rclpy.spin_once(ros_node, timeout_sec=0))
-    timer.start(10)
+    ret = app.exec_()
     
-    sys.exit(app.exec_())
-    
-    ros_node.destroy_node()
     rclpy.shutdown()
+    spin_thread.join(timeout=2.0)
+    sys.exit(ret)
 
 if __name__ == '__main__':
     main()
