@@ -11,6 +11,7 @@ find_package(ament_cmake REQUIRED)
 # Install Python executables
 install(PROGRAMS
   src/pure_pursuit_node.py
+  src/tuning_gui.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -10,7 +10,8 @@ import matplotlib.pyplot as plt
 from matplotlib import patches
 from nav_msgs.msg import Odometry
 from visualization_msgs.msg import Marker
-from std_msgs.msg import Header, ColorRGBA
+from std_msgs.msg import Header, ColorRGBA, Float64
+from rcl_interfaces.msg import SetParametersResult
 from tf_transformations import euler_from_quaternion, quaternion_from_euler
 from geometry_msgs.msg import PoseStamped, Point, Twist, Quaternion, Pose, Vector3
 from ackermann_msgs.msg import AckermannDriveStamped, AckermannDrive
@@ -93,7 +94,31 @@ class PurePursuitNode(Node):
         timer_period = 1.0 / self.freqs  # seconds
         self.timer = self.create_timer(timer_period, self.control_loop)
         
+        # Publishers for PID tuning graphs
+        self.target_vel_pub = self.create_publisher(Float64, 'debug/target_velocity', 1)
+        self.current_vel_pub = self.create_publisher(Float64, 'debug/current_velocity', 1)
+        self.control_effort_pub = self.create_publisher(Float64, 'debug/control_effort', 1)
+        
+        # Add parameter callback for online tuning
+        self.add_on_set_parameters_callback(self.parameter_callback)
+        
         self.get_logger().info('Pure Pursuit Node initialized')
+
+    def parameter_callback(self, params):
+        for param in params:
+            if param.name == 'kp_vel':
+                self.kp_vel = param.value
+                self.get_logger().info(f'Updated kp_vel to {self.kp_vel}')
+            elif param.name == 'ki_vel':
+                self.ki_vel = param.value
+                self.get_logger().info(f'Updated ki_vel to {self.ki_vel}')
+            elif param.name == 'kd_vel':
+                self.kd_vel = param.value
+                self.get_logger().info(f'Updated kd_vel to {self.kd_vel}')
+            elif param.name == 'lookahead_distance':
+                self.LOOKAHEAD = param.value
+                self.get_logger().info(f'Updated lookahead_distance to {self.LOOKAHEAD}')
+        return SetParametersResult(successful=True)
 
     def waypoint_callback(self, msg):
         """
@@ -217,14 +242,27 @@ class PurePursuitNode(Node):
         I_vel = self.ki_vel * self.integral_error
         D_vel = self.kd_vel * (v_error - self.v_prev_error) / dt
         
-        # PID output acts as a velocity correction on top of current velocity
+        # PID output acts as a direct velocity correction
         pid_output = P_vel + I_vel + D_vel
-        # Add feedforward from raceline acceleration
-        commanded_speed = self.vel + (pid_output + target_ax) * dt
+        # Commanded speed is the target velocity plus the PID correction
+        commanded_speed = target_vx + pid_output
         # Clamp to non-negative speed
         commanded_speed = max(0.0, commanded_speed)
         
         self.v_prev_error = v_error
+
+        # Publish debug values for rqt_plot
+        msg_target_vel = Float64()
+        msg_target_vel.data = float(target_vx)
+        self.target_vel_pub.publish(msg_target_vel)
+        
+        msg_current_vel = Float64()
+        msg_current_vel.data = float(self.vel)
+        self.current_vel_pub.publish(msg_current_vel)
+        
+        msg_control_effort = Float64()
+        msg_control_effort.data = float(pid_output)
+        self.control_effort_pub.publish(msg_control_effort)
 
         """
         PURE PURSUIT CONTROLLER
