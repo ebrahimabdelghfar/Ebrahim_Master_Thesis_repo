@@ -1,0 +1,84 @@
+mpc_path_tracking:
+  ros__parameters:
+
+    # ---------------- Topics (all renameable) ----------------
+    odom_topic: "/odom"
+    waypoint_topic: "/raceline_waypoints"
+    drive_topic: "/drive"                       # feeds f1tenth_simulator's mux nav_mux_idx channel
+    predicted_trajectory_topic: "/mpc/predicted_path"
+    status_topic: "/mpc/status"
+    debug_topic_prefix: "/mpc/debug"
+
+    # ---------------- Horizon / timing ----------------
+    horizon:
+      N: 20                        # prediction steps
+      dt_min: 0.02                 # s
+      dt_max: 0.08                 # s
+      dt_adaptive: true            # dt = clamp(horizon_distance_m / (N * max(vx_ref, v_floor)), dt_min, dt_max)
+      horizon_distance_m: 1.0      # target look-ahead distance for the adaptive dt formula
+      control_rate_hz: 20.0        # outer ROS timer rate; decoupled from the internal adaptive dt
+
+    # ---------------- Cost matrices ----------------
+    # error order: [e_y, e_psi, vx_err, vy, r_err]
+    cost:
+      Q: [10.0, 10.0, 1.0, 10.0, 1.0]
+      R: [1.0, 1.0]                # [steering, accel]
+      R_rate: [10.0, 10.0]          # input-rate penalty
+      Qf: [10.0, 10.0, 15.0, 1.0, 1.0] #
+
+    # ---------------- Vehicle geometry / mass ----------------
+    # Source: On-Track-SysID/models/SIM/SIM_pacejka.txt (identified, matches
+    # simulator). Deliberately NOT f1tenth_simulator/params.yaml, whose
+    # own comments admit the geometry there is hand-estimated:
+    # mass 3.47 (vs 3.54), l_f 0.15875 (vs 0.162), l_r 0.17145 (vs 0.145),
+    # Iz 0.04712 (vs 0.05797), h_cg 0.074 (vs 0.02).
+    vehicle:
+      mass: 3.54       # kg
+      Iz: 0.05797      # kg*m^2
+      l_f: 0.162       # m, CG to front axle
+      l_r: 0.145       # m, CG to rear axle
+      h_cg: 0.02       # m, CG height (reserved for future load-transfer extension)
+
+    # ---------------- Pacejka tire model [B,C,D,E] per axle ----------------
+    # Source: On-Track-SysID/models/SIM/SIM_pacejka.txt (C_Pf, C_Pr)
+    tire:
+      Bf: 2.4128
+      Cf: 4.8155
+      Df: 0.5922
+      Ef: 5.0
+      Br: 14.4445
+      Cr: 1.2129
+      Dr: 0.6842
+      Er: 0.8526
+
+    # ---------------- Actuator limits / rate limits ----------------
+    # Source: f1tenth_simulator/params.yaml (governs actual simulated
+    # actuator saturation, so must match exactly for constraint validity)
+    limits:
+      steering_angle_max: 0.4189   # rad
+      steering_angle_min: -0.4189  # rad
+      steering_rate_max: 3.2       # rad/s
+      speed_max: 7.0               # m/s
+      speed_min: 0.0               # m/s
+      accel_max: 7.51              # m/s^2
+      decel_max: 8.26              # m/s^2 (magnitude; accel_min = -decel_max)
+      jerk_max: 1000.0             # m/s^3, effectively unconstrained until tuned
+
+    # ---------------- Solver settings ----------------
+    solver:
+      backend: "osqp"                    # stage 1: osqp; stage 2 option: acados
+      max_iter: 200
+      eps_abs: 1.0e-4
+      eps_rel: 1.0e-4
+      warm_start: true
+      polish: true
+      time_limit_ms: 15.0                # hard wall-clock budget per solve
+      fallback_on_failure: "hold_last"   # "hold_last" | "zero_command" | "brake"
+
+    # ---------------- Debug / diagnostics ----------------
+    debug:
+      enabled: true
+      publish_predicted_path: true
+      publish_cost_breakdown: true
+      log_solve_time: true
+      log_level: "info"
