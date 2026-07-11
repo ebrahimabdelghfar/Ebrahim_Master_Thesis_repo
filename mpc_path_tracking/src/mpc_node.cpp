@@ -32,6 +32,7 @@ public:
   : rclcpp::Node("mpc_path_tracking"), param_manager_(this)
   {
     param_manager_.declareAll();
+    param_manager_.printAll();
     topics_ = param_manager_.topics();
     solver_cfg_ = param_manager_.solverConfig();
     standalone_mode_ = param_manager_.standaloneMode();

@@ -57,6 +57,7 @@ public:
   explicit ParameterManager(rclcpp::Node * node);
 
   void declareAll();
+  void printAll() const;
 
   TopicsConfig topics() const;
   MpcConfig mpcConfig() const;

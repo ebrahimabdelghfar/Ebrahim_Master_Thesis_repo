@@ -1,6 +1,7 @@
 #include "mpc_path_tracking/parameter_manager.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <functional>
 #include <stdexcept>
 
@@ -99,6 +100,115 @@ void ParameterManager::declareAll()
 
   callback_handle_ = node_->add_on_set_parameters_callback(
     std::bind(&ParameterManager::onSetParameters, this, std::placeholders::_1));
+}
+
+// ---------------------------------------------------------------------------
+// printAll(): dumps every declared parameter to the logger at INFO level,
+//             grouped by section, for quick startup verification.
+// ---------------------------------------------------------------------------
+void ParameterManager::printAll() const
+{
+  auto log = node_->get_logger();
+
+  RCLCPP_INFO(log, "╔══════════════════════════════════════════════════════════════╗");
+  RCLCPP_INFO(log, "║          MPC PATH TRACKING — LOADED PARAMETERS              ║");
+  RCLCPP_INFO(log, "╚══════════════════════════════════════════════════════════════╝");
+
+  // --- Topics ---
+  RCLCPP_INFO(log, "──── Topics ────");
+  RCLCPP_INFO(log, "  odom_topic                : %s", node_->get_parameter("odom_topic").as_string().c_str());
+  RCLCPP_INFO(log, "  waypoint_topic            : %s", node_->get_parameter("waypoint_topic").as_string().c_str());
+  RCLCPP_INFO(log, "  drive_topic               : %s", node_->get_parameter("drive_topic").as_string().c_str());
+  RCLCPP_INFO(log, "  predicted_trajectory_topic : %s", node_->get_parameter("predicted_trajectory_topic").as_string().c_str());
+  RCLCPP_INFO(log, "  status_topic              : %s", node_->get_parameter("status_topic").as_string().c_str());
+  RCLCPP_INFO(log, "  debug_topic_prefix        : %s", node_->get_parameter("debug_topic_prefix").as_string().c_str());
+  RCLCPP_INFO(log, "  enable_topic              : %s", node_->get_parameter("enable_topic").as_string().c_str());
+  RCLCPP_INFO(log, "  param_service             : %s", node_->get_parameter("param_service").as_string().c_str());
+
+  // --- Mode ---
+  RCLCPP_INFO(log, "──── Mode ────");
+  RCLCPP_INFO(log, "  standalone_mode           : %s", node_->get_parameter("standalone_mode").as_bool() ? "true" : "false");
+
+  // --- Horizon / Timing ---
+  RCLCPP_INFO(log, "──── Horizon / Timing ────");
+  RCLCPP_INFO(log, "  N                         : %ld", node_->get_parameter("horizon.N").as_int());
+  RCLCPP_INFO(log, "  dt_min                    : %.4f s", node_->get_parameter("horizon.dt_min").as_double());
+  RCLCPP_INFO(log, "  dt_max                    : %.4f s", node_->get_parameter("horizon.dt_max").as_double());
+  RCLCPP_INFO(log, "  dt_adaptive               : %s", node_->get_parameter("horizon.dt_adaptive").as_bool() ? "true" : "false");
+  RCLCPP_INFO(log, "  horizon_distance_m        : %.2f m", node_->get_parameter("horizon.horizon_distance_m").as_double());
+  RCLCPP_INFO(log, "  control_rate_hz           : %.1f Hz", node_->get_parameter("horizon.control_rate_hz").as_double());
+
+  // --- Cost Matrices ---
+  auto fmtVec = [](const std::vector<double> & v) -> std::string {
+    std::string s = "[";
+    for (size_t i = 0; i < v.size(); ++i) {
+      if (i > 0) s += ", ";
+      char buf[32];
+      std::snprintf(buf, sizeof(buf), "%.4f", v[i]);
+      s += buf;
+    }
+    s += "]";
+    return s;
+  };
+
+  RCLCPP_INFO(log, "──── Cost Matrices ────");
+  RCLCPP_INFO(log, "  Q      [e_y, e_psi, vx_err, vy, r_err] : %s",
+    fmtVec(node_->get_parameter("cost.Q").as_double_array()).c_str());
+  RCLCPP_INFO(log, "  R      [steering, accel]                : %s",
+    fmtVec(node_->get_parameter("cost.R").as_double_array()).c_str());
+  RCLCPP_INFO(log, "  R_rate [steering, accel]                : %s",
+    fmtVec(node_->get_parameter("cost.R_rate").as_double_array()).c_str());
+  RCLCPP_INFO(log, "  Qf     [e_y, e_psi, vx_err, vy, r_err] : %s",
+    fmtVec(node_->get_parameter("cost.Qf").as_double_array()).c_str());
+
+  // --- Vehicle ---
+  RCLCPP_INFO(log, "──── Vehicle Geometry / Mass ────");
+  RCLCPP_INFO(log, "  mass                      : %.4f kg", node_->get_parameter("vehicle.mass").as_double());
+  RCLCPP_INFO(log, "  Iz                        : %.5f kg·m²", node_->get_parameter("vehicle.Iz").as_double());
+  RCLCPP_INFO(log, "  l_f                       : %.4f m", node_->get_parameter("vehicle.l_f").as_double());
+  RCLCPP_INFO(log, "  l_r                       : %.4f m", node_->get_parameter("vehicle.l_r").as_double());
+  RCLCPP_INFO(log, "  h_cg                      : %.4f m", node_->get_parameter("vehicle.h_cg").as_double());
+
+  // --- Tire (Pacejka) ---
+  RCLCPP_INFO(log, "──── Pacejka Tire Model ────");
+  RCLCPP_INFO(log, "  Front: Bf=%.4f  Cf=%.4f  Df=%.4f  Ef=%.4f",
+    node_->get_parameter("tire.Bf").as_double(), node_->get_parameter("tire.Cf").as_double(),
+    node_->get_parameter("tire.Df").as_double(), node_->get_parameter("tire.Ef").as_double());
+  RCLCPP_INFO(log, "  Rear:  Br=%.4f  Cr=%.4f  Dr=%.4f  Er=%.4f",
+    node_->get_parameter("tire.Br").as_double(), node_->get_parameter("tire.Cr").as_double(),
+    node_->get_parameter("tire.Dr").as_double(), node_->get_parameter("tire.Er").as_double());
+
+  // --- Actuator Limits ---
+  RCLCPP_INFO(log, "──── Actuator Limits ────");
+  RCLCPP_INFO(log, "  steering_angle_max        : %.4f rad", node_->get_parameter("limits.steering_angle_max").as_double());
+  RCLCPP_INFO(log, "  steering_angle_min        : %.4f rad", node_->get_parameter("limits.steering_angle_min").as_double());
+  RCLCPP_INFO(log, "  steering_rate_max         : %.2f rad/s", node_->get_parameter("limits.steering_rate_max").as_double());
+  RCLCPP_INFO(log, "  speed_max                 : %.2f m/s", node_->get_parameter("limits.speed_max").as_double());
+  RCLCPP_INFO(log, "  speed_min                 : %.2f m/s", node_->get_parameter("limits.speed_min").as_double());
+  RCLCPP_INFO(log, "  accel_max                 : %.2f m/s²", node_->get_parameter("limits.accel_max").as_double());
+  RCLCPP_INFO(log, "  decel_max                 : %.2f m/s²", node_->get_parameter("limits.decel_max").as_double());
+  RCLCPP_INFO(log, "  jerk_max                  : %.2f m/s³", node_->get_parameter("limits.jerk_max").as_double());
+
+  // --- Solver ---
+  RCLCPP_INFO(log, "──── Solver Settings ────");
+  RCLCPP_INFO(log, "  backend                   : %s", node_->get_parameter("solver.backend").as_string().c_str());
+  RCLCPP_INFO(log, "  max_iter                  : %ld", node_->get_parameter("solver.max_iter").as_int());
+  RCLCPP_INFO(log, "  eps_abs                   : %.1e", node_->get_parameter("solver.eps_abs").as_double());
+  RCLCPP_INFO(log, "  eps_rel                   : %.1e", node_->get_parameter("solver.eps_rel").as_double());
+  RCLCPP_INFO(log, "  warm_start                : %s", node_->get_parameter("solver.warm_start").as_bool() ? "true" : "false");
+  RCLCPP_INFO(log, "  polish                    : %s", node_->get_parameter("solver.polish").as_bool() ? "true" : "false");
+  RCLCPP_INFO(log, "  time_limit_ms             : %.1f ms", node_->get_parameter("solver.time_limit_ms").as_double());
+  RCLCPP_INFO(log, "  fallback_on_failure       : %s", node_->get_parameter("solver.fallback_on_failure").as_string().c_str());
+
+  // --- Debug ---
+  RCLCPP_INFO(log, "──── Debug / Diagnostics ────");
+  RCLCPP_INFO(log, "  enabled                   : %s", node_->get_parameter("debug.enabled").as_bool() ? "true" : "false");
+  RCLCPP_INFO(log, "  publish_predicted_path    : %s", node_->get_parameter("debug.publish_predicted_path").as_bool() ? "true" : "false");
+  RCLCPP_INFO(log, "  publish_cost_breakdown    : %s", node_->get_parameter("debug.publish_cost_breakdown").as_bool() ? "true" : "false");
+  RCLCPP_INFO(log, "  log_solve_time            : %s", node_->get_parameter("debug.log_solve_time").as_bool() ? "true" : "false");
+  RCLCPP_INFO(log, "  log_level                 : %s", node_->get_parameter("debug.log_level").as_string().c_str());
+
+  RCLCPP_INFO(log, "══════════════════════════════════════════════════════════════");
 }
 
 Eigen::Matrix<double, 5, 1> ParameterManager::toVec5(const std::vector<double> & v, const char * name)
