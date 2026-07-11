@@ -8,6 +8,51 @@ Before this package existed, `pure_pursuit` and `mpc_path_tracking` each publish
 
 `adaptive_controller_manager` is the sole writer to `/drive` in this stack. `pure_pursuit` and `mpc_path_tracking` instead publish to private topics (`pp/drive_cmd`, `mpc/drive_cmd`); the manager arbitrates between them, drives a bootstrap → identify → handover → fallback state machine, and mediates the online tire-parameter handoff from `On-Track-SysID` to `mpc_path_tracking`.
 
+## Notation
+
+| Symbol | Description | Unit / type |
+|--------|-------------|-------------|
+| **FSM states** |||
+| `BOOTSTRAP_PP` | Initial state — waiting for Pure Pursuit to confirm active | enum |
+| `RUNNING_PP` | Pure Pursuit is the active controller | enum |
+| `SWITCHING_TO_MPC` | Speed-ramp handover toward MPC in progress | enum |
+| `RUNNING_MPC` | MPC is the active controller | enum |
+| `SWITCHING_TO_PP` | Speed-ramp fallback toward Pure Pursuit in progress | enum |
+| `EMERGENCY_HALT` | Both controllers unhealthy — zero command published | enum |
+| **Safety-gate thresholds** |||
+| `v_min` | Minimum vehicle speed before arming MPC (Safety 1A) | m/s |
+| `e_y_max` | Maximum allowable lateral deviation (Safety 1B) | m |
+| `θ_max` (`theta_max`) | Maximum allowable heading error (Safety 1B) | rad |
+| `Δt_state_max` (`delta_t_state_max`) | Odometry staleness cutoff (Safety 2B) | s |
+| `Δt_timeout` (`delta_t_timeout`) | Controller-silence timeout (Safety 5A) | s |
+| `error_convergence_window` | Number of samples in the rolling `d(e_y)/dt` window (Safety 3) | samples |
+| **Handover ramp** |||
+| `Δt_switch` (`delta_t_switch`) | Duration of the linear speed-ramp during handover | s |
+| `v_frozen` | Outgoing controller's last commanded speed, frozen at switch start | m/s |
+| `v_new(t)` | Incoming controller's commanded speed at time `t` | m/s |
+| `v_cmd(t)` | Blended speed published to `/drive` during switching | m/s |
+| `α(t)` (`alpha`) | Blend factor: `clamp(t / Δt_switch, 0, 1)` | — |
+| `max_decel_mps2` | Global deceleration rate limit on speed decreases | m/s² |
+| **Track-error signals** |||
+| `e_y` | Signed lateral deviation from the raceline | m |
+| `e_ψ` (heading error) | Heading error relative to the raceline tangent | rad |
+| `d(e_y)/dt` | Rate of change of lateral error (convergence signal) | m/s |
+| `v_x` | Longitudinal velocity from `/odom` | m/s |
+| **Tire-parameter handoff** |||
+| `Bf, Cf, Df, Ef` | Pacejka front-axle coefficients `[B, C, D, E]` | — |
+| `Br, Cr, Dr, Er` | Pacejka rear-axle coefficients `[B, C, D, E]` | — |
+| `tire_param_min` | Lower plausibility bounds on `[Bf,Cf,Df,Ef,Br,Cr,Dr,Er]` | — |
+| `tire_param_max` | Upper plausibility bounds on `[Bf,Cf,Df,Ef,Br,Cr,Dr,Er]` | — |
+| `stored_version_` | Monotonic counter incremented on each accepted tire submission | — |
+| `forwarded_version_` | Version last successfully forwarded to `mpc/update_params` | — |
+| **Health / freshness** |||
+| `ppHealthOk()` | PP health flag **and** `pp_state` topic fresh within `Δt_timeout` | bool |
+| `mpcHealthOk()` | MPC status `== OK` **and** `/mpc/status` topic fresh within `Δt_timeout` | bool |
+| `odomFresh()` | `/odom` received within `Δt_state_max` | bool |
+| **Timing** |||
+| `control_rate_hz` | Manager's control-loop timer frequency | Hz |
+| `reidentification_interval_s` | Period between `On-Track-SysID` re-training calls | s |
+
 ## 2. Architecture
 
 ```mermaid
@@ -98,6 +143,10 @@ Steering switches instantly (forwarded unmodified from the newly-active controll
 v_cmd(t) = (1 - α(t)) * v_frozen + α(t) * v_new(t)
 α(t) = clamp(t / delta_t_switch, 0, 1)          # linear ramp over delta_t_switch
 ```
+
+The figure below illustrates this ramp for a representative PP→MPC handover where the outgoing controller was commanding 3.0 m/s and the incoming MPC ramps toward 6.0 m/s over `delta_t_switch = 1.0 s`. The top panel shows the three speed signals; the bottom panel shows α(t). The shaded region is the SWITCHING window.
+
+![Handover velocity ramp — speed blend and α(t) over the switching window](images/handover_velocity_ramp.png)
 
 Two hardenings beyond the original draft, both added deliberately (not literal-draft-compliant, but load-bearing for a safety-critical handover):
 

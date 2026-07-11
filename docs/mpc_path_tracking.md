@@ -4,6 +4,68 @@ LTV-MPC (linear time-varying model predictive control) path-tracking controller 
 
 This is Stage 1 of a two-stage plan (see `mpc_plan.md`): a linear-time-varying MPC solved as a QP with OSQP. Stage 2 (full nonlinear NMPC via ACADOS) is not implemented yet; `solver_interface` is factored so that swap doesn't require touching the rest of the controller.
 
+## Notation
+
+| Symbol | Description | Unit |
+|--------|-------------|------|
+| **State vector** |||
+| `X`, `Y` | Vehicle position in the world/map frame | m |
+| `ψ` (`psi`) | Vehicle heading (yaw angle) in the world frame | rad |
+| `vx` | Longitudinal velocity in body frame | m/s |
+| `vy` | Lateral velocity in body frame | m/s |
+| `r` | Yaw rate | rad/s |
+| **Input vector** |||
+| `δ` (`delta`) | Front steering angle command | rad |
+| `a` | Longitudinal acceleration command at the CG | m/s² |
+| **Vehicle parameters** |||
+| `m` | Vehicle mass | kg |
+| `Iz` | Yaw moment of inertia | kg·m² |
+| `l_f` | Distance from CG to front axle | m |
+| `l_r` | Distance from CG to rear axle | m |
+| `h_cg` | Height of center of gravity | m |
+| `g` | Gravitational acceleration (9.81) | m/s² |
+| **Tire model (Pacejka / Magic Formula)** |||
+| `α_f`, `α_r` (`alpha_f`, `alpha_r`) | Front / rear slip angles | rad |
+| `Fy_f`, `Fy_r` | Front / rear lateral tire forces | N |
+| `Fz_f`, `Fz_r` | Front / rear normal (vertical) loads | N |
+| `B_i` | Pacejka stiffness factor (per axle `i ∈ {f, r}`) | — |
+| `C_i` | Pacejka shape factor | — |
+| `D_i` | Pacejka peak factor (dimensionless, multiplies `Fz`) | — |
+| `E_i` | Pacejka curvature factor | — |
+| **MPC horizon & timing** |||
+| `N` | Number of prediction steps | — |
+| `dt` | Prediction time step (adaptive) | s |
+| `dt_min`, `dt_max` | Bounds on the adaptive prediction step | s |
+| `horizon_distance_m` | Target look-ahead distance for the adaptive `dt` formula | m |
+| `v_floor` | Minimum speed used in adaptive `dt` denominator | m/s |
+| **Cost & weights** |||
+| `Q` | Stage cost weight vector on path-relative error `e_k` (5 diagonal entries) | — |
+| `Qf` | Terminal cost weight vector (same structure as `Q`) | — |
+| `R` | Input cost weight vector `[δ, a]` (2 diagonal entries) | — |
+| `R_rate` | Input-rate penalty weight vector `[Δδ, Δa]` (2 diagonal entries) | — |
+| **Path-relative error** |||
+| `e_y` | Signed lateral deviation from the reference path | m |
+| `e_ψ` (`e_psi`) | Heading error relative to path tangent | rad |
+| `vx_err` | Speed tracking error (`vx − vx_ref`) | m/s |
+| `r_err` | Yaw-rate error (`r − vx_ref · κ_ref`) | rad/s |
+| **Reference trajectory** |||
+| `X_ref`, `Y_ref` | Reference (raceline) waypoint position | m |
+| `ψ_ref` (`psi_ref`) | Reference heading at waypoint | rad |
+| `vx_ref` | Reference longitudinal speed at waypoint | m/s |
+| `κ_ref` (`kappa_ref`) | Reference path curvature at waypoint | 1/m |
+| `s` | Arc-length coordinate along the raceline | m |
+| **Linearized discrete-time model** |||
+| `Ad`, `Bd` | Discrete-time state and input Jacobians | — |
+| `c` | Affine offset ensuring exactness at the linearization point | — |
+| `C_k` | Output matrix mapping full state `x_k` to error `e_k` | — |
+| **Actuator limits** |||
+| `δ_max`, `δ_min` | Steering angle bounds | rad |
+| `δ̇_max` | Maximum steering rate | rad/s |
+| `a_max` | Maximum longitudinal acceleration | m/s² |
+| `a_min` (= −`decel_max`) | Maximum braking deceleration (negative) | m/s² |
+| `j_max` | Maximum jerk | m/s³ |
+| `v_max`, `v_min` | Speed bounds (applied to the final Ackermann command) | m/s |
+
 ## 1. Vehicle model
 
 ### States and inputs
