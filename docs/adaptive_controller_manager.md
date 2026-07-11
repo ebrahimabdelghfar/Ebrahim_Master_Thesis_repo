@@ -159,6 +159,7 @@ sequenceDiagram
 | Pub | `start_working_pp_topic`/`start_working_mpc_topic` (`Start_Working_pp`/`Start_Working_mpc`) | `std_msgs/msg/Bool` | gates each controller's own publish |
 | Pub | `manager/state` | `std_msgs/msg/String` | current FSM state, observational |
 | Pub | `manager/debug/lateral_error`, `manager/debug/heading_error` | `std_msgs/msg/Float64` | mirrors `mpc_path_tracking`'s own `/mpc/debug/*` pattern |
+| Pub | `manager/active_controller_marker` | `visualization_msgs/msg/MarkerArray` | colored sphere + text label hovering above the vehicle in RViz - green "PURE PURSUIT", blue "MPC", orange "SWITCHING -> ...", red "EMERGENCY HALT" |
 | Srv (server) | `sysid_update_params_service` (`sysid/update_params`) | `adaptive_controller_interfaces/srv/IdentifiedParam` | validates bounds, stores |
 | Srv (client) | `mpc_update_params_service` (`mpc/update_params`) | `adaptive_controller_interfaces/srv/IdentifiedParam` | forwards validated params |
 
@@ -221,6 +222,18 @@ ros2 topic info /drive --verbose                   # confirm single-writer
 ros2 service call /sysid/update_params adaptive_controller_interfaces/srv/IdentifiedParam \
   "{param_values: [2.4128, 4.8155, 0.5922, 5.0, 14.4445, 1.2129, 0.6842, 0.8526]}"
 ```
+
+### Visualize the active controller in RViz
+
+Add a `MarkerArray` display subscribed to `/manager/active_controller_marker` (Fixed Frame `map`). Shows a colored sphere + text label hovering above the vehicle: green "PURE PURSUIT", blue "MPC", orange "SWITCHING -> ...", gray "BOOTSTRAP", red "EMERGENCY HALT".
+
+### Follow the manager's flow/status
+
+The manager logs a throttled (every 2s) one-line summary covering both controllers, so its own console output is enough to follow what's happening without cross-referencing `pure_pursuit`'s/`mpc_path_tracking`'s separate logs:
+```
+[status] state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=6.62 e_y=-0.456 theta=0.275 | params: stored_v=0 fwd_v=0 pending=no
+```
+When a stored (validated) tire submission is waiting on the arming gates in `RUNNING_PP`, a second throttled line names exactly which gates are still failing (`v_min`, `e_y_max`, `theta_max`, `convergence`, `odom_stale`, `no_track_error`) - this is the fastest way to diagnose "identification finished but it hasn't switched to MPC yet" (see §10).
 
 ## 10. Troubleshooting
 
