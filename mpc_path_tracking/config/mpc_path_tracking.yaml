@@ -16,20 +16,20 @@ mpc_path_tracking:
 
     # ---------------- Horizon / timing ----------------
     horizon:
-      N: 20                        # prediction steps
+      N: 30                        # prediction steps
       dt_min: 0.02                 # s
       dt_max: 0.08                 # s
       dt_adaptive: true            # dt = clamp(horizon_distance_m / (N * max(vx_ref, v_floor)), dt_min, dt_max)
-      horizon_distance_m: 1.0      # target look-ahead distance for the adaptive dt formula
+      horizon_distance_m: 3.0      # target look-ahead distance for the adaptive dt formula
       control_rate_hz: 20.0        # outer ROS timer rate; decoupled from the internal adaptive dt
 
     # ---------------- Cost matrices ----------------
     # error order: [e_y, e_psi, vx_err, vy, r_err]
     cost:
-      Q: [10.0, 10.0, 1.0, 10.0, 1.0]
-      R: [1.0, 1.0]                # [steering, accel]
+      Q: [100.0, 100.0, 50.0, 50.0, 50.0]
+      R: [10.0, 10.0]                # [steering, accel]
       R_rate: [10.0, 10.0]          # input-rate penalty
-      Qf: [10.0, 10.0, 15.0, 1.0, 1.0] #
+      Qf: [50.0, 50.0, 50.0, 50.0, 50.0] #
 
     # ---------------- Vehicle geometry / mass ----------------
     # Source: On-Track-SysID/models/SIM/SIM_pacejka.txt (identified, matches
