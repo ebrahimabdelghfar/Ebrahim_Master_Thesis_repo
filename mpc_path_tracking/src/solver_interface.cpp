@@ -168,7 +168,14 @@ bool OsqpMpcSolver::solve(const SolverProblem & problem, SolverSolution & soluti
   for (int k = 0; k < N; ++k) {
     solution.u[k] = z.segment<nu>(uIdx(k));
   }
-  solution.cost = 0.5 * z.dot(P * z) + q.dot(z);
+  // 0.5*z^T P z + q^T z is the raw QP objective built by "completing the
+  // square" around each stage's target - it is missing the constant
+  // target_k^T diag(Q) target_k term (and u_prev^T Rrate u_prev), which
+  // does not affect the argmin z* the solver finds, but does make the
+  // reported cost a physically-meaningless (and often large, always
+  // solvable-looking) offset rather than genuine squared tracking error.
+  // problem.cost_offset carries that sum back in.
+  solution.cost = 0.5 * z.dot(P * z) + q.dot(z) + problem.cost_offset;
   solution.solved = true;
   return true;
 }

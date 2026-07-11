@@ -238,6 +238,19 @@ Visualization Manager:
         {}
       Queue Size: 100
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /manager/active_controller_marker
+      Name: ActiveController
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: true
 
   Enabled: true
   Global Options:

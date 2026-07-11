@@ -83,7 +83,7 @@ private:
     const ReferencePoint & ref_k, double dt, const Eigen::Matrix<double, 5, 1> & Qdiag) const;
   void errorCostMatrices(
     const ReferencePoint & ref, const Eigen::Matrix<double, 5, 1> & Qdiag,
-    StateJacobian & Qx, State & qx) const;
+    StateJacobian & Qx, State & qx, double & cost_offset) const;
 
   VehicleModel model_;
   std::unique_ptr<SolverInterface> solver_;

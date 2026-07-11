@@ -117,6 +117,10 @@ dt = clamp( horizon_distance_m / (N * max(vx_ref, v_floor)), dt_min, dt_max )
 
 This keeps the horizon's *look-ahead distance* roughly constant regardless of speed, while `dt_min`/`dt_max` bound it away from numerically degenerate (too small) or destabilizing (too coarse) values. This internal `dt` is deliberately decoupled from the outer ROS control-loop rate (`horizon.control_rate_hz`) — the control loop always runs at a fixed cadence; only the *internal* prediction spacing adapts.
 
+### Reported solve cost
+
+`/mpc/status`'s `cost` field is *not* OSQP's raw internal objective. The QP is built by "completing the square" — `Qx = C^T diag(Q) C`, `qx = -C^T diag(Q) r` (`mpc_controller.cpp`, `errorCostMatrices`) — so `0.5 z^T P z + q^T z` alone equals `(Cx-r)^T diag(Q) (Cx-r) - r^T diag(Q) r`, missing the constant `r^T diag(Q) r` term (and similarly `u_prev^T R_rate u_prev` from the k=0 rate penalty). Since `r` includes the raceline's **absolute map-frame** waypoint coordinates (`r(0) = -sin(psi)*ref.x + cos(psi)*ref.y`), that dropped constant scales with wherever the map origin happens to sit relative to the raceline — this was caught in practice as a startlingly large, always-negative `cost` (observed as low as -361873) that looked alarming but never actually affected the solved trajectory (a constant doesn't change the argmin). Fixed by accumulating the dropped constant per stage/terminal (`MpcStage::cost_offset`, `SolverProblem::cost_offset`) and adding it back in `solver_interface.cpp` before reporting `solution.cost`, so it now reads as genuine non-negative squared tracking error (typically tens, not hundreds of thousands).
+
 ## 4. Package interfaces
 
 | | Topic (parameter) | Type | Notes |

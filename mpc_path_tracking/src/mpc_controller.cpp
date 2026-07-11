@@ -23,7 +23,7 @@ double MpcController::computeAdaptiveDt(const ReferencePoint & nearest) const
 
 void MpcController::errorCostMatrices(
   const ReferencePoint & ref, const Eigen::Matrix<double, 5, 1> & Qdiag,
-  StateJacobian & Qx, State & qx) const
+  StateJacobian & Qx, State & qx, double & cost_offset) const
 {
   Eigen::Matrix<double, 5, 6> C = Eigen::Matrix<double, 5, 6>::Zero();
   Eigen::Matrix<double, 5, 1> r;
@@ -50,6 +50,7 @@ void MpcController::errorCostMatrices(
   const Eigen::Matrix<double, 5, 5> Qdiag_mat = Qdiag.asDiagonal();
   Qx = C.transpose() * Qdiag_mat * C;
   qx = -C.transpose() * Qdiag_mat * r;
+  cost_offset = r.transpose() * Qdiag_mat * r;
 }
 
 MpcStage MpcController::buildStage(
@@ -65,7 +66,7 @@ MpcStage MpcController::buildStage(
 
   MpcStage stage;
   model_.linearizeDiscrete(x_lin, u_lin, dt, stage.Ad, stage.Bd, stage.c);
-  errorCostMatrices(ref_k, Qdiag, stage.Qx, stage.qx);
+  errorCostMatrices(ref_k, Qdiag, stage.Qx, stage.qx, stage.cost_offset);
   return stage;
 }
 
@@ -89,10 +90,20 @@ MpcOutput MpcController::computeCommand(
   problem.dt = dt;
   problem.x0 = x0;
   problem.stages.reserve(config_.N);
+  problem.cost_offset = 0.0;
   for (int k = 0; k < config_.N; ++k) {
     problem.stages.push_back(buildStage(horizon[k], dt, config_.cost.Q));
+    problem.cost_offset += problem.stages.back().cost_offset;
   }
-  errorCostMatrices(horizon[config_.N], config_.cost.Qf, problem.Qx_terminal, problem.qx_terminal);
+  double terminal_cost_offset = 0.0;
+  errorCostMatrices(
+    horizon[config_.N], config_.cost.Qf, problem.Qx_terminal, problem.qx_terminal,
+    terminal_cost_offset);
+  problem.cost_offset += terminal_cost_offset;
+  // k=0 rate-penalty term is (u_0 - u_prev)^T Rrate (u_0 - u_prev); the
+  // solver only builds the quadratic-in-z and linear-in-z parts, so the
+  // u_prev^T Rrate u_prev constant is added back here too.
+  problem.cost_offset += u_prev.transpose() * config_.cost.Rrate.asDiagonal() * u_prev;
 
   problem.R = config_.cost.R.asDiagonal();
   problem.Rrate = config_.cost.Rrate.asDiagonal();

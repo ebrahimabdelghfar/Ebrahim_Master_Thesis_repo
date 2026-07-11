@@ -426,11 +426,15 @@ private:
   // cross-referencing pure_pursuit's/mpc_path_tracking's separate logs.
   void logStatus()
   {
+    std::string active_label;
+    float r, g, b;
+    activeControllerLabel(state_, active_label, r, g, b);
+
     RCLCPP_INFO_THROTTLE(
       get_logger(), *get_clock(), 2000,
-      "[status] state=%s | pp: health=%s state=%s | mpc: health=%s | v_x=%.2f e_y=%.3f theta=%.3f | "
-      "params: stored_v=%lu fwd_v=%lu pending=%s",
-      fsmStateName(state_),
+      "[status] active=%s state=%s | pp: health=%s state=%s | mpc: health=%s | "
+      "v_x=%.2f e_y=%.3f theta=%.3f | params: stored_v=%lu fwd_v=%lu pending=%s",
+      active_label.c_str(), fsmStateName(state_),
       ppHealthOk() ? "ok" : "BAD", pp_state_ ? "active" : "idle",
       mpcHealthOk() ? "ok" : "BAD",
       has_odom_ ? odom_.twist.twist.linear.x : 0.0, last_e_y_, last_heading_error_,

@@ -20,6 +20,9 @@ struct MpcStage
   State c;
   StateJacobian Qx;
   State qx;
+  // target_k^T * diag(Q) * target_k - the "complete the square" constant
+  // dropped by Qx/qx alone (see SolverProblem::cost_offset).
+  double cost_offset{0.0};
 };
 
 // Full LTV-MPC problem for one control-cycle solve: N stages of dynamics
@@ -33,6 +36,14 @@ struct SolverProblem
   std::vector<MpcStage> stages;   // size N
   StateJacobian Qx_terminal;
   State qx_terminal;
+  // Sum of every dropped "complete the square" constant (stage + terminal
+  // target_k^T diag(Q) target_k, plus u_prev^T Rrate u_prev from the k=0
+  // rate-penalty term) - added back into SolverSolution::cost so it reports
+  // genuine non-negative squared tracking error instead of an internal QP
+  // objective offset by however large the absolute-frame reference
+  // happens to be (caught via inspecting a suspiciously large negative
+  // solve cost in practice - see docs).
+  double cost_offset{0.0};
   Eigen::Matrix2d R;
   Eigen::Matrix2d Rrate;
   Input u_prev;
