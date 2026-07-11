@@ -44,6 +44,17 @@ adaptive_controller_manager:
     # Design decision 1: linear speed-ramp duration during handover
     delta_t_switch: 1.0          # s
 
+    # Safety 7: block the PP->MPC handover while a sharp corner is imminent -
+    # starting the switch ramp (steering jump + speed blend) right before a
+    # tight corner risks the car losing control mid-turn. Looks ahead from
+    # the nearest waypoint along the raceline for this distance and blocks
+    # arming if any waypoint's curvature exceeds the threshold below.
+    corner_lookahead_distance: 3.0   # m
+    # YasMarina raceline curvature: median ~0.03 rad/m, p90 ~0.18, max ~0.70 -
+    # 0.35 sits just above the p99 tail, so only the tightest hairpins count
+    # as "sharp" and block the switch; retune per track/vehicle.
+    kappa_max_for_switch: 0.35       # rad/m
+
     # Global cap on how fast a commanded speed may decrease tick-to-tick -
     # covers the switch ramp, EMERGENCY_HALT, and stale-data fallback, so
     # none of them ever reads as an instant stop.

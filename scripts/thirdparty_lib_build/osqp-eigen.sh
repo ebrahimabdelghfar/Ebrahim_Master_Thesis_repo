@@ -4,15 +4,15 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLATFORM_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-SRC_DIR="$PLATFORM_ROOT/src/third_party_libs/navigation_third_party_libs/osqp-eigen-0.8.1"
-BUILD_DIR="$PLATFORM_ROOT/build/src/third_party_libs/navigation_third_party_libs/osqp-eigen-0.8.1"
-INSTALL_DIR="$PLATFORM_ROOT/install/third_party_libs/navigation_third_party_libs/osqp-eigen-0.8.1"
+SRC_DIR="$PLATFORM_ROOT/thirdparty_lib/osqp-eigen-0.8.1"
+BUILD_DIR="$PLATFORM_ROOT/build/thirdparty_lib/osqp-eigen-0.8.1"
+INSTALL_DIR="$PLATFORM_ROOT/install/thirdparty_lib/osqp-eigen-0.8.1"
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 mkdir -p "$INSTALL_DIR"
 
-OSQP_INSTALL_DIR="$PLATFORM_ROOT/install/third_party_libs/navigation_third_party_libs/osqp-0.6.3"
+OSQP_INSTALL_DIR="$PLATFORM_ROOT/install/thirdparty_lib/osqp-0.6.3"
 
 cmake "$SRC_DIR" \
   -DBUILD_SHARED_LIBS=ON \

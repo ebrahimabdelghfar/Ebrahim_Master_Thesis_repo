@@ -4,9 +4,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLATFORM_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-SRC_DIR="$PLATFORM_ROOT/third_party_libs/Ipopt-stable-3.14"
-BUILD_DIR="$PLATFORM_ROOT/build/third_party_libs/Ipopt-stable-3.14"
-INSTALL_DIR="$PLATFORM_ROOT/install/third_party_libs/Ipopt-stable-3.14"
+SRC_DIR="$PLATFORM_ROOT/thirdparty_lib/Ipopt-stable-3.14"
+BUILD_DIR="$PLATFORM_ROOT/build/thirdparty_lib/Ipopt-stable-3.14"
+INSTALL_DIR="$PLATFORM_ROOT/install/thirdparty_lib/Ipopt-stable-3.14"
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"

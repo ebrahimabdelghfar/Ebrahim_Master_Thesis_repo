@@ -4,10 +4,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLATFORM_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-SRC_DIR="$PLATFORM_ROOT/third_party_libs/casadi-3.7.0"
-BUILD_DIR="$PLATFORM_ROOT/build/third_party_libs/casadi-3.7.0"
-INSTALL_DIR="$PLATFORM_ROOT/install/third_party_libs/casadi-3.7.0"
-IPOPT_INSTALL_DIR="$PLATFORM_ROOT/install/third_party_libs/ipopt-stable-3.14"
+SRC_DIR="$PLATFORM_ROOT/thirdparty_lib/casadi-3.7.0"
+BUILD_DIR="$PLATFORM_ROOT/build/thirdparty_lib/casadi-3.7.0"
+INSTALL_DIR="$PLATFORM_ROOT/install/thirdparty_lib/casadi-3.7.0"
+IPOPT_INSTALL_DIR="$PLATFORM_ROOT/install/thirdparty_lib/Ipopt-stable-3.14"
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"

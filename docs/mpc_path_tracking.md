@@ -179,6 +179,16 @@ dt = clamp( horizon_distance_m / (N * max(vx_ref, v_floor)), dt_min, dt_max )
 
 This keeps the horizon's *look-ahead distance* roughly constant regardless of speed, while `dt_min`/`dt_max` bound it away from numerically degenerate (too small) or destabilizing (too coarse) values. This internal `dt` is deliberately decoupled from the outer ROS control-loop rate (`horizon.control_rate_hz`) — the control loop always runs at a fixed cadence; only the *internal* prediction spacing adapts.
 
+![Dynamic dt plot](images/dynamic_dt.png)
+
+**Understanding the Adaptive Prediction Step**
+
+The MPC controller works by predicting exactly `N=30` steps into the future. If the time between these steps (`dt`) was fixed, the look-ahead distance would be dangerously short at low speeds and stretch too far off the track at high speeds. To solve this, we use a *dynamic* time step that shrinks as speed increases—acting like an automatic zoom lens to keep the car focused on the same stretch of road.
+
+* **Top Panel ($dt$ vs Speed):** At slow speeds, the time step is large (clamped at `dt_max=80ms`) to ensure the prediction reaches far enough ahead. As speed increases, the time step smoothly shrinks down to `dt_min=20ms` to prevent the predictions from stretching too far.
+* **Middle Panel (Look-ahead Distance vs Speed):** In the ideal driving range (roughly 1.2 m/s to 5 m/s), the dynamic `dt` perfectly balances the speed, resulting in a flat look-ahead distance of exactly 3.0 meters. Above 5 m/s, the time step hits its 20ms safety floor. Because `dt` can no longer shrink to compensate for the higher speed, the look-ahead distance naturally and safely increases, giving the fast-moving car more distance to react to upcoming corners.
+* **Bottom Panel (Spatial Coverage):** This demonstrates the physical result. Whether driving at 2 m/s or 7 m/s, the physical coverage of the prediction steps (the dots) remains consistent. The fast car simply executes its steps much more rapidly (every 20ms instead of 67ms) to maintain that coverage.
+
 ### Reported solve cost
 
 `/mpc/status`'s `cost` field is *not* OSQP's raw internal objective. The QP is built by "completing the square" — `Qx = C^T diag(Q) C`, `qx = -C^T diag(Q) r` (`mpc_controller.cpp`, `errorCostMatrices`) — so `0.5 z^T P z + q^T z` alone equals `(Cx-r)^T diag(Q) (Cx-r) - r^T diag(Q) r`, missing the constant `r^T diag(Q) r` term (and similarly `u_prev^T R_rate u_prev` from the k=0 rate penalty). Since `r` includes the raceline's **absolute map-frame** waypoint coordinates (`r(0) = -sin(psi)*ref.x + cos(psi)*ref.y`), that dropped constant scales with wherever the map origin happens to sit relative to the raceline — this was caught in practice as a startlingly large, always-negative `cost` (observed as low as -361873) that looked alarming but never actually affected the solved trajectory (a constant doesn't change the argmin). Fixed by accumulating the dropped constant per stage/terminal (`MpcStage::cost_offset`, `SolverProblem::cost_offset`) and adding it back in `solver_interface.cpp` before reporting `solution.cost`, so it now reads as genuine non-negative squared tracking error (typically tens, not hundreds of thousands).
@@ -203,13 +213,14 @@ On solver failure, stale odometry, or missing raceline, the node falls back per 
 ### Build
 
 ```bash
+./scripts/thirdparty_lib_build/build_all.sh   # one-time: builds Ipopt, OSQP, CasADi, osqp-eigen, acados
 source /opt/ros/humble/setup.bash
 cd /home/ebrahim/Ebrahim_Master_Thesis_repo
 colcon build --packages-select mpc_path_tracking
 source install/setup.bash
 ```
 
-The first build fetches and builds OSQP (v0.6.3) and osqp-eigen (v0.8.1) from source as part of the CMake configure step (a small superbuild — see `CMakeLists.txt`), since neither is packaged elsewhere in this workspace. This adds a couple of minutes to a clean build; subsequent builds reuse the already-built/installed copies under `build/mpc_path_tracking/osqp_install/`.
+OSQP (v0.6.3), osqp-eigen (v0.8.1), CasADi (v3.7.0), acados (v0.5.5), and Ipopt (v3.14) are vendored under `thirdparty_lib/` at the repo root and built out-of-tree into an isolated install prefix at `install/thirdparty_lib/<lib>/` by `scripts/thirdparty_lib_build/build_all.sh` (see `CMakeLists.txt`'s `THIRDPARTY_INSTALL_ROOT`). This is a one-time step — no network fetch happens during `colcon build`; rerun it only if you change/update a vendored lib version.
 
 ### Run unit tests
 

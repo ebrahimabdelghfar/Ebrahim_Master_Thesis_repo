@@ -33,6 +33,16 @@ TrackError computeTrackError(
   const f1tenth_msgs::msg::WaypointArray & waypoints,
   double x, double y, double yaw);
 
+// Largest |kappa_radpm| among waypoints within `lookahead_distance` (m,
+// accumulated as Euclidean distance between consecutive waypoints) ahead of
+// `start_idx`, wrapping around the array as a closed loop. Used to detect an
+// imminent sharp corner before starting a controller handover.
+//
+// Precondition: waypoints.waypoints must be non-empty; start_idx < size().
+double maxCurvatureAhead(
+  const f1tenth_msgs::msg::WaypointArray & waypoints,
+  size_t start_idx, double lookahead_distance);
+
 }  // namespace track_geometry_utils
 
 #endif  // TRACK_GEOMETRY_UTILS__TRACK_GEOMETRY_UTILS_HPP_

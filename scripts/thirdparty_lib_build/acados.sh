@@ -2,11 +2,11 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLATFORM_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PLATFORM_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-SRC_DIR="$PLATFORM_ROOT/third_party_libs/acados-0.5.5"
-BUILD_DIR="$PLATFORM_ROOT/build/third_party_libs/acados-0.5.5"
-INSTALL_DIR="$PLATFORM_ROOT/install/third_party_libs/acados-0.5.5"
+SRC_DIR="$PLATFORM_ROOT/thirdparty_lib/acados-0.5.5"
+BUILD_DIR="$PLATFORM_ROOT/build/thirdparty_lib/acados-0.5.5"
+INSTALL_DIR="$PLATFORM_ROOT/install/thirdparty_lib/acados-0.5.5"
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"

@@ -42,4 +42,27 @@ TrackError computeTrackError(
   return result;
 }
 
+double maxCurvatureAhead(
+  const f1tenth_msgs::msg::WaypointArray & waypoints,
+  size_t start_idx, double lookahead_distance)
+{
+  const size_t n = waypoints.waypoints.size();
+  if (n == 0 || start_idx >= n) {
+    return 0.0;
+  }
+
+  double max_kappa = std::abs(waypoints.waypoints[start_idx].kappa_radpm);
+  double accumulated = 0.0;
+  size_t idx = start_idx;
+  for (size_t step = 0; step < n && accumulated < lookahead_distance; ++step) {
+    const size_t next_idx = (idx + 1) % n;
+    const auto & a = waypoints.waypoints[idx];
+    const auto & b = waypoints.waypoints[next_idx];
+    accumulated += std::hypot(b.x_m - a.x_m, b.y_m - a.y_m);
+    max_kappa = std::max(max_kappa, std::abs(b.kappa_radpm));
+    idx = next_idx;
+  }
+  return max_kappa;
+}
+
 }  // namespace track_geometry_utils

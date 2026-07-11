@@ -36,6 +36,8 @@ void ParameterManager::declareAll()
   node_->declare_parameter<int>("error_convergence_window", 20);
   node_->declare_parameter<double>("delta_t_timeout", 1.0);
   node_->declare_parameter<double>("delta_t_switch", 1.0);
+  node_->declare_parameter<double>("corner_lookahead_distance", 3.0);
+  node_->declare_parameter<double>("kappa_max_for_switch", 0.35);
   node_->declare_parameter<double>("max_decel_mps2", 8.26);
 
   // Tire-param plausibility bounds, fixed order [Bf,Cf,Df,Ef,Br,Cr,Dr,Er]
@@ -76,6 +78,8 @@ SafetyConfig ParameterManager::safety() const
     static_cast<int>(node_->get_parameter("error_convergence_window").as_int());
   s.delta_t_timeout = node_->get_parameter("delta_t_timeout").as_double();
   s.delta_t_switch = node_->get_parameter("delta_t_switch").as_double();
+  s.corner_lookahead_distance = node_->get_parameter("corner_lookahead_distance").as_double();
+  s.kappa_max_for_switch = node_->get_parameter("kappa_max_for_switch").as_double();
   s.max_decel_mps2 = node_->get_parameter("max_decel_mps2").as_double();
   return s;
 }

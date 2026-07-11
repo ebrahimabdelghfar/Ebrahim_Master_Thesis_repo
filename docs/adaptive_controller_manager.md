@@ -26,9 +26,11 @@ Before this package existed, `pure_pursuit` and `mpc_path_tracking` each publish
 | `Δt_state_max` (`delta_t_state_max`) | Odometry staleness cutoff (Safety 2B) | s |
 | `Δt_timeout` (`delta_t_timeout`) | Controller-silence timeout (Safety 5A) | s |
 | `error_convergence_window` | Number of samples in the rolling `d(e_y)/dt` window (Safety 3) | samples |
+| `corner_lookahead_distance` | Lookahead distance for the sharp-corner switch inhibit (Safety 7) | m |
+| `kappa_max_for_switch` | Curvature threshold above which a corner blocks arming (Safety 7) | rad/m |
 | **Handover ramp** |||
 | `Δt_switch` (`delta_t_switch`) | Duration of the linear speed-ramp during handover | s |
-| `v_frozen` | Outgoing controller's last commanded speed, frozen at switch start | m/s |
+| `v_frozen` | minimum controller's last commanded speed, frozen at switch start | m/s |
 | `v_new(t)` | Incoming controller's commanded speed at time `t` | m/s |
 | `v_cmd(t)` | Blended speed published to `/drive` during switching | m/s |
 | `α(t)` (`alpha`) | Blend factor: `clamp(t / Δt_switch, 0, 1)` | — |
@@ -38,6 +40,8 @@ Before this package existed, `pure_pursuit` and `mpc_path_tracking` each publish
 | `e_ψ` (heading error) | Heading error relative to the raceline tangent | rad |
 | `d(e_y)/dt` | Rate of change of lateral error (convergence signal) | m/s |
 | `v_x` | Longitudinal velocity from `/odom` | m/s |
+| `κ` (`kappa_radpm`) | Per-waypoint signed curvature, from `f1tenth_msgs/msg/Waypoint` | rad/m |
+| `max_kappa_ahead` | Max `\|κ\|` within `corner_lookahead_distance` of the nearest waypoint | rad/m |
 | **Tire-parameter handoff** |||
 | `Bf, Cf, Df, Ef` | Pacejka front-axle coefficients `[B, C, D, E]` | — |
 | `Br, Cr, Dr, Er` | Pacejka rear-axle coefficients `[B, C, D, E]` | — |
@@ -132,6 +136,10 @@ All thresholds are `adaptive_controller_manager/config/adaptive_controller_manag
 **5A — controller-silence timeout.** `delta_t_timeout = 1.0` s: if the active controller's own health/state topic goes silent for this long, `ppHealthOk()`/`mpcHealthOk()` return false (implemented as `has_X && (now() - last_X_stamp).seconds() < delta_t_timeout`), triggering the relevant fallback.
 
 **5B — both unhealthy → `EMERGENCY_HALT`.** Hardcoded zero-throttle, zero-steering `/drive`, published every tick until at least one controller recovers, then back to `BOOTSTRAP_PP`.
+
+**7 — sharp corner ahead.** `track_geometry_utils::maxCurvatureAhead()` walks the raceline from the nearest waypoint, accumulating Euclidean spacing up to `corner_lookahead_distance` (`3.0` m) and tracking the largest `|kappa_radpm|` seen (curvature is precomputed per-waypoint by the raceline generator, not derived at runtime). If that max exceeds `kappa_max_for_switch` (`0.35` rad/m), `armingConditionsSatisfied()` blocks the `RUNNING_PP → SWITCHING_TO_MPC` handover — starting the switch ramp's steering jump and speed blend right before a tight corner risks the car losing control mid-turn. `0.35` rad/m was picked from `f1tenth_racetracks/YasMarina/YasMarina_raceline.csv` curvature stats (median ≈ 0.03, p90 ≈ 0.18, p95 ≈ 0.23, max ≈ 0.70 rad/m) — just above the p99 tail, so only genuine hairpins block arming; retune per track/vehicle.
+
+This gate applies **only** to the voluntary PP→MPC handover, not to the `RUNNING_MPC → SWITCHING_TO_PP` failover (Safety 5A/5B): that path is a mandatory fallback for an already-unhealthy controller, and blocking it on curvature would leave the car on the bad controller through the corner instead — strictly worse than switching.
 
 Tire-parameter plausibility bounds (`tire_param_min`/`tire_param_max`, fixed order `[Bf,Cf,Df,Ef,Br,Cr,Dr,Er]`) are coarse sanity bounds meant to catch a grossly wrong identification (NaN, sign flip, orders of magnitude off) — not a validated physical range, and worth retuning per vehicle.
 
@@ -282,7 +290,7 @@ The manager logs a throttled (every 2s) one-line summary covering both controlle
 ```
 [status] state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=6.62 e_y=-0.456 theta=0.275 | params: stored_v=0 fwd_v=0 pending=no
 ```
-When a stored (validated) tire submission is waiting on the arming gates in `RUNNING_PP`, a second throttled line names exactly which gates are still failing (`v_min`, `e_y_max`, `theta_max`, `convergence`, `odom_stale`, `no_track_error`) - this is the fastest way to diagnose "identification finished but it hasn't switched to MPC yet" (see §10).
+When a stored (validated) tire submission is waiting on the arming gates in `RUNNING_PP`, a second throttled line names exactly which gates are still failing (`v_min`, `e_y_max`, `theta_max`, `sharp_corner_ahead`, `convergence`, `odom_stale`, `no_track_error`) - this is the fastest way to diagnose "identification finished but it hasn't switched to MPC yet" (see §10).
 
 ## 10. Troubleshooting
 

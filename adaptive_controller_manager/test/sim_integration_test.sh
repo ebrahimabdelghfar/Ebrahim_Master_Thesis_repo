@@ -47,7 +47,8 @@ trap cleanup EXIT
 source /opt/ros/humble/setup.bash
 source "$REPO_ROOT/install/setup.bash"
 export MPLBACKEND=Agg
-export LD_LIBRARY_PATH="$REPO_ROOT/build/mpc_path_tracking/osqp_install/lib:${LD_LIBRARY_PATH:-}"
+THIRDPARTY_INSTALL_ROOT="$REPO_ROOT/install/thirdparty_lib"
+export LD_LIBRARY_PATH="$THIRDPARTY_INSTALL_ROOT/osqp-0.6.3/lib:$THIRDPARTY_INSTALL_ROOT/osqp-eigen-0.8.1/lib:$THIRDPARTY_INSTALL_ROOT/casadi-3.7.0/lib:$THIRDPARTY_INSTALL_ROOT/acados-0.5.5/lib:$THIRDPARTY_INSTALL_ROOT/Ipopt-stable-3.14/lib:${LD_LIBRARY_PATH:-}"
 
 set -u
 

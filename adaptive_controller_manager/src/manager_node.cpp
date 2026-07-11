@@ -409,6 +409,7 @@ private:
     if (has_track_error_ && std::abs(last_heading_error_) >= safety_.theta_max) {
       failing.push_back("theta_max");
     }
+    if (has_track_error_ && sharpCornerAhead()) {failing.push_back("sharp_corner_ahead");}
     if (!convergenceOk()) {failing.push_back("convergence");}
     if (failing.empty()) {
       return "all gates pass";
@@ -563,7 +564,19 @@ private:
     if (std::abs(last_heading_error_) >= safety_.theta_max) {
       return false;
     }
+    if (sharpCornerAhead()) {
+      return false;
+    }
     return convergenceOk();
+  }
+
+  // Safety 7: true if the raceline curvature within corner_lookahead_distance
+  // ahead of the vehicle exceeds kappa_max_for_switch - blocks arming MPC
+  // right before a sharp corner, where the switch ramp's steering jump and
+  // speed blend could destabilize the vehicle mid-turn.
+  bool sharpCornerAhead() const
+  {
+    return has_track_error_ && last_max_kappa_ahead_ > safety_.kappa_max_for_switch;
   }
 
   bool convergenceOk() const
@@ -589,6 +602,8 @@ private:
       last_waypoints_, odom_.pose.pose.position.x, odom_.pose.pose.position.y, yaw);
     last_e_y_ = err.e_y;
     last_heading_error_ = err.heading_error;
+    last_max_kappa_ahead_ = track_geometry_utils::maxCurvatureAhead(
+      last_waypoints_, err.nearest_idx, safety_.corner_lookahead_distance);
     has_track_error_ = true;
   }
 
@@ -792,6 +807,7 @@ private:
   bool has_track_error_{false};
   double last_e_y_{0.0};
   double last_heading_error_{0.0};
+  double last_max_kappa_ahead_{0.0};
   bool has_prev_e_y_{false};
   double prev_e_y_{0.0};
   rclcpp::Time prev_e_y_stamp_;

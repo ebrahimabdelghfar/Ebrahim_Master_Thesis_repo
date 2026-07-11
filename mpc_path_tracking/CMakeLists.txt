@@ -23,56 +23,36 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(adaptive_controller_interfaces REQUIRED)
 find_package(track_geometry_utils REQUIRED)
 
-# OSQP + osqp-eigen are not vendored anywhere else in this workspace
-# (pinned to the versions already validated together elsewhere on this
-# machine: osqp v0.6.3 / osqp-eigen v0.8.1). osqp-eigen's own CMakeLists
-# locates OSQP via find_package(osqp), which needs an *installed* package
-# config (osqp's build-tree config export is unreliable across CMake
-# versions in exactly this nested-FetchContent setup), so OSQP is fetched
-# and installed into a local prefix at configure time (a small superbuild
-# step) before osqp-eigen is fetched.
-include(FetchContent)
+# All 5 thirdparty libs are vendored under thirdparty_lib/ at the repo
+# root and built out-of-tree into an isolated, repo-local install prefix
+# by scripts/thirdparty_lib_build/build_all.sh (no network fetch at
+# configure time).
+set(THIRDPARTY_INSTALL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../install/thirdparty_lib")
+list(APPEND CMAKE_PREFIX_PATH
+  "${THIRDPARTY_INSTALL_ROOT}/osqp-0.6.3"
+  "${THIRDPARTY_INSTALL_ROOT}/osqp-eigen-0.8.1"
+  "${THIRDPARTY_INSTALL_ROOT}/casadi-3.7.0"
+  "${THIRDPARTY_INSTALL_ROOT}/acados-0.5.5")
 
-set(BUILD_TESTING_SAVED ${BUILD_TESTING})
-set(BUILD_TESTING OFF)
+find_package(osqp REQUIRED CONFIG)
+find_package(OsqpEigen REQUIRED CONFIG)
+find_package(casadi REQUIRED CONFIG)
 
-FetchContent_Declare(
-  osqp
-  GIT_REPOSITORY https://github.com/osqp/osqp.git
-  GIT_TAG v0.6.3
-)
-FetchContent_Populate(osqp)
+# acados installs its CMake config (and hpipm's/qpOASES_e's) to a plain
+# <prefix>/cmake/ dir, which isn't a location find_package() searches
+# automatically even via CMAKE_PREFIX_PATH - point the _DIR vars at it
+# directly. blasfeo's config lands in the standard share/cmake/ location.
+set(acados_DIR "${THIRDPARTY_INSTALL_ROOT}/acados-0.5.5/cmake")
+set(hpipm_DIR "${THIRDPARTY_INSTALL_ROOT}/acados-0.5.5/cmake")
+set(qpOASES_e_DIR "${THIRDPARTY_INSTALL_ROOT}/acados-0.5.5/cmake")
+set(blasfeo_DIR "${THIRDPARTY_INSTALL_ROOT}/acados-0.5.5/share/cmake/blasfeo")
+find_package(acados REQUIRED CONFIG)
 
-set(OSQP_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/osqp_install")
-set(OSQP_BUILD_DIR "${CMAKE_BINARY_DIR}/osqp_build")
-if(NOT EXISTS "${OSQP_INSTALL_PREFIX}/lib/cmake/osqp/osqp-config.cmake")
-  execute_process(
-    COMMAND ${CMAKE_COMMAND} -S "${osqp_SOURCE_DIR}" -B "${OSQP_BUILD_DIR}"
-            -DBUILD_SHARED_LIBS=ON
-            -DCMAKE_INSTALL_PREFIX=${OSQP_INSTALL_PREFIX}
-            -DCMAKE_BUILD_TYPE=Release
-    RESULT_VARIABLE OSQP_CONFIGURE_RESULT)
-  if(NOT OSQP_CONFIGURE_RESULT EQUAL 0)
-    message(FATAL_ERROR "Failed to configure vendored OSQP (v0.6.3)")
-  endif()
-  execute_process(
-    COMMAND ${CMAKE_COMMAND} --build "${OSQP_BUILD_DIR}" --target install -- -j
-    RESULT_VARIABLE OSQP_BUILD_RESULT)
-  if(NOT OSQP_BUILD_RESULT EQUAL 0)
-    message(FATAL_ERROR "Failed to build/install vendored OSQP (v0.6.3)")
-  endif()
-endif()
-set(osqp_DIR "${OSQP_INSTALL_PREFIX}/lib/cmake/osqp" CACHE PATH "" FORCE)
-list(APPEND CMAKE_PREFIX_PATH "${OSQP_INSTALL_PREFIX}")
-
-FetchContent_Declare(
-  osqp-eigen
-  GIT_REPOSITORY https://github.com/robotology/osqp-eigen.git
-  GIT_TAG v0.8.1
-)
-FetchContent_MakeAvailable(osqp-eigen)
-
-set(BUILD_TESTING ${BUILD_TESTING_SAVED})
+# Ipopt (Autotools build, no CMake config export) - manual include/lib
+# paths, same pattern scripts/thirdparty_lib_build/casadi.sh uses for it.
+set(IPOPT_INSTALL_DIR "${THIRDPARTY_INSTALL_ROOT}/Ipopt-stable-3.14")
+set(IPOPT_INCLUDE_DIRS "${IPOPT_INSTALL_DIR}/include/coin-or")
+set(IPOPT_LIBRARIES "${IPOPT_INSTALL_DIR}/lib/libipopt.so")
 
 add_library(${PROJECT_NAME}_core
   src/vehicle_model.cpp
@@ -84,10 +64,14 @@ add_library(${PROJECT_NAME}_core
 )
 target_include_directories(${PROJECT_NAME}_core PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-  "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>")
+  "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>"
+  "${IPOPT_INCLUDE_DIRS}")
 target_link_libraries(${PROJECT_NAME}_core PUBLIC
   Eigen3::Eigen
   OsqpEigen::OsqpEigen
+  casadi::casadi
+  acados
+  "${IPOPT_LIBRARIES}"
   rclcpp::rclcpp
   ${nav_msgs_TARGETS}
   ${ackermann_msgs_TARGETS}
@@ -104,22 +88,20 @@ ament_target_dependencies(${PROJECT_NAME}_core PUBLIC
 
 add_executable(mpc_node src/mpc_node.cpp)
 target_link_libraries(mpc_node ${PROJECT_NAME}_core)
-# libosqp.so lives in the private osqp_install superbuild prefix under
-# build/, which does not survive a bare `rm -rf build`; use that only for
-# the build-tree RPATH, and install a copy of libosqp.so alongside this
-# package's own libraries so the installed mpc_node keeps working via a
-# relative $ORIGIN RPATH even after build/ is deleted.
+# Thirdparty libs live at a stable, repo-local install prefix outside
+# build/ (see THIRDPARTY_INSTALL_ROOT above), so it survives `rm -rf
+# build` and both the build-tree and installed binary can RPATH straight
+# to it.
+set(THIRDPARTY_LIB_RPATH
+  "${THIRDPARTY_INSTALL_ROOT}/osqp-0.6.3/lib;${THIRDPARTY_INSTALL_ROOT}/osqp-eigen-0.8.1/lib;${THIRDPARTY_INSTALL_ROOT}/casadi-3.7.0/lib;${THIRDPARTY_INSTALL_ROOT}/acados-0.5.5/lib;${THIRDPARTY_INSTALL_ROOT}/Ipopt-stable-3.14/lib")
 set_target_properties(mpc_node PROPERTIES
-  BUILD_RPATH "${OSQP_INSTALL_PREFIX}/lib"
-  INSTALL_RPATH "$ORIGIN/..")
+  BUILD_RPATH "${THIRDPARTY_LIB_RPATH}"
+  INSTALL_RPATH "${THIRDPARTY_LIB_RPATH}")
 
 install(TARGETS ${PROJECT_NAME}_core
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
-
-install(FILES "${OSQP_INSTALL_PREFIX}/lib/libosqp.so"
-  DESTINATION lib)
 
 install(TARGETS mpc_node
   DESTINATION lib/${PROJECT_NAME})
@@ -135,11 +117,11 @@ if(BUILD_TESTING)
 
   ament_add_gtest(test_vehicle_model test/test_vehicle_model.cpp)
   target_link_libraries(test_vehicle_model ${PROJECT_NAME}_core)
-  set_target_properties(test_vehicle_model PROPERTIES BUILD_RPATH "${OSQP_INSTALL_PREFIX}/lib")
+  set_target_properties(test_vehicle_model PROPERTIES BUILD_RPATH "${THIRDPARTY_LIB_RPATH}")
 
   ament_add_gtest(test_reference_trajectory_handler test/test_reference_trajectory_handler.cpp)
   target_link_libraries(test_reference_trajectory_handler ${PROJECT_NAME}_core)
-  set_target_properties(test_reference_trajectory_handler PROPERTIES BUILD_RPATH "${OSQP_INSTALL_PREFIX}/lib")
+  set_target_properties(test_reference_trajectory_handler PROPERTIES BUILD_RPATH "${THIRDPARTY_LIB_RPATH}")
 endif()
 
 ament_package()

@@ -37,6 +37,12 @@ struct SafetyConfig
   double delta_t_timeout{1.0};
   double delta_t_switch{1.0};
 
+  // Safety 7: block the PP->MPC handover if a sharp corner is imminent -
+  // starting the switch ramp (steering jump + speed blend) right before a
+  // tight corner risks destabilizing the vehicle mid-turn.
+  double corner_lookahead_distance{3.0};   // m, ahead of the nearest waypoint
+  double kappa_max_for_switch{0.35};       // rad/m, above this counts as sharp
+
   // Global cap on how fast a commanded speed may DECREASE tick-to-tick
   // (m/s^2) - covers the switch ramp, EMERGENCY_HALT's zero command, and
   // the stale-data fallback, so none of them ever reads as an instant
