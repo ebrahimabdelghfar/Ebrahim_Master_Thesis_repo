@@ -10,7 +10,14 @@ pure_pursuit:
     
     # Topic names
     odom_topic: "/odom"
-    drive_topic: "/drive"
+    drive_topic: "pp/drive_cmd"
     waypoint_topic: "/raceline_waypoints"
-    
+    enable_topic: "Start_Working_pp"
+    state_topic: "pp_state"
+    health_topic: "pp_health"
+
+    # Managed-mode gating (see adaptive_controller_manager)
+    standalone_mode: false
+    stale_data_timeout_s: 0.5
+
     show_animation: true

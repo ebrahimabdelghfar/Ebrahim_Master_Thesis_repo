@@ -559,8 +559,9 @@ def nn_train(training_data, racecar_version, save_LUT_name, plot_model):
         log_info(f"==========================================")
         
         if plot_model:
-            log_warn("Close the plot window (press Q) to continue... ")
-            plot_results(model, v_x, v_y, omega, delta, C_Pf_identified, C_Pr_identified, i)   
+            saved_path = plot_results(
+                model, v_x, v_y, omega, delta, C_Pf_identified, C_Pr_identified, i, racecar_version)
+            log_info(f"Saved Pacejka fit plot to: {saved_path}")
             
         model['C_Pf_model'] = C_Pf_identified
         model['C_Pr_model'] = C_Pr_identified

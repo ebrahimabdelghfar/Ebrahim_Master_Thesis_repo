@@ -171,7 +171,18 @@ class LookupGenerator:
     ax.plot([vel, vel], [steer, steer], [0, a_lat], c='r', linestyle='--', zorder=10)
     ax.plot([vel, vel], [START_STEER, steer], [0, 0], c='r', linestyle='--', zorder=10)
     ax.plot([START_VEL, vel], [steer, steer], [0, 0], c='r', linestyle='--', zorder=10)
-    plt.show()
+
+    # Saved, never shown: this runs inside the ROS node's own timer callback
+    # (nn_train -> LookupGenerator.run_generator, every identification AND
+    # periodic re-identification cycle) - plt.show() would block the whole
+    # node indefinitely waiting for a window nobody is watching for.
+    package_path = get_package_path()
+    save_dir = os.path.join(package_path, "models", self.racecar_version)
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, self.save_LUT_name + "_lookup_plot.png")
+    fig.savefig(save_path)
+    plt.close(fig)
+    print(f"[INFO] Saved lookup table plot to: {save_path}")
 
   def save_lookup(self):
     package_path = get_package_path()

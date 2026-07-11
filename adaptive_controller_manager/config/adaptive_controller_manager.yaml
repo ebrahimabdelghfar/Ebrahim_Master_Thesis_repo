@@ -1,0 +1,57 @@
+adaptive_controller_manager:
+  ros__parameters:
+
+    # ---------------- Topics ----------------
+    odom_topic: "/odom"
+    waypoint_topic: "/raceline_waypoints"
+    pp_drive_topic: "pp/drive_cmd"
+    mpc_drive_topic: "mpc/drive_cmd"
+    pp_state_topic: "pp_state"
+    pp_health_topic: "pp_health"
+    mpc_status_topic: "/mpc/status"
+    sysid_first_run_topic: "sysid/first_run"
+    drive_topic: "/drive"                      # sole writer in the stack
+    start_working_pp_topic: "Start_Working_pp"
+    start_working_mpc_topic: "Start_Working_mpc"
+    sysid_update_params_service: "sysid/update_params"
+    mpc_update_params_service: "mpc/update_params"
+
+    # ---------------- Safety-gate thresholds ----------------
+    control_rate_hz: 20.0
+
+    # Safety 1A: vehicle must be moving above this before arming MPC
+    v_min: 0.5                  # m/s
+
+    # Safety 1B: track alignment required before arming MPC
+    e_y_max: 0.1                # m
+    # 0.1 rad was the original illustrative default, but live testing on
+    # YasMarina showed pure_pursuit's own heading error (it doesn't
+    # explicitly minimize heading, only lookahead-point lateral geometry)
+    # has a median |heading_error| ~0.09 rad and a p90 of ~0.25 rad under
+    # normal driving - 0.1 would essentially never arm. Retuned to 0.3 rad
+    # (comfortably above the observed p90) based on that measurement.
+    theta_max: 0.3               # rad
+
+    # Safety 2B: /odom staleness cutoff, blocks switching / triggers fallback
+    delta_t_state_max: 0.1       # s
+
+    # Safety 3: running-average d(e_y)/dt window (samples) must be < 0 before arming
+    error_convergence_window: 20
+
+    # Safety 5A: active-controller silence timeout -> attempt switch to the other
+    delta_t_timeout: 1.0         # s
+
+    # Design decision 1: linear speed-ramp duration during handover
+    delta_t_switch: 1.0          # s
+
+    # Global cap on how fast a commanded speed may decrease tick-to-tick -
+    # covers the switch ramp, EMERGENCY_HALT, and stale-data fallback, so
+    # none of them ever reads as an instant stop.
+    max_decel_mps2: 8.26          # m/s^2, matches f1tenth_simulator's max_decel
+
+    # ---------------- Tire-param plausibility bounds ----------------
+    # Coarse sanity bounds on a submitted [Bf,Cf,Df,Ef,Br,Cr,Dr,Er] array -
+    # catches a grossly wrong identification (NaN, sign flip, orders of
+    # magnitude off), not a validated physical range. Retune per vehicle.
+    tire_param_min: [0.0, 0.0, 0.0, -10.0, 0.0, 0.0, 0.0, -10.0]
+    tire_param_max: [50.0, 10.0, 20.0, 10.0, 50.0, 10.0, 20.0, 10.0]

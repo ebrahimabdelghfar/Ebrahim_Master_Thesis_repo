@@ -1,6 +1,8 @@
 #ifndef MPC_PATH_TRACKING__VEHICLE_MODEL_HPP_
 #define MPC_PATH_TRACKING__VEHICLE_MODEL_HPP_
 
+#include <mutex>
+
 #include <Eigen/Dense>
 
 namespace mpc_path_tracking
@@ -48,6 +50,13 @@ class VehicleModel
 public:
   VehicleModel(const VehicleParams & vehicle, const TireParams & tire);
 
+  // MpcController keeps its own VehicleModel copy (see mpc_controller.hpp's
+  // `model_` member) - tire_mutex_ is per-instance state, not shared data,
+  // so copies must NOT copy the mutex itself, only the (thread-safely read)
+  // vehicle_/tire_ values, each into a freshly-constructed mutex.
+  VehicleModel(const VehicleModel & other);
+  VehicleModel & operator=(const VehicleModel & other);
+
   // Continuous-time nonlinear dynamics xdot = f(x, u).
   State continuousDynamics(const State & x, const Input & u) const;
 
@@ -78,7 +87,17 @@ public:
   double lateralForceRear(double alpha_r, double fz_r) const;
 
   const VehicleParams & vehicleParams() const { return vehicle_; }
-  const TireParams & tireParams() const { return tire_; }
+
+  // Thread-safe read of the current tire params (returns a copy - `tire_`
+  // may be concurrently overwritten by setTireParams() from the
+  // mpc/update_params service callback, which runs on a different
+  // executor thread than the control-loop timer).
+  TireParams tireParams() const;
+
+  // Thread-safe replace of the tire params in place, called from the
+  // mpc/update_params service handler once SysID/the manager have
+  // validated a new identification.
+  void setTireParams(const TireParams & tire);
 
   static constexpr double kVxFloor = 0.5;      // m/s, slip-angle/Jacobian clamp only
   static constexpr double kSlipClamp = 0.5236; // rad (~30 deg), Pacejka extrapolation guard
@@ -88,6 +107,7 @@ private:
 
   VehicleParams vehicle_;
   TireParams tire_;
+  mutable std::mutex tire_mutex_;
   double gravity_{9.81};
 };
 

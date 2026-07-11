@@ -21,6 +21,8 @@ struct TopicsConfig
   std::string predicted_trajectory_topic;
   std::string status_topic;
   std::string debug_topic_prefix;
+  std::string enable_topic;
+  std::string param_service;
 };
 
 struct SolverConfig
@@ -64,6 +66,7 @@ public:
   DebugConfig debugConfig() const;
   double controlRateHz() const;
   bool dtAdaptive() const;
+  bool standaloneMode() const;
 
 private:
   rcl_interfaces::msg::SetParametersResult onSetParameters(

@@ -18,6 +18,8 @@
   <depend>std_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_geometry_msgs</depend>
+  <depend>adaptive_controller_interfaces</depend>
+  <depend>track_geometry_utils</depend>
 
   <exec_depend>python3-yaml</exec_depend>
 

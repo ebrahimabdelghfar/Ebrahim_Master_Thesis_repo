@@ -38,6 +38,12 @@ def generate_launch_description():
         description='Racecar version identifier'
     )
 
+    reidentification_interval_arg = DeclareLaunchArgument(
+        'reidentification_interval_s',
+        default_value='30.0',
+        description='Seconds between periodic re-identification cycles once RUNNING'
+    )
+
     # On-track system identification node
     sys_id_node = Node(
         package='on_track_sys_id',
@@ -49,8 +55,23 @@ def generate_launch_description():
             'save_LUT_name': LaunchConfiguration('save_LUT_name'),
             'plot_model': LaunchConfiguration('plot_model'),
             'racecar_version': LaunchConfiguration('racecar_version'),
+            'reidentification_interval_s': LaunchConfiguration('reidentification_interval_s'),
         }],
-        output='screen'
+        # output='log' alone isn't enough: rclpy's get_logger() writes to
+        # stderr (verified directly - plain shell redirection showed 0 bytes
+        # on stdout, everything on stderr), and `ros2 launch`'s own console
+        # aggregation still surfaces those INFO lines regardless of a
+        # node's output= setting. Silencing at the source instead:
+        # --log-level warn drops this node's INFO-level chatter (per-tick
+        # progress bars, "waiting for car to move", etc.) before it reaches
+        # any sink, so it never interleaves with pure_pursuit/
+        # mpc_path_tracking/adaptive_controller_manager's own console
+        # output. WARN/ERROR (real problems) still come through normally.
+        # The heavier per-training-iteration summaries are separately
+        # written via plain print() (see helpers/train_model.py), which IS
+        # correctly routed to this node's own log file by output='log'.
+        arguments=['--ros-args', '--log-level', 'warn'],
+        output='log'
     )
 
     return LaunchDescription([
@@ -59,5 +80,6 @@ def generate_launch_description():
         save_lut_name_arg,
         plot_model_arg,
         racecar_version_arg,
+        reidentification_interval_arg,
         sys_id_node,
     ])

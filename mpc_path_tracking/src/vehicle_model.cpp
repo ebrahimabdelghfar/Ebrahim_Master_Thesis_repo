@@ -11,6 +11,21 @@ VehicleModel::VehicleModel(const VehicleParams & vehicle, const TireParams & tir
 {
 }
 
+VehicleModel::VehicleModel(const VehicleModel & other)
+: vehicle_(other.vehicle_), tire_(other.tireParams())
+{
+}
+
+VehicleModel & VehicleModel::operator=(const VehicleModel & other)
+{
+  if (this == &other) {
+    return *this;
+  }
+  vehicle_ = other.vehicle_;
+  setTireParams(other.tireParams());
+  return *this;
+}
+
 double VehicleModel::pacejka(double alpha, double B, double C, double D, double E)
 {
   const double clamped = std::clamp(alpha, -kSlipClamp, kSlipClamp);
@@ -42,12 +57,34 @@ void VehicleModel::normalLoads(double & fz_f, double & fz_r) const
 
 double VehicleModel::lateralForceFront(double alpha_f, double fz_f) const
 {
-  return fz_f * pacejka(alpha_f, tire_.Bf, tire_.Cf, tire_.Df, tire_.Ef);
+  TireParams tire;
+  {
+    std::lock_guard<std::mutex> lock(tire_mutex_);
+    tire = tire_;
+  }
+  return fz_f * pacejka(alpha_f, tire.Bf, tire.Cf, tire.Df, tire.Ef);
 }
 
 double VehicleModel::lateralForceRear(double alpha_r, double fz_r) const
 {
-  return fz_r * pacejka(alpha_r, tire_.Br, tire_.Cr, tire_.Dr, tire_.Er);
+  TireParams tire;
+  {
+    std::lock_guard<std::mutex> lock(tire_mutex_);
+    tire = tire_;
+  }
+  return fz_r * pacejka(alpha_r, tire.Br, tire.Cr, tire.Dr, tire.Er);
+}
+
+TireParams VehicleModel::tireParams() const
+{
+  std::lock_guard<std::mutex> lock(tire_mutex_);
+  return tire_;
+}
+
+void VehicleModel::setTireParams(const TireParams & tire)
+{
+  std::lock_guard<std::mutex> lock(tire_mutex_);
+  tire_ = tire;
 }
 
 State VehicleModel::continuousDynamics(const State & x, const Input & u) const

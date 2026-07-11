@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import rclpy
+from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 import numpy as np
@@ -9,12 +10,13 @@ import yaml
 import csv
 from nav_msgs.msg import Odometry
 from ackermann_msgs.msg import AckermannDriveStamped
-from std_msgs.msg import Float64MultiArray, String
+from std_msgs.msg import Float64MultiArray, String, Bool
 from datetime import datetime
 import sys # Ensure sys is imported
 from tqdm import tqdm
 
 from ament_index_python.packages import get_package_share_directory
+from adaptive_controller_interfaces.srv import IdentifiedParam
 
 # Import helpers - handle both installed and development paths
 try:
@@ -42,6 +44,7 @@ class OnTrackSysId(Node):
         self.declare_parameter('odom_topic', '/odom')
         self.declare_parameter('ackermann_cmd_topic', '/drive')
         self.declare_parameter('benchmarking_log_interval', 100)
+        self.declare_parameter('reidentification_interval_s', 30.0)
         # Get parameters
         self.racecar_version = self.get_parameter('racecar_version').value
         self.save_LUT_name = self.get_parameter('save_LUT_name').value
@@ -89,14 +92,20 @@ class OnTrackSysId(Node):
         self.bench_summary_pub = self.create_publisher(
             String, '/benchmarking/summary', 1)
 
-        # Training completion signal (latched / transient_local)
+        # True until the first successful identification, then false for the
+        # node's life. Latched so a late-starting subscriber (e.g.
+        # adaptive_controller_manager) still sees the current value.
         qos_latched = QoSProfile(
             depth=1,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
             reliability=ReliabilityPolicy.RELIABLE,
         )
-        self.training_complete_pub = self.create_publisher(
-            String, '/sysid/training_complete', qos_latched)
+        self.first_run_pub = self.create_publisher(Bool, 'sysid/first_run', qos_latched)
+        self.first_run_pub.publish(Bool(data=True))
+
+        # Submits identified tire params to adaptive_controller_manager;
+        # replaces the old one-shot latched /sysid/training_complete String.
+        self.update_params_cli = self.create_client(IdentifiedParam, 'sysid/update_params')
 
         # Online benchmarking accumulators
         self.bench_vy = OnlineBenchmark(name='v_y (lateral velocity)')
@@ -120,9 +129,16 @@ class OnTrackSysId(Node):
         timer_period = 1.0 / self.rate
         self.loop_timer = self.create_timer(timer_period, self.loop_callback)
         
-        # State tracking
-        self.data_collection_complete = False
-        self.training_complete = False
+        # State tracking. Phases: 'COLLECTING' (initial fill of the rolling
+        # data buffer) -> 'TRAINING' (run identification, submit params) ->
+        # 'AWAITING_ACK' (non-blocking wait for adaptive_controller_manager's
+        # response) -> 'RUNNING' (estimation + periodic re-identification
+        # every reidentification_interval_s). collect_data() keeps refreshing
+        # the rolling buffer in every phase past 'COLLECTING' so each
+        # periodic retrain uses fresh on-track data, not the original window.
+        self.phase = 'COLLECTING'
+        self.pending_update_future = None
+        self.next_reid_time = None
         self.pbar = None
 
     def init_model_constants(self):
@@ -146,6 +162,7 @@ class OnTrackSysId(Node):
         self.data = np.zeros((self.timesteps, 4))
         self.counter = 0
         self.current_state = np.zeros(4)
+        self._collection_logged = False
 
     def load_parameters(self):
         """
@@ -186,30 +203,38 @@ class OnTrackSysId(Node):
         
     def collect_data(self):
         """
-        Collects data during simulation.
+        Collects data during simulation. Called every tick regardless of
+        phase (not just during initial collection) so the rolling buffer
+        stays fresh for periodic re-identification in the RUNNING phase.
         """
         if self.current_state[0] > 1:  # Only collect data when the car is moving
             self.data = np.roll(self.data, -1, axis=0)
             self.data[-1] = self.current_state
             self.counter += 1
-            
+
             # Log progress bar every 2% to avoid spamming too much but keeping it fluid
             update_interval = max(1, self.timesteps // 50)
-            if self.counter % update_interval == 0 or self.counter == self.timesteps:
+            if not self._collection_logged and (
+                self.counter % update_interval == 0 or self.counter == self.timesteps
+            ):
                 percent = (self.counter / self.timesteps) * 100
                 bar_length = 20
                 filled_length = int(bar_length * self.counter // self.timesteps)
                 bar = '=' * filled_length + '-' * (bar_length - filled_length)
                 self.get_logger().info(f"Collecting data: [{bar}] {percent:.1f}% ({self.counter}/{self.timesteps})")
-                
+
         else:
             # Show waiting message occasionally
             if self.counter == 0 and not hasattr(self, '_waiting_logged'):
                 self.get_logger().info("Waiting for car to move (velocity > 1 m/s)...")
                 self._waiting_logged = True
-                
+
         if self.counter >= self.timesteps:
-            self.get_logger().info("Data collection completed.")
+            # Guarded so this doesn't spam every tick once counter stays
+            # >= timesteps between periodic re-identification cycles.
+            if not self._collection_logged:
+                self.get_logger().info("Data collection completed.")
+                self._collection_logged = True
             return True
         return False
             
@@ -322,46 +347,116 @@ class OnTrackSysId(Node):
                 '\n' + self.bench_omega.get_summary_string()
             )
 
+    def run_identification_cycle(self):
+        """
+        Trains on the current data buffer, reloads model constants, and
+        submits the identified tire params to adaptive_controller_manager
+        via the sysid/update_params service (non-blocking - see
+        handle_pending_ack for the response side). Runs once for the
+        initial bootstrap identification, then again every
+        reidentification_interval_s while in the RUNNING phase.
+        """
+        if not self.update_params_cli.service_is_ready():
+            # adaptive_controller_manager isn't up yet (or restarted) -
+            # retry next tick. Cheap check, so no need to also skip the
+            # (expensive) retrain below more than one tick at a time.
+            return
+
+        self.run_nn_train()
+        self.export_data_as_csv()
+
+        self.get_logger().info("Reloading parameters for estimation...")
+        try:
+            self.model_params = get_model_param(self.racecar_version)
+            self.init_model_constants()
+            self.get_logger().info("Parameters reloaded successfully.")
+        except Exception as e:
+            self.get_logger().error(f"Failed to reload parameters: {e}")
+
+        self.last_time = self.current_time
+        # Re-arm the rolling-window progress counter/log for the next
+        # collection cycle - the data buffer itself keeps rolling
+        # continuously regardless (see collect_data), this only affects
+        # the cosmetic "collecting data" progress log.
+        self.counter = 0
+        self._collection_logged = False
+
+        request = IdentifiedParam.Request()
+        request.param_values = [float(v) for v in self.C_Pf_model] + \
+            [float(v) for v in self.C_Pr_model]
+        self.pending_update_future = self.update_params_cli.call_async(request)
+        self.phase = 'AWAITING_ACK'
+        self.get_logger().info(
+            "Submitted identified params via sysid/update_params, awaiting ack...")
+
+        # Idempotent after the first identification - harmless to republish
+        # on every subsequent re-identification cycle too.
+        self.first_run_pub.publish(Bool(data=False))
+
+    def handle_pending_ack(self):
+        """
+        Non-blocking check of the sysid/update_params future. A literal
+        blocking wait (e.g. spin_until_future_complete) from inside this
+        timer callback would deadlock, since this node spins on a single
+        default executor thread - so the ack is polled across ticks
+        instead, while estimation keeps running in the meantime.
+        """
+        if self.pending_update_future is None or not self.pending_update_future.done():
+            return
+
+        future = self.pending_update_future
+        self.pending_update_future = None
+        try:
+            response = future.result()
+            ack = bool(response.ack) if response is not None else False
+        except Exception as e:
+            self.get_logger().error(f"sysid/update_params call failed: {e}")
+            ack = False
+
+        interval_s = self.get_parameter('reidentification_interval_s').value
+        self.next_reid_time = self.get_clock().now() + Duration(seconds=interval_s)
+
+        if ack:
+            self.get_logger().info("Identified params acked by adaptive_controller_manager.")
+        else:
+            # Manager rejected the submission (implausible values) or the
+            # call itself failed. Keep the previous (already-applied)
+            # model and just retry at the next normal interval, rather
+            # than immediately retraining in a tight loop.
+            self.get_logger().warn(
+                "sysid/update_params was not acked - keeping previous model, "
+                "will retry at the next reidentification interval.")
+        self.phase = 'RUNNING'
+
     def loop_callback(self):
         """
-        Main loop callback - handles data collection, training, and estimation phases.
+        Main loop callback - handles data collection, training, ack-waiting,
+        and estimation phases.
         """
-        if not self.data_collection_complete:
-            # Data Collection Phase
-            if self.collect_data():
-                self.data_collection_complete = True
-                
-        elif not self.training_complete:
-            # Training Phase
-            self.run_nn_train()
-            self.export_data_as_csv()
-            
-            # Reload Parameters Phase
-            self.get_logger().info("Reloading parameters for estimation...")
-            try:
-                self.model_params = get_model_param(self.racecar_version)
-                self.init_model_constants()
-                self.get_logger().info("Parameters reloaded successfully.")
-            except Exception as e:
-                self.get_logger().error(f"Failed to reload parameters: {e}")
-            
-            self.training_complete = True
-            self.last_time = self.current_time
+        # Runs in every phase past initial collection so the rolling buffer
+        # stays fresh for periodic re-identification (see collect_data).
+        collection_filled = self.collect_data()
 
-            # Publish training completion signal with identified params
-            tc_msg = String()
-            tc_msg.data = yaml.dump({
-                'C_Pf': [float(v) for v in self.C_Pf_model],
-                'C_Pr': [float(v) for v in self.C_Pr_model],
-                'racecar_version': self.racecar_version,
-            })
-            self.training_complete_pub.publish(tc_msg)
-            self.get_logger().info("Published training completion signal.")
-            self.get_logger().info("Starting estimation loop...")
-            
-        else:
-            # Estimation Phase
+        if self.phase == 'COLLECTING':
+            if collection_filled:
+                self.phase = 'TRAINING'
+            return
+
+        if self.phase == 'TRAINING':
+            self.run_identification_cycle()
+            return
+
+        if self.phase == 'AWAITING_ACK':
+            # Estimation shouldn't stall just because the ack hasn't
+            # landed yet - AWAITING_ACK is a sub-state layered on RUNNING.
             self.publish_estimates()
+            self.handle_pending_ack()
+            return
+
+        # RUNNING
+        self.publish_estimates()
+        if self.next_reid_time is not None and self.get_clock().now() >= self.next_reid_time:
+            self.phase = 'TRAINING'
 
 
 def main(args=None):

@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from matplotlib import patches
 from nav_msgs.msg import Odometry
 from visualization_msgs.msg import Marker
-from std_msgs.msg import Header, ColorRGBA, Float64
+from std_msgs.msg import Header, ColorRGBA, Float64, Bool
 from rcl_interfaces.msg import SetParametersResult
 from tf_transformations import euler_from_quaternion, quaternion_from_euler
 from geometry_msgs.msg import PoseStamped, Point, Twist, Quaternion, Pose, Vector3
@@ -47,9 +47,14 @@ class PurePursuitNode(Node):
         self.declare_parameter('kd_vel', 0.1)
         self.declare_parameter('show_animation', False)
         self.declare_parameter('odom_topic', '/odom')
-        self.declare_parameter('drive_topic', '/drive')
+        self.declare_parameter('drive_topic', 'pp/drive_cmd')
         self.declare_parameter('waypoint_topic', '/raceline_waypoints')
-        
+        self.declare_parameter('standalone_mode', False)
+        self.declare_parameter('enable_topic', 'Start_Working_pp')
+        self.declare_parameter('state_topic', 'pp_state')
+        self.declare_parameter('health_topic', 'pp_health')
+        self.declare_parameter('stale_data_timeout_s', 0.5)
+
         # Get parameters
         self.LOOKAHEAD = self.get_parameter('lookahead_distance').value
         self.WB = self.get_parameter('wheelbase').value
@@ -60,9 +65,18 @@ class PurePursuitNode(Node):
         odom_topic = self.get_parameter('odom_topic').value
         drive_topic = self.get_parameter('drive_topic').value
         waypoint_topic = self.get_parameter('waypoint_topic').value
-        
+        self.standalone_mode = self.get_parameter('standalone_mode').value
+        enable_topic = self.get_parameter('enable_topic').value
+        state_topic = self.get_parameter('state_topic').value
+        health_topic = self.get_parameter('health_topic').value
+        self.stale_data_timeout_s = self.get_parameter('stale_data_timeout_s').value
+
         self.waypoints = np.array([])
         self.integral_error = 0.0
+        # True once managed startup is authorized by adaptive_controller_manager;
+        # ignored entirely when standalone_mode is True.
+        self.start_working = False
+        self.last_odom_time = None
         
         # Create subscriber and publisher
         self.odom_sub = self.create_subscription(
@@ -89,7 +103,17 @@ class PurePursuitNode(Node):
             drive_topic,
             1
         )
-        
+
+        self.enable_sub = self.create_subscription(
+            Bool,
+            enable_topic,
+            self.enable_callback,
+            1
+        )
+
+        self.state_pub = self.create_publisher(Bool, state_topic, 1)
+        self.health_pub = self.create_publisher(Bool, health_topic, 1)
+
         # Create timer for control loop
         timer_period = 1.0 / self.freqs  # seconds
         self.timer = self.create_timer(timer_period, self.control_loop)
@@ -119,6 +143,9 @@ class PurePursuitNode(Node):
                 self.LOOKAHEAD = param.value
                 self.get_logger().info(f'Updated lookahead_distance to {self.LOOKAHEAD}')
         return SetParametersResult(successful=True)
+
+    def enable_callback(self, msg):
+        self.start_working = msg.data
 
     def waypoint_callback(self, msg):
         """
@@ -155,6 +182,7 @@ class PurePursuitNode(Node):
             data.twist.twist.linear.y,
             data.twist.twist.linear.z
         ]), 2)
+        self.last_odom_time = self.get_clock().now()
 
     def find_distance(self, x1, y1):
         distance = math.sqrt((x1 - self.xc) ** 2 + (y1 - self.yc) ** 2)
@@ -210,9 +238,20 @@ class PurePursuitNode(Node):
         """
         Main control loop - runs at specified frequency
         """
-        if len(self.waypoints) < 2:
+        has_waypoints = len(self.waypoints) >= 2
+        has_odom = self.last_odom_time is not None
+        is_healthy = (
+            has_odom and
+            (self.get_clock().now() - self.last_odom_time).nanoseconds / 1e9
+            < self.stale_data_timeout_s
+        )
+
+        self.state_pub.publish(Bool(data=has_waypoints and has_odom))
+        self.health_pub.publish(Bool(data=is_healthy))
+
+        if not has_waypoints:
             return
-            
+
         cx = self.waypoints[:, 0]
         cy = self.waypoints[:, 1]
 
@@ -289,31 +328,32 @@ class PurePursuitNode(Node):
         ackermann_msg.header.frame_id = "base_link"
         ackermann_msg.drive.speed = commanded_speed
         ackermann_msg.drive.steering_angle = steering_angle
-        self.ackermann_pub.publish(ackermann_msg)
-        
-        self.get_logger().info(
-            f'Steer: {steering_angle:.3f} rad, '
-            f'Cmd Speed: {commanded_speed:.2f}, '
-            f'Target Vx: {target_vx:.2f}, '
-            f'Current V: {self.vel:.2f}'
-        )
+        if self.standalone_mode or self.start_working:
+            self.ackermann_pub.publish(ackermann_msg)
+
+        # self.get_logger().info(
+        #     f'Steer: {steering_angle:.3f} rad, '
+        #     f'Cmd Speed: {commanded_speed:.2f}, '
+        #     f'Target Vx: {target_vx:.2f}, '
+        #     f'Current V: {self.vel:.2f}'
+        # )
         
         # Plot map progression
-        if self.show_animation:
-            plt.cla()
-            # For stopping simulation with the esc key.
-            plt.gcf().canvas.mpl_connect(
-                'key_release_event',
-                lambda event: [exit(0) if event.key == 'escape' else None]
-            )
-            self.plot_arrow(float(self.xc), float(self.yc), float(self.yaw))
-            plt.plot(cx, cy, "-r", label="course")
-            plt.plot(self.xc, self.yc, "-b", label="trajectory")
-            plt.plot(target_x, target_y, "xg", label="target")
-            plt.axis("equal")
-            plt.grid(True)
-            plt.title("Pure Pursuit Control")
-            plt.pause(0.001)
+        # if self.show_animation:
+        #     plt.cla()
+        #     # For stopping simulation with the esc key.
+        #     plt.gcf().canvas.mpl_connect(
+        #         'key_release_event',
+        #         lambda event: [exit(0) if event.key == 'escape' else None]
+        #     )
+        #     self.plot_arrow(float(self.xc), float(self.yc), float(self.yaw))
+        #     plt.plot(cx, cy, "-r", label="course")
+        #     plt.plot(self.xc, self.yc, "-b", label="trajectory")
+        #     plt.plot(target_x, target_y, "xg", label="target")
+        #     plt.axis("equal")
+        #     plt.grid(True)
+        #     plt.title("Pure Pursuit Control")
+        #     plt.pause(0.001)
 
 
 def main(args=None):

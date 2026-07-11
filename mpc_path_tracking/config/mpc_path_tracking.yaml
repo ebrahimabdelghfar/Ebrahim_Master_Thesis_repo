@@ -4,10 +4,15 @@ mpc_path_tracking:
     # ---------------- Topics (all renameable) ----------------
     odom_topic: "/odom"
     waypoint_topic: "/raceline_waypoints"
-    drive_topic: "/drive"                       # feeds f1tenth_simulator's mux nav_mux_idx channel
+    drive_topic: "mpc/drive_cmd"                # arbitrated by adaptive_controller_manager onto /drive
     predicted_trajectory_topic: "/mpc/predicted_path"
     status_topic: "/mpc/status"
     debug_topic_prefix: "/mpc/debug"
+    enable_topic: "Start_Working_mpc"
+    param_service: "mpc/update_params"
+
+    # Managed-mode gating (see adaptive_controller_manager)
+    standalone_mode: false
 
     # ---------------- Horizon / timing ----------------
     horizon:

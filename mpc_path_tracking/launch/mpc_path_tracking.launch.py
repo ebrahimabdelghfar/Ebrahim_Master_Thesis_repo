@@ -39,6 +39,11 @@ def generate_launch_description():
     control_rate_hz_arg = DeclareLaunchArgument(
         'control_rate_hz', default_value=str(params['horizon']['control_rate_hz']),
         description='Control loop rate [Hz]')
+    standalone_mode_arg = DeclareLaunchArgument(
+        'standalone_mode', default_value=str(params.get('standalone_mode', False)),
+        description='True: always publish, ignore Start_Working_mpc (solo tuning). '
+                    'False: gate publishing behind Start_Working_mpc (managed by '
+                    'adaptive_controller_manager).')
 
     # Load the YAML file first for full defaults, then apply the dict of
     # LaunchConfiguration overrides second: for matching keys, later entries
@@ -61,6 +66,7 @@ def generate_launch_description():
                 'drive_topic': LaunchConfiguration('drive_topic'),
                 'horizon.N': LaunchConfiguration('horizon_n'),
                 'horizon.control_rate_hz': LaunchConfiguration('control_rate_hz'),
+                'standalone_mode': LaunchConfiguration('standalone_mode'),
             },
         ],
     )
@@ -72,5 +78,6 @@ def generate_launch_description():
         drive_topic_arg,
         horizon_n_arg,
         control_rate_hz_arg,
+        standalone_mode_arg,
         mpc_node,
     ])

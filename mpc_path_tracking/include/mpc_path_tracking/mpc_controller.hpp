@@ -71,6 +71,12 @@ public:
   void setConfig(const MpcConfig & config) {config_ = config;}
   const MpcConfig & config() const {return config_;}
 
+  // Forwards to the internal VehicleModel copy actually used by
+  // computeCommand()/buildStage() - this is the instance the QP solve
+  // reads, not whatever VehicleModel the caller originally constructed
+  // MpcController with.
+  void setTireParams(const TireParams & tire) {model_.setTireParams(tire);}
+
 private:
   double computeAdaptiveDt(const ReferencePoint & nearest) const;
   MpcStage buildStage(

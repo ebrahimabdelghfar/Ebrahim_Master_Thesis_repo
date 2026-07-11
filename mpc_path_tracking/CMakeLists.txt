@@ -20,6 +20,8 @@ find_package(diagnostic_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(adaptive_controller_interfaces REQUIRED)
+find_package(track_geometry_utils REQUIRED)
 
 # OSQP + osqp-eigen are not vendored anywhere else in this workspace
 # (pinned to the versions already validated together elsewhere on this
@@ -95,6 +97,10 @@ target_link_libraries(${PROJECT_NAME}_core PUBLIC
   tf2::tf2
 )
 target_link_libraries(${PROJECT_NAME}_core PUBLIC tf2_geometry_msgs::tf2_geometry_msgs)
+ament_target_dependencies(${PROJECT_NAME}_core PUBLIC
+  adaptive_controller_interfaces
+  track_geometry_utils
+)
 
 add_executable(mpc_node src/mpc_node.cpp)
 target_link_libraries(mpc_node ${PROJECT_NAME}_core)

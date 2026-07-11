@@ -1,8 +1,28 @@
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
+
 from helpers.pacejka_formula import pacejka_formula
 
-def plot_results(model, v_x, v_y, omega, delta, C_Pf_identified, C_Pr_identified, iteration):
+try:
+    from ament_index_python.packages import get_package_share_directory
+    USE_AMENT = True
+except ImportError:
+    USE_AMENT = False
+
+
+def _package_path():
+    if USE_AMENT:
+        try:
+            return get_package_share_directory('on_track_sys_id')
+        except Exception:
+            pass
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def plot_results(
+    model, v_x, v_y, omega, delta, C_Pf_identified, C_Pr_identified, iteration, racecar_version):
     """
     Plot system identification results.
 
@@ -69,4 +89,15 @@ def plot_results(model, v_x, v_y, omega, delta, C_Pf_identified, C_Pr_identified
         ax.set_xlim([-0.2, 0.2])
         ax.set_ylim([-15, 15])
     plt.tight_layout()
-    plt.show()
+
+    # Saved, never shown: this runs inside the ROS node's own timer callback
+    # (nn_train, every identification AND periodic re-identification cycle)
+    # - plt.show() would block the whole node indefinitely waiting for a
+    # window nobody is watching for.
+    save_dir = os.path.join(_package_path(), "data", racecar_version)
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, "pacejka_fit_latest.png")
+    plt.savefig(save_path)
+    plt.close(fig)
+    print(f"[INFO] Saved Pacejka fit plot to: {save_path}")
+    return save_path

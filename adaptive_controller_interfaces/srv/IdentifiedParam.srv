@@ -1,0 +1,5 @@
+# Tire Pacejka params, fixed order: [Bf, Cf, Df, Ef, Br, Cr, Dr, Er]
+# matches mpc_path_tracking/config/mpc_path_tracking.yaml's tire: block
+float32[8] param_values
+---
+bool ack

@@ -17,10 +17,16 @@ void ParameterManager::declareAll()
   // Topics
   node_->declare_parameter<std::string>("odom_topic", "/odom");
   node_->declare_parameter<std::string>("waypoint_topic", "/raceline_waypoints");
-  node_->declare_parameter<std::string>("drive_topic", "/nav");
+  node_->declare_parameter<std::string>("drive_topic", "mpc/drive_cmd");
   node_->declare_parameter<std::string>("predicted_trajectory_topic", "/mpc/predicted_path");
   node_->declare_parameter<std::string>("status_topic", "/mpc/status");
   node_->declare_parameter<std::string>("debug_topic_prefix", "/mpc/debug");
+  node_->declare_parameter<std::string>("enable_topic", "Start_Working_mpc");
+  node_->declare_parameter<std::string>("param_service", "mpc/update_params");
+
+  // Managed-mode gating (see adaptive_controller_manager). true: always
+  // publish, ignore Start_Working_mpc (solo tuning against the simulator).
+  node_->declare_parameter<bool>("standalone_mode", false);
 
   // Horizon / timing
   node_->declare_parameter<int>("horizon.N", 20);
@@ -122,6 +128,8 @@ TopicsConfig ParameterManager::topics() const
   t.predicted_trajectory_topic = node_->get_parameter("predicted_trajectory_topic").as_string();
   t.status_topic = node_->get_parameter("status_topic").as_string();
   t.debug_topic_prefix = node_->get_parameter("debug_topic_prefix").as_string();
+  t.enable_topic = node_->get_parameter("enable_topic").as_string();
+  t.param_service = node_->get_parameter("param_service").as_string();
   return t;
 }
 
@@ -204,6 +212,11 @@ double ParameterManager::controlRateHz() const
 bool ParameterManager::dtAdaptive() const
 {
   return node_->get_parameter("horizon.dt_adaptive").as_bool();
+}
+
+bool ParameterManager::standaloneMode() const
+{
+  return node_->get_parameter("standalone_mode").as_bool();
 }
 
 rcl_interfaces::msg::SetParametersResult ParameterManager::onSetParameters(
