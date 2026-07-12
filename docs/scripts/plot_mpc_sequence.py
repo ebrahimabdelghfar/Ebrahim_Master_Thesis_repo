@@ -54,13 +54,17 @@ def draw_arrow(x_start, x_end, y_val, text, dashed=False):
     style = "-|>"
     ls = "dashed" if dashed else "solid"
     
-    # Add a little padding to the arrow ends so they don't touch the lifeline exactly
-    pad = 0.15 if x_start != x_end else 0
+    # Only add padding for lifelines that have thick gray activation boxes
+    active_xs = [participants["MpcController"], participants["VehicleModel"], participants["SolverInterface\n(OSQP)"]]
+    
+    pad_start = 0.1 if x_start in active_xs else 0.0
+    pad_end = 0.1 if x_end in active_xs else 0.0
+    
     dx = x_end - x_start
     if dx > 0:
-        sx, ex = x_start + pad, x_end - pad
+        sx, ex = x_start + pad_start, x_end - pad_end
     elif dx < 0:
-        sx, ex = x_start - pad, x_end + pad
+        sx, ex = x_start - pad_start, x_end + pad_end
     else:
         # Self-arrow
         sx = x_start + 0.1
@@ -103,7 +107,7 @@ y = draw_note(participants["MpcNode"] + 2.0, y,
               r"$dt = \mathrm{clamp}\left(\frac{L}{N \cdot v}, dt_{min}, dt_{max}\right)$", width=3.6)
 y -= 0.4
 
-y_activate_ctrl = y
+y_activate_ctrl = y + 0.3
 y = draw_arrow(participants["MpcNode"], participants["MpcController"], y, r"computeOptimalCommand(state, reference, $dt$)")
 
 # Loop start
@@ -112,7 +116,7 @@ y -= 0.6
 x_loop = participants["MpcController"] - 1.5
 w_loop = participants["VehicleModel"] - x_loop + 1.5
 
-y_activate_model = y
+y_activate_model = y + 0.3
 y = draw_arrow(participants["MpcController"], participants["VehicleModel"], y, r"computeDiscreteLinearization($x_{ref}, u_{ref}, dt$)")
 
 y -= 0.2
@@ -133,11 +137,15 @@ y_loop_bottom = y + 0.3
 loop_rect = patches.Rectangle((x_loop, y_loop_bottom), w_loop, y_loop_top - y_loop_bottom, facecolor=COLOR_LOOP_BG, edgecolor=COLOR_LOOP_EDGE, zorder=-1)
 ax.add_patch(loop_rect)
 ax.text(x_loop + 0.1, y_loop_top - 0.1, "loop", fontweight='bold', bbox=dict(facecolor='white', edgecolor=COLOR_LOOP_EDGE, boxstyle='round,pad=0.2'))
-ax.text(x_loop + 1.0, y_loop_top - 0.1, r"Over Prediction Horizon $N$", fontstyle='italic')
+
+# Center the loop description between MpcController and VehicleModel so it doesn't cross the lifelines
+x_loop_desc = (participants["MpcController"] + participants["VehicleModel"]) / 2.0
+ax.text(x_loop_desc, y_loop_top - 0.1, r"Over Prediction Horizon $N$", fontstyle='italic', ha='center', 
+        bbox=dict(facecolor=COLOR_LOOP_BG, edgecolor='none', pad=0.2))
 
 y -= 0.5
 
-y_activate_solv = y
+y_activate_solv = y + 0.3
 y = draw_arrow(participants["MpcController"], participants["SolverInterface\n(OSQP)"], y, "buildAndSolveQP()")
 
 y -= 0.2
