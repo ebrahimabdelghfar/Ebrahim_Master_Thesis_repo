@@ -10,7 +10,7 @@ sequenceDiagram
     Note over ROS, Solv: Control Cycle (Triggered at horizon.control_rate_hz)
     ROS->>Node: Timer Callback
     
-    Node->>Node: Fetch latest Odometry (state x_0)
+    Node->>Node: Fetch latest Odometry (state x<sub>0</sub>)
     Node->>Node: Fetch Track Waypoints (reference)
     
     Note right of Node: Compute Adaptive Prediction Step
@@ -23,21 +23,21 @@ sequenceDiagram
         Ctrl->>Model: computeDiscreteLinearization(x_ref, u_ref, dt)
         activate Model
         Note right of Model: RK4 Integration +<br/>Finite Difference Jacobians
-        Model-->>Ctrl: A_d, B_d, c
+        Model-->>Ctrl: A<sub>d</sub>, B<sub>d</sub>, c
         deactivate Model
         
         Ctrl->>Ctrl: Build State Cost (Q) & Input Cost (R, R_rate)
-        Note right of Ctrl: Map path-relative errors (e_y, e_psi)<br/>into full state cost P, q
+        Note right of Ctrl: Map path-relative errors (e<sub>y</sub>, e<sub>ψ</sub>)<br/>into full state cost P, q
     end
 
     Ctrl->>Solv: buildAndSolveQP()
     activate Solv
-    Note right of Solv: min 1/2 z^T P z + q^T z<br/>s.t. l <= A z <= u
+    Note right of Solv: min ½ z<sup>T</sup> P z + q<sup>T</sup> z<br/>s.t. l ≤ A z ≤ u
     Solv->>Solv: Run ADMM (OSQP)
-    Solv-->>Ctrl: Optimal solution z* = [x_0..x_N, u_0..u_N-1]
+    Solv-->>Ctrl: Optimal solution z<sup>*</sup> = [x<sub>0</sub>..x<sub>N</sub>, u<sub>0</sub>..u<sub>N-1</sub>]
     deactivate Solv
 
-    Ctrl-->>Node: Solution status, cost, and command u_0^*
+    Ctrl-->>Node: Solution status, cost, and command u<sub>0</sub><sup>*</sup>
     deactivate Ctrl
 
     alt Solve Successful
