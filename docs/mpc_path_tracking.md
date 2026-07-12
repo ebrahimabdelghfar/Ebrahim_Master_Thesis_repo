@@ -193,6 +193,12 @@ The MPC controller works by predicting exactly `N=30` steps into the future. If 
 
 `/mpc/status`'s `cost` field is *not* OSQP's raw internal objective. The QP is built by "completing the square" — `Qx = C^T diag(Q) C`, `qx = -C^T diag(Q) r` (`mpc_controller.cpp`, `errorCostMatrices`) — so `0.5 z^T P z + q^T z` alone equals `(Cx-r)^T diag(Q) (Cx-r) - r^T diag(Q) r`, missing the constant `r^T diag(Q) r` term (and similarly `u_prev^T R_rate u_prev` from the k=0 rate penalty). Since `r` includes the raceline's **absolute map-frame** waypoint coordinates (`r(0) = -sin(psi)*ref.x + cos(psi)*ref.y`), that dropped constant scales with wherever the map origin happens to sit relative to the raceline — this was caught in practice as a startlingly large, always-negative `cost` (observed as low as -361873) that looked alarming but never actually affected the solved trajectory (a constant doesn't change the argmin). Fixed by accumulating the dropped constant per stage/terminal (`MpcStage::cost_offset`, `SolverProblem::cost_offset`) and adding it back in `solver_interface.cpp` before reporting `solution.cost`, so it now reads as genuine non-negative squared tracking error (typically tens, not hundreds of thousands).
 
+### Sequence Diagram
+
+The execution flow of a single control cycle within the MPC node is illustrated below. The diagram highlights the interaction between the ROS layer, the MPC controller, the dynamic vehicle model, and the underlying QP solver (OSQP).
+
+![MPC Sequence Diagram](images/mpc_sequence.png)
+
 ## 4. Package interfaces
 
 | | Topic (parameter) | Type | Notes |
