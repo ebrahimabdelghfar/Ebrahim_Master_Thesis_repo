@@ -26,7 +26,9 @@ participants = {
 
 # Setup figure
 fig, ax = plt.subplots(figsize=(16, 16))
-ax.set_xlim(-1, 17)
+# Header boxes extend 1.4 units left/right of their center. 
+# ROS 2 Context is at 0 (needs to go to -1.4), Solver is at 16.0 (needs to go to 17.4)
+ax.set_xlim(-2, 18)
 ax.set_ylim(-32, 2)
 ax.axis('off')
 
