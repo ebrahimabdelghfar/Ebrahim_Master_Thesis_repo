@@ -29,6 +29,7 @@ jobs:
       - name: Render diagrams
         run: |
           mkdir -p docs/images
+          echo '{"args": ["--no-sandbox", "--disable-setuid-sandbox"]}' > puppeteer-config.json
           for file in docs/diagrams/*.mmd; do
             if [ -f "$file" ]; then
               filename=$(basename -- "$file")
@@ -36,10 +37,10 @@ jobs:
               echo "Rendering $filename..."
               
               # Render PNG (transparent background, scale=2 for high DPI)
-              mmdc -i "$file" -o "docs/images/${basename}.png" -t default -b transparent -s 2
+              mmdc -p puppeteer-config.json -i "$file" -o "docs/images/${basename}.png" -t default -b transparent -s 2
               
               # Render PDF (white background usually better for academic PDF)
-              mmdc -i "$file" -o "docs/images/${basename}.pdf" -t default -b white
+              mmdc -p puppeteer-config.json -i "$file" -o "docs/images/${basename}.pdf" -t default -b white
             fi
           done
 
