@@ -13,19 +13,34 @@
 
     # ---- Identification Settings ----
     identification:
-      # Method: trust_region | differential_evolution | dual | genetic_algorithm | ga_trust_region | adaptive_de | adaptive_de_trust_region
+      # Method: trust_region | differential_evolution | dual | genetic_algorithm | ga_trust_region | adaptive_de | adaptive_de_trust_region | bayesian_svi
       # "dual" (recommended) runs differential_evolution first, then refines with trust_region
       # "genetic_algorithm" runs a custom real-coded GA (tournament selection, BLX-α crossover)
       # "ga_trust_region" runs GA first, then refines with trust_region
       # "adaptive_de" runs JADE (self-adaptive F/CR, current-to-pbest/1 mutation, external archive)
       # "adaptive_de_trust_region" runs JADE first, then refines with trust_region
+      # "bayesian_svi" runs Stochastic Variational Inference (Pyro) — a correlated
+      #                multivariate-normal posterior over the free parameters,
+      #                returning both a point estimate and *_std uncertainty
       method: "dual"
 
       # Identification mode:
-      # sequential   (recommended) → fixes C to physics-based values, fits B, D, E
+      # sequential   (recommended) → fixes C to a physics-based value and D to
+      #                               the data peak, fits only B, E
       #                               breaks known parameter degeneracy
       # simultaneous → fits all [B, C, D, E] at once (B/C/E may be correlated)
       identification_mode: "sequential"
+
+      # Regularization for simultaneous mode only (sequential already fixes
+      # C and D, so there is nothing to regularize there):
+      #   none → plain least squares over the configured lower/upper_bounds
+      #   map  → literature-consistent bounds (LITERATURE_BOUNDS) + a
+      #          Gaussian-prior penalty anchoring C toward its literature
+      #          value (classical MAP estimate) — see map_regularization below
+      # method: "bayesian_svi" (below) is a separate, heavier alternative
+      # available in both modes; it can be combined with either regularization
+      # setting (its own priors are independent of this option).
+      regularization: "none"
 
       # Which Pacejka relationships to identify
       formulas:
@@ -104,6 +119,35 @@
       archive_ratio: 1.0
       # Random seed for reproducibility (set to -1 for non-deterministic)
       seed: 42
+
+    map_regularization:
+      # Only used when identification.regularization == "map" (simultaneous mode).
+      # Gaussian-prior penalty weight anchoring C toward its literature value:
+      #   cost += lambda_C * ((C - C_literature) / sigma_C)^2
+      lambda_C: 1.0
+      # Prior std-dev for C (radians of "shape factor" spread — smaller = more anchored)
+      sigma_C: 0.3
+
+    bayesian_svi:
+      # Stochastic Variational Inference (Pyro): AutoMultivariateNormal guide
+      # trained against the ELBO objective (Goblirsch et al., arXiv:2504.20863).
+      # Number of gradient steps
+      num_steps: 2000
+      # Adam learning rate
+      learning_rate: 0.01
+      # Random seed for reproducibility (set to -1 for non-deterministic)
+      seed: 42
+
+    data_balancing:
+      # Optional slip-histogram rebalancing applied before fitting (both modes),
+      # so a dense near-zero-slip cluster doesn't dominate the fit at the
+      # expense of the sparser near-peak region ("prevent overfitting of the
+      # linear region", Goblirsch et al., arXiv:2504.20863).
+      enabled: false
+      # Number of equal-width bins across the observed slip range
+      n_bins: 20
+      # Max samples kept per bin (over-represented bins are randomly subsampled)
+      max_per_bin: 200
 
     # ---- Output Settings ----
     output:

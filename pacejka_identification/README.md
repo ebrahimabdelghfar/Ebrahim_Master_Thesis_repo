@@ -27,10 +27,12 @@ Where:
 | Feature | Description |
 |---------|-------------|
 | 3 force channels | Fy (lateral), Fx (longitudinal), Mz (self-aligning torque) |
-| 3 identification methods | Trust-Region, Differential Evolution, Dual (DE→TR) |
+| 8 identification methods | Trust-Region, Differential Evolution, Dual (DE→TR), GA, GA→TR, JADE (adaptive DE), JADE→TR, Bayesian SVI |
 | 3 grouping modes | per_wheel, per_axle, combined |
+| MAP regularization | Literature bounds + Gaussian prior on C (simultaneous mode) |
+| Data rebalancing | Optional slip-bin subsampling to avoid overfitting the linear region |
 | Automatic CSV export | Raw dataset with per-wheel columns |
-| Automatic YAML export | Identified [B,C,D,E] with fit metrics (R², RMSE) |
+| Automatic YAML export | Identified [B,C,D,E] (+ uncertainty for `bayesian_svi`) with fit metrics (R², RMSE) |
 | Latched ROS2 topics | Coefficients available to late subscribers |
 
 ## Installation
@@ -169,7 +171,7 @@ coefficients:
 
 ## Identification Methods
 
-The `method` parameter allows you to select the backend optimization solver. The sequential mode breaks B-C-E coefficient parameter degeneracy, and these solvers find the optimal curve fit:
+The `method` parameter allows you to select the backend optimization solver. The sequential mode fixes both C and D (breaking the Magic Formula's B-C-D-E coefficient parameter degeneracy), and these solvers find the optimal curve fit:
 
 ### 1. Trust-Region-Reflective (`trust_region`)
 Local optimizer (TRF). Extremely fast but requires a good initial guess. Fails if the starting parameters are too far from the true curve. Best suited for clean, predictable data.
@@ -191,6 +193,34 @@ Advanced self-adaptive Differential Evolution (Zhang & Sanderson, 2009). Dynamic
 
 ### 7. JADE + Trust-Region (`adaptive_de_trust_region`)
 Hybrid approach: runs the Adaptive DE (JADE) first for robust, self-tuning global search, then refines the exact coefficients with Trust-Region.
+
+### 8. Bayesian SVI (`bayesian_svi`)
+Stochastic Variational Inference (Pyro): fits a correlated multivariate-normal
+posterior over the free parameters against the ELBO objective, following
+Goblirsch et al., "Bayesian Optimization-based Tire Parameter and
+Uncertainty Estimation for Real-World Data" (TUM, arXiv:2504.20863, 2025).
+Returns a point estimate (posterior mean) plus `*_std` uncertainty for each
+parameter — useful when the ground-truth fit's confidence matters, not just
+its curve-fit quality. Slower than the other methods; requires the optional
+`pyro-ppl` dependency.
+
+## Anti-Overfitting Options (Simultaneous Mode)
+
+Simultaneous mode has no fixed parameters, so it's the most exposed to the
+Magic Formula's B-C-E degeneracy and to overfitting an unevenly-sampled slip
+range. Two independent, opt-in mechanisms address this (both selectable via
+config, and combinable):
+
+- **`identification.regularization: "map"`** — switches to literature-consistent
+  bounds and adds a Gaussian-prior penalty anchoring C toward its literature
+  value (see `map_regularization` in the config). Classical MAP estimate, no
+  new dependency.
+- **`identification.method: "bayesian_svi"`** — full Bayesian treatment (see
+  above), usable in both sequential and simultaneous mode.
+- **`data_balancing.enabled: true`** — rebalances the pooled slip samples into
+  equal-width bins before fitting, so a dense near-zero-slip cluster (typical
+  of real driving data) doesn't dominate the fit and starve the sparser
+  near-peak region of influence.
 
 ## Architecture
 

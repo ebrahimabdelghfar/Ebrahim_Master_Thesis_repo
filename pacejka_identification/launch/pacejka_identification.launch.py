@@ -10,7 +10,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
 
     topic_arg = DeclareLaunchArgument(
-        'tire_forces_topic', default_value='/carmaker/tire_forces',
+        'tire_forces_topic', default_value='/tire_forces',
         description='Topic publishing hellocm_msgs/TireForcesArray',
     )
     duration_arg = DeclareLaunchArgument(

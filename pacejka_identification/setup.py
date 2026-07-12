@@ -13,7 +13,7 @@ setup(
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
         ('share/' + package_name + '/config', glob('config/*.yaml')),
     ],
-    install_requires=['setuptools'],
+    install_requires=['setuptools', 'pyro-ppl'],
     zip_safe=True,
     maintainer='Ebrahim',
     maintainer_email='ebrahim@local',

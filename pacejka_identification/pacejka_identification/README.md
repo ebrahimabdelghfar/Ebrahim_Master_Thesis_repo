@@ -9,7 +9,7 @@ This directory contains the core Python modules that implement the Pacejka Magic
 | Module | Purpose |
 |--------|---------|
 | `magic_formula.py` | Pure-math Pacejka equations (no ROS2 dependency) |
-| `coefficient_identifier.py` | Optimisation engine with 5 methods + built-in GA |
+| `coefficient_identifier.py` | Optimisation engine with 8 methods (incl. Bayesian SVI) + built-in GA/JADE |
 | `data_collector_node.py` | ROS2 node — subscribes to `/tire_forces`, filters & buffers data |
 | `identification_node.py` | ROS2 node — orchestrates collect → identify → publish → export |
 
@@ -83,11 +83,15 @@ Main class for coefficient identification.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `method` | `'dual'` | Optimiser: `trust_region`, `differential_evolution`, `dual`, `genetic_algorithm`, `ga_trust_region` |
-| `identification_mode` | `'sequential'` | `sequential` (fix C, fit B,D,E) or `simultaneous` (fit all 4) |
+| `method` | `'dual'` | Optimiser: `trust_region`, `differential_evolution`, `dual`, `genetic_algorithm`, `ga_trust_region`, `adaptive_de`, `adaptive_de_trust_region`, `bayesian_svi` |
+| `identification_mode` | `'sequential'` | `sequential` (fix C and D, fit B,E) or `simultaneous` (fit all 4) |
 | `fixed_C` | `None` | Override default C values, e.g. `{'fy': 1.3}` |
 | `lower_bounds` | `[0.1, 0.1, 0.01, -2.0]` | Lower bounds for [B, C, D, E] |
 | `upper_bounds` | `[50.0, 5.0, 5.0, 2.0]` | Upper bounds for [B, C, D, E] |
+| `regularization` | `'none'` | Simultaneous-mode only: `'none'` or `'map'` (literature bounds + Gaussian prior on C) |
+| `map_reg_params` | `{'lambda_C': 1.0, 'sigma_C': 0.3}` | MAP penalty weight / prior std-dev for C |
+| `svi_params` | `{'num_steps': 2000, 'learning_rate': 0.01, 'seed': 42}` | Hyperparameters for `bayesian_svi` |
+| `data_balancing_params` | `{'enabled': False, 'n_bins': 20, 'max_per_bin': 200}` | Optional slip-histogram rebalancing before fitting |
 
 **Public Methods:**
 
@@ -120,8 +124,13 @@ A custom real-coded Genetic Algorithm for global optimisation.
 
 #### Sequential Mode *(recommended for ground truth)*
 
-Fixes C to physics-based literature values, then fits B, D, E only.
-This breaks the known B-C-E parameter degeneracy.
+Fixes C to a physics-based literature value, fixes D to the (bounds-clipped)
+99th-percentile peak estimate read directly off the data, seeds B from the
+cornering-stiffness slope (BCD/(C·D)) near the origin, then fits only B and
+E. Fixing both C **and** D (not just C) is what actually breaks the Magic
+Formula's parameter degeneracy — leaving D free to float (as a prior version
+of this code did) reopens a B-D correlation that a "sequential" fit is
+specifically meant to close.
 
 | Channel | Fixed C | Literature Range |
 |---------|---------|------------------|
@@ -132,7 +141,23 @@ This breaks the known B-C-E parameter degeneracy.
 #### Simultaneous Mode
 
 Fits all 4 parameters at once. Excellent curve fit (R² > 0.999) but
-B, C, E values may not be unique due to parameter correlation.
+B, C, E values may not be unique due to parameter correlation. Two optional,
+opt-in anti-overfitting mechanisms are available (see `regularization` /
+`method='bayesian_svi'` above), both grounded in Goblirsch et al., "Bayesian
+Optimization-based Tire Parameter and Uncertainty Estimation for Real-World
+Data", TUM, arXiv:2504.20863 (2025):
+
+- **`regularization='map'`** — literature-consistent bounds (`LITERATURE_BOUNDS`)
+  plus a Gaussian-prior penalty anchoring C toward its literature value
+  (classical MAP estimate, no extra dependency).
+- **`method='bayesian_svi'`** — full Stochastic Variational Inference via
+  Pyro: a correlated multivariate-normal posterior over the free parameters,
+  trained against the ELBO, returning both a point estimate and `*_std`
+  uncertainty for each parameter.
+
+Both approaches also benefit from optional slip-histogram rebalancing
+(`data_balancing_params`), which prevents a dense near-zero-slip cluster from
+dominating the fit at the expense of the sparser near-peak region.
 
 ### Optimisation Methods Comparison
 
@@ -143,6 +168,9 @@ B, C, E values may not be unique due to parameter correlation.
 | `dual` | Hybrid (DE→TR) | ★★★ | ★★★★★ | **Ground-truth identification** |
 | `genetic_algorithm` | Global | ★★ | ★★★★ | Exploring broad solution space |
 | `ga_trust_region` | Hybrid (GA→TR) | ★★ | ★★★★★ | Alternative to dual |
+| `adaptive_de` | Global (JADE) | ★★★ | ★★★★ | Self-tuning global search |
+| `adaptive_de_trust_region` | Hybrid (JADE→TR) | ★★★ | ★★★★★ | Alternative to dual |
+| `bayesian_svi` | Global (SVI) | ★★ | ★★★★ | Uncertainty-aware ground truth |
 
 ### Helper Functions
 
@@ -150,9 +178,12 @@ B, C, E values may not be unique due to parameter correlation.
 |----------|-------------|
 | `_residuals(params, slip, fz, y_meas)` | Element-wise residual vector |
 | `_cost(params, slip, fz, y_meas)` | Sum-of-squares cost (scalar) |
-| `_residuals_BDE(bde, C, slip, fz, y_meas)` | Residuals with C fixed |
+| `_residuals_BE(be, C, D, slip, fz, y_meas)` | Residuals with C and D fixed |
+| `_residuals_reg(params, ..., C_lit, lambda_C, sigma_C)` | Residuals + Gaussian-prior penalty on C (MAP) |
 | `_metrics(params, slip, fz, y_meas)` | Compute R², RMSE, MAE, MaxAE |
 | `_estimate_D_from_peak(slip, fz, y_meas)` | Estimate D from 99th percentile |
+| `_estimate_cornering_stiffness(slip, fz, y_meas)` | Estimate BCD slope near the origin (seeds B) |
+| `_rebalance_slip_bins(slip, fz, y_meas, n_bins, max_per_bin)` | Subsample dense slip bins before fitting |
 
 ---
 

@@ -2,21 +2,25 @@
 """
 Synthetic-data test for the Pacejka coefficient identifier.
 
-Validates all 5 identification methods in both sequential and simultaneous modes
-by generating synthetic Pacejka data from known [B, C, D, E] coefficients, adding
-Gaussian noise, running the identifier, and checking coefficient recovery accuracy.
+Validates all identification methods in both sequential and simultaneous
+modes by generating synthetic Pacejka data from known [B, C, D, E]
+coefficients, adding Gaussian noise, running the identifier, and checking
+coefficient recovery accuracy. Also covers the simultaneous-mode MAP
+regularization and the `bayesian_svi` method (both modes).
 
-Methods tested:
-  - trust_region          (local optimizer)
-  - differential_evolution (global optimizer)
-  - dual                  (DE → TR hybrid)
-  - genetic_algorithm     (real-coded GA, global)
-  - ga_trust_region       (GA → TR hybrid)
+Methods tested (sequential):
+  - trust_region            (local optimizer)
+  - differential_evolution  (global optimizer)
+  - dual                    (DE -> TR hybrid)
+  - genetic_algorithm       (real-coded GA, global)
+  - ga_trust_region         (GA -> TR hybrid)
+  - adaptive_de             (JADE, global)
+  - adaptive_de_trust_region (JADE -> TR hybrid)
+  - bayesian_svi            (Pyro SVI, correlated posterior)
 
 Usage:
-    python3 -m pytest test/test_identification.py -v
-    # or directly:
     python3 test/test_identification.py
+    python3 -m pytest test/test_identification.py -v
 """
 
 import sys
@@ -30,27 +34,30 @@ from pacejka_identification.magic_formula import pacejka_fy, pacejka_fx, pacejka
 from pacejka_identification.coefficient_identifier import CoefficientIdentifier, DEFAULT_C
 
 
-def test_sequential(formula_name, pacejka_fn, true_params, slip, fz, initial_guess, method, force_type):
+def run_sequential_case(formula_name, pacejka_fn, true_params, slip, fz, initial_guess,
+                         method, force_type, ci_kwargs=None):
     """
-    Test sequential identification mode.
+    Run sequential identification mode on synthetic data.
 
-    In sequential mode, C is fixed to a physics-based literature value.
-    We verify that B, D, E are recovered within tolerance.
+    In sequential mode, C is fixed to a physics-based literature value and D
+    is fixed to the (bounds-clipped) peak estimate from the data. We verify
+    that B, D, E are recovered within tolerance.
 
     Parameters
     ----------
-    formula_name : str     – human label (e.g. 'Fy')
-    pacejka_fn   : callable – one of pacejka_fy, pacejka_fx, pacejka_mz
-    true_params  : list    – ground-truth [B, C, D, E]
-    slip         : ndarray – slip angle α or slip ratio κ
-    fz           : ndarray – normal load
-    initial_guess: list    – starting [B, C, D, E] for the optimizer
-    method       : str     – identification method name
-    force_type   : str     – 'fy', 'fx', or 'mz' (selects the fixed C value)
+    formula_name : str     - human label (e.g. 'Fy')
+    pacejka_fn   : callable - one of pacejka_fy, pacejka_fx, pacejka_mz
+    true_params  : list    - ground-truth [B, C, D, E]
+    slip         : ndarray - slip angle alpha or slip ratio kappa
+    fz           : ndarray - normal load
+    initial_guess: list    - starting [B, C, D, E] for the optimizer
+    method       : str     - identification method name
+    force_type   : str     - 'fy', 'fx', or 'mz' (selects the fixed C value)
+    ci_kwargs    : dict or None - extra CoefficientIdentifier constructor args
 
     Returns
     -------
-    bool – True if test passed.
+    bool - True if test passed.
     """
     B_true, C_true, D_true, E_true = true_params
     C_fixed = DEFAULT_C[force_type]
@@ -65,7 +72,8 @@ def test_sequential(formula_name, pacejka_fn, true_params, slip, fz, initial_gue
     y_noisy = y_clean + np.random.normal(0, noise_std, size=y_clean.shape)
 
     # Run identification
-    identifier = CoefficientIdentifier(method=method, identification_mode='sequential')
+    identifier = CoefficientIdentifier(method=method, identification_mode='sequential',
+                                        **(ci_kwargs or {}))
     coeffs, metrics = identifier.identify(slip, fz, y_noisy, initial_guess, label=force_type)
 
     B_est, C_est, D_est, E_est = coeffs
@@ -81,8 +89,9 @@ def test_sequential(formula_name, pacejka_fn, true_params, slip, fz, initial_gue
         else:
             errors[name] = abs(est_val - true_val) * 100
 
-    # Stochastic methods (GA, JADE) get relaxed tolerance (10 %)
-    tol = 10.0 if 'genetic' in method or 'ga_' in method or 'adaptive' in method else 5.0
+    # Stochastic methods (GA, JADE, SVI) get relaxed tolerance (10 %)
+    stochastic = 'genetic' in method or 'ga_' in method or 'adaptive' in method or 'bayesian_svi' in method
+    tol = 10.0 if stochastic else 5.0
     passed = c_match and all(e < tol for e in errors.values()) and metrics['R2'] > 0.999
 
     print(f"\n{'='*65}")
@@ -93,40 +102,42 @@ def test_sequential(formula_name, pacejka_fn, true_params, slip, fz, initial_gue
     print(f"  C fixed={C_fixed:.2f}  C_match={c_match}")
     print(f"  Rel errors: B={errors['B']:.3f}%  D={errors['D']:.3f}%  E={errors['E']:.3f}%")
     print(f"  R²={metrics['R2']:.6f}  RMSE={metrics['RMSE']:.4f}  n={metrics['n_samples']}")
-    print(f"  RESULT: {'PASS ✓' if passed else 'FAIL ✗'}")
+    print(f"  RESULT: {'PASS' if passed else 'FAIL'}")
 
     return passed
 
 
-def test_simultaneous_curve(formula_name, pacejka_fn, true_params, slip, fz, initial_guess, method):
+def run_simultaneous_case(formula_name, pacejka_fn, true_params, slip, fz, initial_guess,
+                           method, ci_kwargs=None):
     """
-    Test simultaneous identification mode.
+    Run simultaneous identification mode on synthetic data.
 
-    In simultaneous mode all 4 params are fitted at once.  Because of the
+    In simultaneous mode all 4 params are fitted at once. Because of the
     known B-C-E degeneracy, individual parameters may differ from the true
-    values.  We therefore only validate **curve-fit quality** (R² > 0.999).
+    values. We therefore only validate **curve-fit quality** (R2 > 0.999).
 
     Returns
     -------
-    bool – True if test passed.
+    bool - True if test passed.
     """
     y_clean = pacejka_fn(true_params, slip, fz)
     noise_std = 0.005 * np.max(np.abs(y_clean))
     np.random.seed(42)
     y_noisy = y_clean + np.random.normal(0, noise_std, size=y_clean.shape)
 
-    identifier = CoefficientIdentifier(method=method, identification_mode='simultaneous')
+    identifier = CoefficientIdentifier(method=method, identification_mode='simultaneous',
+                                        **(ci_kwargs or {}))
     coeffs, metrics = identifier.identify(slip, fz, y_noisy, initial_guess, label=formula_name)
 
     passed = metrics['R2'] > 0.999
 
     print(f"\n{'='*65}")
-    print(f"  SIMULTANEOUS | {formula_name} | method={method}")
+    print(f"  SIMULTANEOUS | {formula_name} | method={method} | kwargs={ci_kwargs}")
     print(f"{'='*65}")
     print(f"  True   [B,C,D,E]: {true_params}")
     print(f"  Found  [B,C,D,E]: {coeffs}")
     print(f"  R²={metrics['R2']:.6f}  RMSE={metrics['RMSE']:.4f}")
-    print(f"  RESULT: {'PASS ✓' if passed else 'FAIL ✗'}")
+    print(f"  RESULT: {'PASS' if passed else 'FAIL'}")
 
     return passed
 
@@ -134,10 +145,10 @@ def test_simultaneous_curve(formula_name, pacejka_fn, true_params, slip, fz, ini
 def main():
     """Run the full test suite and return exit code (0 = all pass)."""
     print("=" * 65)
-    print("   Pacejka Coefficient Identifier — Full Test Suite")
+    print("   Pacejka Coefficient Identifier - Full Test Suite")
     print("=" * 65)
 
-    # ── Generate synthetic data ──
+    # -- Generate synthetic data --
     alpha = np.linspace(-0.3, 0.3, 2000)       # slip angles (rad)
     kappa = np.linspace(-0.4, 0.4, 2000)       # slip ratios (-)
     fz_const = np.full(2000, 3000.0)            # constant 3000 N
@@ -151,51 +162,79 @@ def main():
 
     results = []
 
-    # ── Sequential tests — all methods ──
-    ALL_METHODS = ['trust_region', 'dual', 'genetic_algorithm', 'ga_trust_region',
-                    'adaptive_de', 'adaptive_de_trust_region']
+    # -- Sequential tests -- all methods (including bayesian_svi) --
+    ALL_METHODS = ['trust_region', 'differential_evolution', 'dual', 'genetic_algorithm',
+                   'ga_trust_region', 'adaptive_de', 'adaptive_de_trust_region']
+    # bayesian_svi is stochastic/slower (Pyro SVI) — run with fewer steps for the test suite
+    SVI_KWARGS = {'svi_params': {'num_steps': 500}}
 
     for method in ALL_METHODS:
-        results.append(test_sequential(
+        results.append(run_sequential_case(
             'Fy', pacejka_fy, true_fy, alpha, fz_const,
             [10.0, 1.5, 1.0, 0.5], method, 'fy',
         ))
-        results.append(test_sequential(
+        results.append(run_sequential_case(
             'Fx', pacejka_fx, true_fx, kappa, fz_const,
             [10.0, 1.65, 1.0, 0.5], method, 'fx',
         ))
-        results.append(test_sequential(
+        results.append(run_sequential_case(
             'Mz', pacejka_mz, true_mz, alpha, fz_const,
             [10.0, 1.5, 0.1, 0.5], method, 'mz',
         ))
 
-    # ── Simultaneous tests — GA and JADE methods (curve-fit quality only) ──
-    results.append(test_simultaneous_curve(
+    results.append(run_sequential_case(
+        'Fy', pacejka_fy, true_fy, alpha, fz_const,
+        [10.0, 1.5, 1.0, 0.5], 'bayesian_svi', 'fy', ci_kwargs=SVI_KWARGS,
+    ))
+
+    # -- Simultaneous tests -- GA and JADE methods (curve-fit quality only) --
+    results.append(run_simultaneous_case(
         'Fy (GA simult.)', pacejka_fy, [7.17, 1.56, 0.69, 0.53],
         alpha, fz_const, [10.0, 1.5, 1.0, 0.5], 'genetic_algorithm',
     ))
-    results.append(test_simultaneous_curve(
-        'Fy (GA→TR simult.)', pacejka_fy, [7.17, 1.56, 0.69, 0.53],
+    results.append(run_simultaneous_case(
+        'Fy (GA->TR simult.)', pacejka_fy, [7.17, 1.56, 0.69, 0.53],
         alpha, fz_const, [10.0, 1.5, 1.0, 0.5], 'ga_trust_region',
     ))
-    results.append(test_simultaneous_curve(
+    results.append(run_simultaneous_case(
         'Fy (JADE simult.)', pacejka_fy, [7.17, 1.56, 0.69, 0.53],
         alpha, fz_const, [10.0, 1.5, 1.0, 0.5], 'adaptive_de',
     ))
-    results.append(test_simultaneous_curve(
-        'Fy (JADE→TR simult.)', pacejka_fy, [7.17, 1.56, 0.69, 0.53],
+    results.append(run_simultaneous_case(
+        'Fy (JADE->TR simult.)', pacejka_fy, [7.17, 1.56, 0.69, 0.53],
         alpha, fz_const, [10.0, 1.5, 1.0, 0.5], 'adaptive_de_trust_region',
     ))
 
-    # ── Summary ──
+    # -- Simultaneous MAP regularization (literature bounds + Gaussian prior on C) --
+    results.append(run_simultaneous_case(
+        'Fy (dual, MAP reg.)', pacejka_fy, [7.17, 1.56, 0.69, 0.53],
+        alpha, fz_const, [10.0, 1.5, 1.0, 0.5], 'dual',
+        ci_kwargs={'regularization': 'map'},
+    ))
+
+    # -- Simultaneous bayesian_svi (correlated posterior) --
+    # The 4-parameter joint posterior converges more slowly than the
+    # 2-parameter (B,E) sequential case, so it gets more SVI steps here.
+    results.append(run_simultaneous_case(
+        'Fy (bayesian_svi simult.)', pacejka_fy, [7.17, 1.56, 0.69, 0.53],
+        alpha, fz_const, [10.0, 1.5, 1.0, 0.5], 'bayesian_svi',
+        ci_kwargs={'svi_params': {'num_steps': 3000}},
+    ))
+
+    # -- Summary --
     print("\n" + "=" * 65)
     passed = sum(results)
     total = len(results)
-    status = "ALL PASS ✓" if all(results) else f"{passed}/{total} passed"
+    status = "ALL PASS" if all(results) else f"{passed}/{total} passed"
     print(f"   SUMMARY: {status}")
     print("=" * 65)
 
     return 0 if all(results) else 1
+
+
+def test_all_methods():
+    """Real pytest entry point (so `pytest -v` actually runs the suite)."""
+    assert main() == 0
 
 
 if __name__ == '__main__':

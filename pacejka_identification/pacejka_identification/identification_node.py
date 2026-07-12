@@ -88,6 +88,18 @@ class IdentificationNode(Node):
         self.declare_parameter('adaptive_de.archive_ratio', 1.0)
         self.declare_parameter('adaptive_de.seed', 42)
 
+        self.declare_parameter('identification.regularization', 'none')
+        self.declare_parameter('map_regularization.lambda_C', 1.0)
+        self.declare_parameter('map_regularization.sigma_C', 0.3)
+
+        self.declare_parameter('bayesian_svi.num_steps', 2000)
+        self.declare_parameter('bayesian_svi.learning_rate', 0.01)
+        self.declare_parameter('bayesian_svi.seed', 42)
+
+        self.declare_parameter('data_balancing.enabled', False)
+        self.declare_parameter('data_balancing.n_bins', 20)
+        self.declare_parameter('data_balancing.max_per_bin', 200)
+
         # ── Read parameters ──────────────────────────────────────────────
         self.topic = self.get_parameter('tire_forces_topic').value
         self.duration = int(self.get_parameter('data_collection.duration_seconds').value)
@@ -139,6 +151,22 @@ class IdentificationNode(Node):
             'seed': int(self.get_parameter('adaptive_de.seed').value),
         }
 
+        self.regularization = str(self.get_parameter('identification.regularization').value)
+        self.map_reg_params = {
+            'lambda_C': float(self.get_parameter('map_regularization.lambda_C').value),
+            'sigma_C': float(self.get_parameter('map_regularization.sigma_C').value),
+        }
+        self.svi_params = {
+            'num_steps': int(self.get_parameter('bayesian_svi.num_steps').value),
+            'learning_rate': float(self.get_parameter('bayesian_svi.learning_rate').value),
+            'seed': int(self.get_parameter('bayesian_svi.seed').value),
+        }
+        self.data_balancing_params = {
+            'enabled': bool(self.get_parameter('data_balancing.enabled').value),
+            'n_bins': int(self.get_parameter('data_balancing.n_bins').value),
+            'max_per_bin': int(self.get_parameter('data_balancing.max_per_bin').value),
+        }
+
         # ── Data storage ─────────────────────────────────────────────────
         self.data = {w: {c: [] for c in PER_WHEEL_COLS} for w in WHEEL_NAMES}
         self.sample_count = 0
@@ -173,6 +201,7 @@ class IdentificationNode(Node):
         self.get_logger().info(f'  Duration: {self.duration}s')
         self.get_logger().info(f'  Method:   {self.method}')
         self.get_logger().info(f'  ID Mode:  {self.id_mode}')
+        self.get_logger().info(f'  Regularization: {self.regularization}')
         self.get_logger().info(f'  Formulas: {self.formulas}')
         self.get_logger().info(f'  Grouping: {self.axle_grouping}')
 
@@ -262,6 +291,10 @@ class IdentificationNode(Node):
             de_params=self.de_params,
             ga_params=self.ga_params,
             jade_params=self.jade_params,
+            regularization=self.regularization,
+            map_reg_params=self.map_reg_params,
+            svi_params=self.svi_params,
+            data_balancing_params=self.data_balancing_params,
         )
 
         all_results = {}
