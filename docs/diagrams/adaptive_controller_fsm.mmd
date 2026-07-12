@@ -1,0 +1,18 @@
+stateDiagram-v2
+    [*] --> BOOTSTRAP_PP
+    BOOTSTRAP_PP --> RUNNING_PP: pp_state == true
+
+    RUNNING_PP --> EMERGENCY_HALT: !ppHealthOk()
+    RUNNING_PP --> SWITCHING_TO_MPC: arming gates pass AND mpc/update_params acked
+
+    SWITCHING_TO_MPC --> RUNNING_PP: MPC unhealthy mid-switch or at deadline
+    SWITCHING_TO_MPC --> RUNNING_MPC: delta_t_switch elapsed AND mpcHealthOk()
+
+    RUNNING_MPC --> SWITCHING_TO_PP: !mpcHealthOk() AND ppHealthOk()
+    RUNNING_MPC --> EMERGENCY_HALT: !mpcHealthOk() AND !ppHealthOk()
+
+    SWITCHING_TO_PP --> RUNNING_MPC: PP unhealthy mid-switch
+    SWITCHING_TO_PP --> RUNNING_PP: delta_t_switch elapsed AND ppHealthOk()
+    SWITCHING_TO_PP --> EMERGENCY_HALT: delta_t_switch elapsed AND !ppHealthOk()
+
+    EMERGENCY_HALT --> BOOTSTRAP_PP: ppHealthOk() OR mpcHealthOk()

@@ -1,0 +1,50 @@
+name: Render Mermaid Diagrams
+
+on:
+  push:
+    paths:
+      - 'docs/diagrams/*.mmd'
+      - '.github/workflows/render_mermaid.yml'
+  workflow_dispatch:
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Important for pushing back to the repo
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Mermaid CLI
+        run: npm install -g @mermaid-js/mermaid-cli
+
+      - name: Render diagrams
+        run: |
+          mkdir -p docs/images
+          for file in docs/diagrams/*.mmd; do
+            if [ -f "$file" ]; then
+              filename=$(basename -- "$file")
+              basename="${filename%.*}"
+              echo "Rendering $filename..."
+              
+              # Render PNG (transparent background, scale=2 for high DPI)
+              mmdc -i "$file" -o "docs/images/${basename}.png" -t default -b transparent -s 2
+              
+              # Render PDF (white background usually better for academic PDF)
+              mmdc -i "$file" -o "docs/images/${basename}.pdf" -t default -b white
+            fi
+          done
+
+      - name: Commit rendered diagrams
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: update rendered mermaid diagrams [skip ci]"
+          file_pattern: "docs/images/*.png docs/images/*.pdf"

@@ -59,54 +59,13 @@ Before this package existed, `pure_pursuit` and `mpc_path_tracking` each publish
 
 ## 2. Architecture
 
-```mermaid
-graph TD
-    ODOM["/odom"] --> PP[pure_pursuit]
-    ODOM --> MPC[mpc_path_tracking]
-    ODOM --> MGR[adaptive_controller_manager]
-    WP["/raceline_waypoints"] --> PP
-    WP --> MPC
-    WP --> MGR
-
-    MGR -- "Start_Working_pp" --> PP
-    MGR -- "Start_Working_mpc" --> MPC
-
-    PP -- "pp/drive_cmd" --> MGR
-    MPC -- "mpc/drive_cmd" --> MGR
-    PP -- "pp_state, pp_health" --> MGR
-    MPC -- "/mpc/status" --> MGR
-
-    MGR -- "/drive (sole writer)" --> VEH[vehicle / simulator]
-
-    SYSID[On-Track-SysID] -- "sysid/update_params (server)" --> MGR
-    MGR -- "mpc/update_params (client)" --> MPC
-    SYSID -- "sysid/first_run" --> MGR
-```
+![Architecture diagram](images/adaptive_controller_architecture.png)
 
 Every arrow above is a real topic/service in the running graph (verified with `ros2 topic list` / `ros2 node info` during integration testing — see §8).
 
 ## 3. Finite state machine
 
-```mermaid
-stateDiagram-v2
-    [*] --> BOOTSTRAP_PP
-    BOOTSTRAP_PP --> RUNNING_PP: pp_state == true
-
-    RUNNING_PP --> EMERGENCY_HALT: !ppHealthOk()
-    RUNNING_PP --> SWITCHING_TO_MPC: arming gates pass AND mpc/update_params acked
-
-    SWITCHING_TO_MPC --> RUNNING_PP: MPC unhealthy mid-switch or at deadline
-    SWITCHING_TO_MPC --> RUNNING_MPC: delta_t_switch elapsed AND mpcHealthOk()
-
-    RUNNING_MPC --> SWITCHING_TO_PP: !mpcHealthOk() AND ppHealthOk()
-    RUNNING_MPC --> EMERGENCY_HALT: !mpcHealthOk() AND !ppHealthOk()
-
-    SWITCHING_TO_PP --> RUNNING_MPC: PP unhealthy mid-switch
-    SWITCHING_TO_PP --> RUNNING_PP: delta_t_switch elapsed AND ppHealthOk()
-    SWITCHING_TO_PP --> EMERGENCY_HALT: delta_t_switch elapsed AND !ppHealthOk()
-
-    EMERGENCY_HALT --> BOOTSTRAP_PP: ppHealthOk() OR mpcHealthOk()
-```
+![Finite State Machine diagram](images/adaptive_controller_fsm.png)
 
 This matches `manager_node.cpp`'s `controlLoop()`/`stepSwitching()`/`tryForwardStoredParams()` exactly, not the original draft plan — two transitions were corrected after being caught by integration testing:
 
@@ -170,32 +129,7 @@ Two hardenings beyond the original draft, both added deliberately (not literal-d
 
 ## 6. Parameter handoff
 
-```mermaid
-sequenceDiagram
-    participant S as On-Track-SysID
-    participant M as adaptive_controller_manager
-    participant C as mpc_path_tracking
-
-    S->>M: sysid/update_params(IdentifiedParam)
-    M->>M: validate against tire_param_min/max
-    alt out of bounds
-        M-->>S: ack = false
-    else in bounds
-        M->>M: store params, bump stored_version_
-        M-->>S: ack = true
-        Note over M: forward gated - RUNNING_PP needs arming gates,<br/>RUNNING_MPC forwards immediately (re-identification)
-        M->>C: mpc/update_params(IdentifiedParam) [own ReentrantCallbackGroup]
-        C->>C: lock tire_mutex_, VehicleModel::setTireParams()
-        C-->>M: ack = true
-        opt was RUNNING_PP
-            M->>M: beginSwitch(to_mpc) -> SWITCHING_TO_MPC
-        end
-    end
-    loop every reidentification_interval_s
-        S->>S: retrain on continuously-refreshed rolling data buffer
-        S->>M: sysid/update_params (repeat)
-    end
-```
+![Parameter Handoff diagram](images/adaptive_controller_handoff.png)
 
 `On-Track-SysID` originally published a one-shot latched `/sysid/training_complete` (`std_msgs/String`) exactly once, ever — no continuous re-identification loop existed. Replaced with the service-based loop above plus a periodic timer (`reidentification_interval_s`, default `30.0`s): `collect_data()` now runs every tick regardless of phase (keeping the rolling buffer fresh), and a non-blocking future (`call_async` + polled `future.done()` across ticks, never a blocking `spin_until_future_complete` from inside the single-threaded node's own timer callback, which would deadlock) drives retraining and resubmission.
 

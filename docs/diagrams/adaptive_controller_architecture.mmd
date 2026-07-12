@@ -1,0 +1,21 @@
+graph TD
+    ODOM["/odom"] --> PP[pure_pursuit]
+    ODOM --> MPC[mpc_path_tracking]
+    ODOM --> MGR[adaptive_controller_manager]
+    WP["/raceline_waypoints"] --> PP
+    WP --> MPC
+    WP --> MGR
+
+    MGR -- "Start_Working_pp" --> PP
+    MGR -- "Start_Working_mpc" --> MPC
+
+    PP -- "pp/drive_cmd" --> MGR
+    MPC -- "mpc/drive_cmd" --> MGR
+    PP -- "pp_state, pp_health" --> MGR
+    MPC -- "/mpc/status" --> MGR
+
+    MGR -- "/drive (sole writer)" --> VEH[vehicle / simulator]
+
+    SYSID[On-Track-SysID] -- "sysid/update_params (server)" --> MGR
+    MGR -- "mpc/update_params (client)" --> MPC
+    SYSID -- "sysid/first_run" --> MGR

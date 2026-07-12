@@ -1,0 +1,24 @@
+sequenceDiagram
+    participant S as On-Track-SysID
+    participant M as adaptive_controller_manager
+    participant C as mpc_path_tracking
+
+    S->>M: sysid/update_params(IdentifiedParam)
+    M->>M: validate against tire_param_min/max
+    alt out of bounds
+        M-->>S: ack = false
+    else in bounds
+        M->>M: store params, bump stored_version_
+        M-->>S: ack = true
+        Note over M: forward gated - RUNNING_PP needs arming gates,<br/>RUNNING_MPC forwards immediately (re-identification)
+        M->>C: mpc/update_params(IdentifiedParam) [own ReentrantCallbackGroup]
+        C->>C: lock tire_mutex_, VehicleModel::setTireParams()
+        C-->>M: ack = true
+        opt was RUNNING_PP
+            M->>M: beginSwitch(to_mpc) -> SWITCHING_TO_MPC
+        end
+    end
+    loop every reidentification_interval_s
+        S->>S: retrain on continuously-refreshed rolling data buffer
+        S->>M: sysid/update_params (repeat)
+    end
