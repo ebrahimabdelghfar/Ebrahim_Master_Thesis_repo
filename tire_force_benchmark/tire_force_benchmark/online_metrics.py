@@ -1,6 +1,37 @@
 import math
 
 
+class HistoryBuffer:
+    """Bounded-memory (ground truth, estimate) time-history for plotting.
+
+    Once more than 2*max_points samples have been seen, the buffer halves
+    itself (keeping every other point) and doubles its sampling stride, so
+    memory stays bounded on long-running nodes while still spanning the
+    full run (logarithmic decimation, same idea as RRDtool).
+    """
+
+    def __init__(self, max_points: int = 5000):
+        self.max_points = max(100, int(max_points))
+        self._stride = 1
+        self._count = 0
+        self.stamps = []
+        self.gt = []
+        self.est = []
+
+    def add(self, stamp: float, gt: float, est: float):
+        self._count += 1
+        if (self._count - 1) % self._stride != 0:
+            return
+        self.stamps.append(stamp)
+        self.gt.append(gt)
+        self.est.append(est)
+        if len(self.stamps) > 2 * self.max_points:
+            self.stamps = self.stamps[::2]
+            self.gt = self.gt[::2]
+            self.est = self.est[::2]
+            self._stride *= 2
+
+
 class OnlineBenchmark:
     def __init__(self, name: str = 'signal'):
         self.name = name

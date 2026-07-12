@@ -66,3 +66,13 @@ adaptive_controller_manager:
     # magnitude off), not a validated physical range. Retune per vehicle.
     tire_param_min: [0.0, 0.0, 0.0, -10.0, 0.0, 0.0, 0.0, -10.0]
     tire_param_max: [50.0, 10.0, 20.0, 10.0, 50.0, 10.0, 20.0, 10.0]
+
+    # ---------------- Benchmark forwarding (optional) ----------------
+    # If enabled, every accepted sysid/update_params submission is also
+    # forwarded (best-effort, fire-and-forget) to a passive benchmarking
+    # node (tire_force_benchmark) via the same IdentifiedParam service
+    # contract, independent of the PP/MPC arming FSM - that node isn't
+    # actuating anything, so it should see every accepted identification
+    # immediately rather than wait for a handover window. Off by default.
+    benchmark_update_params_enable: false
+    benchmark_update_params_service: "benchmark/update_params"

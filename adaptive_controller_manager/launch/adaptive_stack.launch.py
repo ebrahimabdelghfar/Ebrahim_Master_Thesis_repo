@@ -24,6 +24,15 @@ def generate_launch_description():
     waypoint_topic_arg = DeclareLaunchArgument(
         'waypoint_topic', default_value='/raceline_waypoints',
         description='Raceline WaypointArray topic shared by all three nodes')
+    benchmark_update_params_enable_arg = DeclareLaunchArgument(
+        'benchmark_update_params_enable', default_value='false',
+        description=(
+            'If true, forward every accepted sysid/update_params submission to '
+            'tire_force_benchmark via benchmark_update_params_service (best-effort, '
+            'independent of the PP/MPC arming FSM)'))
+    benchmark_update_params_service_arg = DeclareLaunchArgument(
+        'benchmark_update_params_service', default_value='benchmark/update_params',
+        description='IdentifiedParam service name tire_force_benchmark listens on')
 
     # standalone_mode:=false is passed explicitly (not left to each package's
     # own YAML default) so a leftover standalone_mode:true from a solo-tuning
@@ -84,6 +93,8 @@ def generate_launch_description():
             {
                 'odom_topic': LaunchConfiguration('odom_topic'),
                 'waypoint_topic': LaunchConfiguration('waypoint_topic'),
+                'benchmark_update_params_enable': LaunchConfiguration('benchmark_update_params_enable'),
+                'benchmark_update_params_service': LaunchConfiguration('benchmark_update_params_service'),
             },
         ],
         output='screen')
@@ -91,6 +102,8 @@ def generate_launch_description():
     return LaunchDescription([
         odom_topic_arg,
         waypoint_topic_arg,
+        benchmark_update_params_enable_arg,
+        benchmark_update_params_service_arg,
         pure_pursuit_launch,
         mpc_launch,
         # sys_id_launch,

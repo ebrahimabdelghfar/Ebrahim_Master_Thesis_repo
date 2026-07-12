@@ -135,6 +135,12 @@ Two hardenings beyond the original draft, both added deliberately (not literal-d
 
 `mpc_path_tracking`'s tire params live inside `MpcController`'s own `VehicleModel` copy (constructed by-value in `MpcController`'s constructor), **not** the `VehicleModel` instance `MpcNode` originally constructs — a service handler that updated the latter would have had zero effect on the solver. `mpc/update_params`'s handler calls `controller_->setTireParams(tire)`, which forwards to that inner copy; verified live via direct service call, confirmed in `mpc_node`'s log (`tire params updated via mpc/update_params`) and via the `VehicleModel` copy constructor/assignment, which had to be added explicitly once a `std::mutex` (guarding concurrent reads from the control-loop thread against writes from the service's `ReentrantCallbackGroup` thread) made `VehicleModel` non-copyable by default.
 
+### Optional: forwarding to `tire_force_benchmark`
+
+`tire_force_benchmark` (see `docs/tire_force_benchmark.md`) has no hardcoded Pacejka model of its own — it waits for an `IdentifiedParam` service call before it starts benchmarking. Set `benchmark_update_params_enable: true` (default `false`) in `config/adaptive_controller_manager.yaml` to have the manager forward every accepted `sysid/update_params` submission on to it (`benchmark_update_params_service`, default `"benchmark/update_params"`, same `IdentifiedParam` contract).
+
+Unlike the `mpc/update_params` forward, this one is deliberately **not** routed through `tryForwardStoredParams()`/the arming FSM: `onSysidUpdateParams()` fires it directly, right after validating and storing the submission. The benchmark node isn't actuating the vehicle, so there's no safety reason to wait for `RUNNING_PP`'s arming gates or a handover window — it should see every accepted identification as soon as it's accepted. It's fire-and-forget (best-effort): a missing/unacked benchmark node just logs a throttled warning, with no retry/version bookkeeping, since the next re-identification cycle naturally resends anyway.
+
 ## 7. Package interfaces
 
 | | Topic/Service (parameter) | Type | Notes |
@@ -153,6 +159,7 @@ Two hardenings beyond the original draft, both added deliberately (not literal-d
 | Pub | `manager/active_controller_marker` | `visualization_msgs/msg/MarkerArray` | colored sphere + text label hovering above the vehicle in RViz - green "PURE PURSUIT", blue "MPC", orange "SWITCHING -> ...", red "EMERGENCY HALT" |
 | Srv (server) | `sysid_update_params_service` (`sysid/update_params`) | `adaptive_controller_interfaces/srv/IdentifiedParam` | validates bounds, stores |
 | Srv (client) | `mpc_update_params_service` (`mpc/update_params`) | `adaptive_controller_interfaces/srv/IdentifiedParam` | forwards validated params |
+| Srv (client, optional) | `benchmark_update_params_service` (`benchmark/update_params`) | `adaptive_controller_interfaces/srv/IdentifiedParam` | only called if `benchmark_update_params_enable: true`; fire-and-forget to `tire_force_benchmark` |
 
 All names above are ROS parameters — see `config/adaptive_controller_manager.yaml`.
 
@@ -198,6 +205,13 @@ ros2 launch adaptive_controller_manager adaptive_stack.launch.py
 ```bash
 ros2 launch adaptive_controller_manager sim_test.launch.py map_name:=YasMarina
 ```
+
+### Enable forwarding identified params to `tire_force_benchmark`
+```bash
+ros2 launch adaptive_controller_manager adaptive_stack.launch.py \
+  benchmark_update_params_enable:=true
+```
+(or set it directly in `config/adaptive_controller_manager.yaml`). Run `tire_force_benchmark` alongside with its `identified_params_service` matching `benchmark_update_params_service` (both default to `benchmark/update_params`).
 
 ### Run the integration test
 ```bash

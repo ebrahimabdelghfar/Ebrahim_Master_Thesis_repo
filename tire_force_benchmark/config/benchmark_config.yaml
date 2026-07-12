@@ -1,0 +1,60 @@
+tire_force_benchmark_node:
+  ros__parameters:
+    # --- Tire-force (Fy) benchmarking ---
+    enable_force_benchmarking: true   # false: no /tire_forces (or estimated_fy_topic) subscription at all
+    benchmark_mode: internal_pacejka   # internal_pacejka | external_topic
+    tire_forces_topic: /tire_forces
+    estimated_fy_topic: /estimated_tire_force_fy
+    external_prediction_lead_samples: 1   # compare estimate[k] with ground_truth[k+lead]
+    external_max_queue_size: 2000
+    log_interval: 200
+
+    # min_fz_threshold has NO built-in default in code (see docs/tire_force_benchmark.md) -
+    # it MUST be set here or on the launch line. Rule of thumb: pick a value well below
+    # your vehicle's static per-wheel load (mass*9.81/4 N), just enough to filter
+    # near-zero/airborne-wheel samples.
+    #
+    # This value (1.0 N) is derived from the lightest vehicle tracked in this repo
+    # (On-Track-SysID/models/NUC5, m=3.5kg -> static per-wheel load ~8.6N) with a
+    # comfortable margin below it. RECOMPUTE THIS for your own vehicle's mass.
+    min_fz_threshold: 1.0
+    require_on_road: true
+
+    model_file: ""   # path to a C_Pf/C_Pr(+m/I_z/l_f/l_r/l_wb) yaml, e.g. an
+                      # On-Track-SysID models/<car>/<car>_pacejka.txt file
+
+    # c_pf/c_pr have NO default - leave them unset (as below) to have the node
+    # wait for freshly-identified params pushed via identified_params_service
+    # (see adaptive_controller_manager's benchmark_update_params_enable/
+    # benchmark_update_params_service config) instead of benchmarking a
+    # hardcoded/arbitrary model. Uncomment below only for standalone testing
+    # without adaptive_controller_manager running:
+    # c_pf: [6.63, 1.1052, 0.4316, 0.5193]
+    # c_pr: [7.8594, 1.5468, 0.3589, 0.5631]
+
+    # Must match adaptive_controller_manager's benchmark_update_params_service
+    # (config/adaptive_controller_manager.yaml) if that forwarding is enabled.
+    identified_params_service: "benchmark/update_params"
+
+    csv_output_path: ""
+
+    # --- Vehicle-state (v_y, omega) benchmarking ---
+    enable_state_benchmarking: true
+    odom_topic: /odom
+    ackermann_cmd_topic: /drive
+    state_estimate_topic: /benchmarking/state_estimate
+    state_sensor_topic: /benchmarking/state_sensor
+    state_error_topic: /benchmarking/state_error
+
+    # Vehicle model constants (m [kg], I_z [kg.m^2], l_f/l_r/l_wb [m]) - only needed
+    # if model_file doesn't already provide them. Leave at 0.0 (disables state
+    # benchmarking with a warning) unless you set them or a model_file.
+    m: 0.0
+    I_z: 0.0
+    l_f: 0.0
+    l_r: 0.0
+    l_wb: 0.0
+
+    # --- Academic plot export (on node shutdown) ---
+    plot_output_dir: ""   # set to a directory path to enable PNG export
+    plot_max_points: 5000

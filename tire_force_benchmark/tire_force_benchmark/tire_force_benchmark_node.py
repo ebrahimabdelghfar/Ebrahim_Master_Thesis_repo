@@ -7,14 +7,36 @@ from pathlib import Path
 
 import numpy as np
 import rclpy
+import rclpy.time
 import yaml
+from rclpy.exceptions import ParameterUninitializedException
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from std_msgs.msg import Float64MultiArray
 from std_msgs.msg import String
 
+from ackermann_msgs.msg import AckermannDriveStamped
+from adaptive_controller_interfaces.srv import IdentifiedParam
 from hellocm_msgs.msg import TireForcesArray
+from nav_msgs.msg import Odometry
 
+from tire_force_benchmark.online_metrics import HistoryBuffer
 from tire_force_benchmark.online_metrics import OnlineBenchmark
+
+FORCE_SIGNALS = [
+    ('fl_fy', 'FL Fy', 'N'),
+    ('fr_fy', 'FR Fy', 'N'),
+    ('rl_fy', 'RL Fy', 'N'),
+    ('rr_fy', 'RR Fy', 'N'),
+    ('front_sum_fy', 'Front axle Fy sum', 'N'),
+    ('rear_sum_fy', 'Rear axle Fy sum', 'N'),
+    ('total_sum_fy', 'Vehicle total Fy sum', 'N'),
+]
+STATE_SIGNALS = [
+    ('v_y', 'Lateral velocity v_y', 'm/s'),
+    ('omega', 'Yaw rate omega', 'rad/s'),
+]
+G = 9.81
 
 
 def pacejka_formula(params, alpha, fz):
@@ -26,19 +48,44 @@ class TireForceBenchmarkNode(Node):
     def __init__(self):
         super().__init__('tire_force_benchmark_node')
 
+        self.declare_parameter('enable_force_benchmarking', True)
         self.declare_parameter('benchmark_mode', 'internal_pacejka')
         self.declare_parameter('tire_forces_topic', '/tire_forces')
         self.declare_parameter('estimated_fy_topic', '/estimated_tire_force_fy')
         self.declare_parameter('external_prediction_lead_samples', 1)
         self.declare_parameter('external_max_queue_size', 2000)
         self.declare_parameter('log_interval', 200)
-        self.declare_parameter('min_fz_threshold', 50.0)
+        # No default: a wrong-for-this-vehicle default would silently reject
+        # every sample (see docs/tire_force_benchmark.md). Must be set explicitly.
+        self.declare_parameter('min_fz_threshold', Parameter.Type.DOUBLE)
         self.declare_parameter('require_on_road', True)
         self.declare_parameter('model_file', '')
-        self.declare_parameter('c_pf', [6.63, 1.1052, 0.4316, 0.5193])
-        self.declare_parameter('c_pr', [7.8594, 1.5468, 0.3589, 0.5631])
+        # No default: benchmarking a hardcoded/arbitrary Pacejka model isn't
+        # meaningful. c_pf/c_pr come from model_file (below) or from the
+        # identified_params_service (see handle_identified_params) - until
+        # one of those provides them, internal_pacejka benchmarking and
+        # state-prediction are held off entirely (self.have_identified_params).
+        self.declare_parameter('c_pf', Parameter.Type.DOUBLE_ARRAY)
+        self.declare_parameter('c_pr', Parameter.Type.DOUBLE_ARRAY)
+        self.declare_parameter('identified_params_service', 'benchmark/update_params')
         self.declare_parameter('csv_output_path', '')
 
+        self.declare_parameter('enable_state_benchmarking', True)
+        self.declare_parameter('odom_topic', '/odom')
+        self.declare_parameter('ackermann_cmd_topic', '/drive')
+        self.declare_parameter('state_estimate_topic', '/benchmarking/state_estimate')
+        self.declare_parameter('state_sensor_topic', '/benchmarking/state_sensor')
+        self.declare_parameter('state_error_topic', '/benchmarking/state_error')
+        self.declare_parameter('m', 0.0)
+        self.declare_parameter('I_z', 0.0)
+        self.declare_parameter('l_f', 0.0)
+        self.declare_parameter('l_r', 0.0)
+        self.declare_parameter('l_wb', 0.0)
+
+        self.declare_parameter('plot_output_dir', '')
+        self.declare_parameter('plot_max_points', 5000)
+
+        self.enable_force_benchmarking = bool(self.get_parameter('enable_force_benchmarking').value)
         self.benchmark_mode = str(self.get_parameter('benchmark_mode').value).strip()
         tire_forces_topic = self.get_parameter('tire_forces_topic').value
         self.estimated_fy_topic = str(self.get_parameter('estimated_fy_topic').value)
@@ -47,9 +94,23 @@ class TireForceBenchmarkNode(Node):
         )
         self.external_max_queue_size = max(10, int(self.get_parameter('external_max_queue_size').value))
         self.log_interval = int(self.get_parameter('log_interval').value)
-        self.min_fz = float(self.get_parameter('min_fz_threshold').value)
         self.require_on_road = bool(self.get_parameter('require_on_road').value)
         self.csv_output_path = str(self.get_parameter('csv_output_path').value)
+        self.plot_output_dir = str(self.get_parameter('plot_output_dir').value)
+        self.plot_max_points = int(self.get_parameter('plot_max_points').value)
+
+        try:
+            self.min_fz = float(self.get_parameter('min_fz_threshold').value)
+        except ParameterUninitializedException:
+            raise RuntimeError(
+                "Parameter 'min_fz_threshold' must be set explicitly - there is no built-in "
+                "default. A default sized for a full-size vehicle would silently reject every "
+                "sample from a scaled car (e.g. the On-Track-SysID models in this repo are "
+                "3.5-4.5kg, static per-wheel load ~8.6-11N). Pick a value well below your "
+                "vehicle's static per-wheel load (~mass*9.81/4 N) so it only filters "
+                "near-zero/airborne-wheel samples - set it via "
+                "config/benchmark_config.yaml or 'min_fz_threshold:=<value>' on the launch line."
+            )
 
         valid_modes = {'internal_pacejka', 'external_topic'}
         if self.benchmark_mode not in valid_modes:
@@ -58,10 +119,34 @@ class TireForceBenchmarkNode(Node):
             )
             self.benchmark_mode = 'internal_pacejka'
 
-        self.c_pf = [float(v) for v in self.get_parameter('c_pf').value]
-        self.c_pr = [float(v) for v in self.get_parameter('c_pr').value]
-        if self.benchmark_mode == 'internal_pacejka':
-            self._load_model_if_available(str(self.get_parameter('model_file').value))
+        self.c_pf = self._get_optional_double_array('c_pf')
+        self.c_pr = self._get_optional_double_array('c_pr')
+        self.have_identified_params = self.c_pf is not None and self.c_pr is not None
+        self.m = float(self.get_parameter('m').value)
+        self.I_z = float(self.get_parameter('I_z').value)
+        self.l_f = float(self.get_parameter('l_f').value)
+        self.l_r = float(self.get_parameter('l_r').value)
+        self.l_wb = float(self.get_parameter('l_wb').value)
+
+        model_file = str(self.get_parameter('model_file').value)
+        if model_file != '':
+            self._load_model_if_available(model_file)
+
+        self._logged_waiting_for_params = False
+
+        self.enable_state_benchmarking = bool(self.get_parameter('enable_state_benchmarking').value)
+        if self.enable_state_benchmarking:
+            if self.m <= 0.0 or self.I_z <= 0.0 or self.l_f <= 0.0 or self.l_r <= 0.0 or self.l_wb <= 0.0:
+                self.get_logger().warn(
+                    'enable_state_benchmarking requested but vehicle model constants '
+                    '(m, I_z, l_f, l_r, l_wb) are missing/zero. Provide them via model_file '
+                    '(the On-Track-SysID *_pacejka.txt format already contains them) or as '
+                    'explicit parameters. Disabling state benchmarking.'
+                )
+                self.enable_state_benchmarking = False
+            else:
+                self.F_zf = self.m * G * self.l_r / self.l_wb
+                self.F_zr = self.m * G * self.l_f / self.l_wb
 
         self.metrics = {
             'fl_fy': OnlineBenchmark('FL Fy'),
@@ -71,56 +156,135 @@ class TireForceBenchmarkNode(Node):
             'front_sum_fy': OnlineBenchmark('Front axle Fy sum'),
             'rear_sum_fy': OnlineBenchmark('Rear axle Fy sum'),
             'total_sum_fy': OnlineBenchmark('Vehicle total Fy sum'),
+            'v_y': OnlineBenchmark('v_y (lateral velocity)'),
+            'omega': OnlineBenchmark('omega (yaw rate)'),
+        }
+        self.history = {
+            key: HistoryBuffer(self.plot_max_points) for key, _, _ in FORCE_SIGNALS + STATE_SIGNALS
         }
         self.sample_count = 0
+        self.state_sample_count = 0
         self.latest_gt = None
         self.gt_queue = deque()
         self.est_queue = deque()
         self.drop_count_gt = 0
         self.drop_count_est = 0
 
-        self.estimation_pub = self.create_publisher(Float64MultiArray, '/benchmarking/tire_force_fy_estimate', 10)
+        self.current_delta = 0.0
+        self.prev_v_y = 0.0
+        self.prev_omega = 0.0
+        self.last_odom_time = None
+
         self.summary_pub = self.create_publisher(String, '/benchmarking/tire_force_summary', 10)
 
-        self.sub = self.create_subscription(
-            TireForcesArray,
-            tire_forces_topic,
-            self.tire_forces_callback,
-            10,
-        )
+        self.estimation_pub = None
+        self.sub = None
         self.ext_sub = None
-        if self.benchmark_mode == 'external_topic':
-            self.ext_sub = self.create_subscription(
-                Float64MultiArray,
-                self.estimated_fy_topic,
-                self.estimated_fy_callback,
+        if self.enable_force_benchmarking:
+            self.estimation_pub = self.create_publisher(
+                Float64MultiArray, '/benchmarking/tire_force_fy_estimate', 10
+            )
+            self.sub = self.create_subscription(
+                TireForcesArray,
+                tire_forces_topic,
+                self.tire_forces_callback,
                 10,
             )
+            if self.benchmark_mode == 'external_topic':
+                self.ext_sub = self.create_subscription(
+                    Float64MultiArray,
+                    self.estimated_fy_topic,
+                    self.estimated_fy_callback,
+                    10,
+                )
+
+        self.odom_sub = None
+        self.ackermann_sub = None
+        self.state_estimate_pub = None
+        self.state_sensor_pub = None
+        self.state_error_pub = None
+        if self.enable_state_benchmarking:
+            odom_topic = str(self.get_parameter('odom_topic').value)
+            ackermann_topic = str(self.get_parameter('ackermann_cmd_topic').value)
+            state_estimate_topic = str(self.get_parameter('state_estimate_topic').value)
+            state_sensor_topic = str(self.get_parameter('state_sensor_topic').value)
+            state_error_topic = str(self.get_parameter('state_error_topic').value)
+
+            self.odom_sub = self.create_subscription(Odometry, odom_topic, self.odom_callback, 10)
+            self.ackermann_sub = self.create_subscription(
+                AckermannDriveStamped, ackermann_topic, self.ackermann_callback, 10
+            )
+            self.state_estimate_pub = self.create_publisher(Float64MultiArray, state_estimate_topic, 10)
+            self.state_sensor_pub = self.create_publisher(Float64MultiArray, state_sensor_topic, 10)
+            self.state_error_pub = self.create_publisher(Float64MultiArray, state_error_topic, 10)
+
+        identified_params_service = str(self.get_parameter('identified_params_service').value)
+        self.identified_params_srv = self.create_service(
+            IdentifiedParam, identified_params_service, self.handle_identified_params
+        )
 
         self.csv_file = None
         self.csv_writer = None
+        self.state_csv_file = None
+        self.state_csv_writer = None
         self._setup_csv_if_enabled()
 
         self.get_logger().info('TireForceBenchmarkNode started')
-        self.get_logger().info(f'Benchmark mode: {self.benchmark_mode}')
-        self.get_logger().info(f'Subscribing to: {tire_forces_topic}')
-        if self.benchmark_mode == 'external_topic':
-            self.get_logger().info(f'Subscribing estimated Fy to: {self.estimated_fy_topic}')
-            self.get_logger().info(
-                f'External alignment lead samples: {self.external_prediction_lead_samples}'
-            )
-            self.get_logger().info(f'External alignment max queue size: {self.external_max_queue_size}')
+        self.get_logger().info(f'Force (Fy) benchmarking enabled: {self.enable_force_benchmarking}')
+        if self.enable_force_benchmarking:
+            self.get_logger().info(f'Benchmark mode: {self.benchmark_mode}')
+            self.get_logger().info(f'Subscribing to: {tire_forces_topic}')
+            if self.benchmark_mode == 'external_topic':
+                self.get_logger().info(f'Subscribing estimated Fy to: {self.estimated_fy_topic}')
+                self.get_logger().info(
+                    f'External alignment lead samples: {self.external_prediction_lead_samples}'
+                )
+                self.get_logger().info(f'External alignment max queue size: {self.external_max_queue_size}')
+        self.get_logger().info(f'Identified-params service: {identified_params_service}')
+        if self.have_identified_params:
+            self.get_logger().info(f'Startup Pacejka params - C_Pf: {self.c_pf}, C_Pr: {self.c_pr}')
         else:
-            self.get_logger().info(f'Front Pacejka params C_Pf: {self.c_pf}')
-            self.get_logger().info(f'Rear Pacejka params C_Pr: {self.c_pr}')
+            self.get_logger().info(
+                'No c_pf/c_pr or model_file at startup - waiting for identified params via service '
+                'before internal_pacejka benchmarking or state-prediction begins.'
+            )
+        self.get_logger().info(f'State benchmarking enabled: {self.enable_state_benchmarking}')
+
+    def _get_optional_double_array(self, name):
+        try:
+            return [float(v) for v in self.get_parameter(name).value]
+        except ParameterUninitializedException:
+            return None
+
+    def handle_identified_params(self, request, response):
+        if len(request.param_values) != 8:
+            self.get_logger().warn(
+                f'identified_params_service: expected 8 param_values, got {len(request.param_values)}'
+            )
+            response.ack = False
+            return response
+
+        values = [float(v) for v in request.param_values]
+        self.c_pf = values[0:4]
+        self.c_pr = values[4:8]
+        newly_active = not self.have_identified_params
+        self.have_identified_params = True
+        if newly_active:
+            self.get_logger().info(
+                f'Received identified Pacejka params via service - benchmarking now active. '
+                f'C_Pf={self.c_pf} C_Pr={self.c_pr}'
+            )
+        else:
+            self.get_logger().info(f'Updated Pacejka params via service: C_Pf={self.c_pf} C_Pr={self.c_pr}')
+        response.ack = True
+        return response
 
     def _load_model_if_available(self, model_file: str):
-        if model_file == '':
-            return
-
         model_path = Path(model_file)
         if not model_path.exists():
-            self.get_logger().warn(f'model_file not found: {model_file}. Using parameters from c_pf/c_pr.')
+            self.get_logger().warn(
+                f'model_file not found: {model_file}. Waiting for identified_params_service instead.'
+            )
             return
 
         try:
@@ -132,9 +296,19 @@ class TireForceBenchmarkNode(Node):
                 self.c_pf = [float(v) for v in c_pf]
             if c_pr is not None and len(c_pr) == 4:
                 self.c_pr = [float(v) for v in c_pr]
-            self.get_logger().info(f'Loaded Pacejka coefficients from model_file: {model_file}')
+            if self.c_pf is not None and self.c_pr is not None:
+                self.have_identified_params = True
+
+            for key in ('m', 'I_z', 'l_f', 'l_r', 'l_wb'):
+                value = model_data.get(key, None)
+                if value is not None:
+                    setattr(self, key, float(value))
+
+            self.get_logger().info(f'Loaded vehicle model from model_file: {model_file}')
         except Exception as exc:
-            self.get_logger().warn(f'Failed to load model_file {model_file}: {exc}. Using c_pf/c_pr.')
+            self.get_logger().warn(
+                f'Failed to load model_file {model_file}: {exc}. Waiting for identified_params_service instead.'
+            )
 
     def _setup_csv_if_enabled(self):
         if self.csv_output_path == '':
@@ -154,6 +328,13 @@ class TireForceBenchmarkNode(Node):
         ])
         self.get_logger().info(f'CSV logging enabled: {self.csv_output_path}')
 
+        if self.enable_state_benchmarking:
+            state_csv_path = output_path.with_name(f'{output_path.stem}_states{output_path.suffix}')
+            self.state_csv_file = state_csv_path.open('w', newline='', encoding='utf-8')
+            self.state_csv_writer = csv.writer(self.state_csv_file)
+            self.state_csv_writer.writerow(['stamp_sec', 'v_y_gt', 'v_y_est', 'omega_gt', 'omega_est'])
+            self.get_logger().info(f'State CSV logging enabled: {state_csv_path}')
+
     def _use_sample(self, tire_msg) -> bool:
         if self.require_on_road and not tire_msg.on_road:
             return False
@@ -164,6 +345,8 @@ class TireForceBenchmarkNode(Node):
         return True
 
     def tire_forces_callback(self, msg: TireForcesArray):
+        if not self.enable_force_benchmarking:
+            return
         fl = msg.front_left
         fr = msg.front_right
         rl = msg.rear_left
@@ -179,6 +362,14 @@ class TireForceBenchmarkNode(Node):
         stamp_sec = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
 
         if self.benchmark_mode == 'internal_pacejka':
+            if not self.have_identified_params:
+                if not self._logged_waiting_for_params:
+                    self.get_logger().warn(
+                        'internal_pacejka: no identified Pacejka params yet - waiting for '
+                        'identified_params_service before benchmarking starts.'
+                    )
+                    self._logged_waiting_for_params = True
+                return
             fl_est = float(pacejka_formula(self.c_pf, fl.slip_angle, fl.fz))
             fr_est = float(pacejka_formula(self.c_pf, fr.slip_angle, fr.fz))
             rl_est = float(pacejka_formula(self.c_pr, rl.slip_angle, rl.fz))
@@ -203,7 +394,7 @@ class TireForceBenchmarkNode(Node):
         self._try_external_queue_alignment()
 
     def estimated_fy_callback(self, msg: Float64MultiArray):
-        if self.benchmark_mode != 'external_topic':
+        if not self.enable_force_benchmarking or self.benchmark_mode != 'external_topic':
             return
         if len(msg.data) < 4:
             self.get_logger().warn('estimated_fy_topic message must contain at least 4 values [FL, FR, RL, RR].')
@@ -243,8 +434,13 @@ class TireForceBenchmarkNode(Node):
                 publish_estimate=False,
             )
 
-            for _ in range(required_gt):
-                self.gt_queue.popleft()
+            # Slide the GT window forward by exactly one sample per estimate
+            # consumed - popping `required_gt` here (as a previous version of
+            # this code did) discards `lead` extra GT samples every
+            # iteration, drifting the estimate[k]<->ground_truth[k+lead]
+            # correspondence documented in the README further apart each
+            # time (only accidentally correct for lead=0).
+            self.gt_queue.popleft()
             paired += 1
 
         if paired > 0 and (self.sample_count % self.log_interval == 0):
@@ -253,6 +449,18 @@ class TireForceBenchmarkNode(Node):
                     f'Queue drops detected: gt={self.drop_count_gt}, est={self.drop_count_est}. '
                     f'Consider increasing external_max_queue_size or adjusting external_prediction_lead_samples.'
                 )
+
+    def _build_summary_lines(self):
+        keys = [key for key, _, _ in FORCE_SIGNALS + STATE_SIGNALS]
+        return [self.metrics[key].summary() for key in keys]
+
+    def _log_and_publish_summary(self):
+        summary_text = '\n'.join(self._build_summary_lines())
+        self.get_logger().info(f'\n{summary_text}')
+
+        summary_msg = String()
+        summary_msg.data = summary_text
+        self.summary_pub.publish(summary_msg)
 
     def _benchmark_and_publish(self, stamp_sec: float, fy_gt, fy_est, publish_estimate: bool):
         fl_gt, fr_gt, rl_gt, rr_gt = fy_gt
@@ -274,6 +482,15 @@ class TireForceBenchmarkNode(Node):
         self.metrics['rear_sum_fy'].update(rear_gt, rear_est)
         self.metrics['total_sum_fy'].update(total_gt, total_est)
 
+        if self.plot_output_dir:
+            self.history['fl_fy'].add(stamp_sec, fl_gt, fl_est)
+            self.history['fr_fy'].add(stamp_sec, fr_gt, fr_est)
+            self.history['rl_fy'].add(stamp_sec, rl_gt, rl_est)
+            self.history['rr_fy'].add(stamp_sec, rr_gt, rr_est)
+            self.history['front_sum_fy'].add(stamp_sec, front_gt, front_est)
+            self.history['rear_sum_fy'].add(stamp_sec, rear_gt, rear_est)
+            self.history['total_sum_fy'].add(stamp_sec, total_gt, total_est)
+
         if publish_estimate:
             est_msg = Float64MultiArray()
             est_msg.data = [fl_est, fr_est, rl_est, rr_est, front_est, rear_est, total_est]
@@ -291,26 +508,210 @@ class TireForceBenchmarkNode(Node):
 
         self.sample_count += 1
         if self.sample_count % self.log_interval == 0:
-            lines = [
-                self.metrics['fl_fy'].summary(),
-                self.metrics['fr_fy'].summary(),
-                self.metrics['rl_fy'].summary(),
-                self.metrics['rr_fy'].summary(),
-                self.metrics['front_sum_fy'].summary(),
-                self.metrics['rear_sum_fy'].summary(),
-                self.metrics['total_sum_fy'].summary(),
-            ]
-            summary_text = '\n'.join(lines)
-            self.get_logger().info(f'\n{summary_text}')
+            self._log_and_publish_summary()
 
-            summary_msg = String()
-            summary_msg.data = summary_text
-            self.summary_pub.publish(summary_msg)
+    def odom_callback(self, msg: Odometry):
+        if not self.enable_state_benchmarking:
+            return
+
+        v_x = msg.twist.twist.linear.x
+        v_y_real = msg.twist.twist.linear.y
+        omega_real = msg.twist.twist.angular.z
+        stamp = rclpy.time.Time.from_msg(msg.header.stamp)
+
+        dt = None
+        if self.last_odom_time is not None:
+            dt = (stamp - self.last_odom_time).nanoseconds / 1e9
+        self.last_odom_time = stamp
+
+        # Same guards as On-Track-SysID's on_track_sys_id.py:publish_estimates -
+        # first sample / non-monotonic stamp (dt is None or <=0), a timing gap
+        # (dt too large to trust a one-step Euler prediction), or the car
+        # being effectively stopped (slip-angle formula divides by v_x).
+        if dt is None or dt <= 1e-5 or dt > 0.2 or v_x < 0.1 or not self.have_identified_params:
+            self.prev_v_y = v_y_real
+            self.prev_omega = omega_real
+            return
+
+        delta = self.current_delta
+
+        alpha_f = -np.arctan((self.prev_v_y + self.prev_omega * self.l_f) / v_x) + delta
+        alpha_r = -np.arctan((self.prev_v_y - self.prev_omega * self.l_r) / v_x)
+
+        f_f = float(pacejka_formula(self.c_pf, alpha_f, self.F_zf))
+        f_r = float(pacejka_formula(self.c_pr, alpha_r, self.F_zr))
+
+        v_y_dot = (1.0 / self.m) * (f_r + f_f * math.cos(delta) - self.m * v_x * self.prev_omega)
+        omega_dot = (1.0 / self.I_z) * (f_f * self.l_f * math.cos(delta) - f_r * self.l_r)
+
+        v_y_pred = self.prev_v_y + v_y_dot * dt
+        omega_pred = self.prev_omega + omega_dot * dt
+
+        stamp_sec = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        self._benchmark_state(stamp_sec, v_x, v_y_real, omega_real, delta, v_y_pred, omega_pred)
+
+        self.prev_v_y = v_y_real
+        self.prev_omega = omega_real
+
+    def ackermann_callback(self, msg: AckermannDriveStamped):
+        self.current_delta = msg.drive.steering_angle
+
+    def _benchmark_state(self, stamp_sec, v_x, v_y_real, omega_real, delta, v_y_pred, omega_pred):
+        self.metrics['v_y'].update(v_y_real, v_y_pred)
+        self.metrics['omega'].update(omega_real, omega_pred)
+
+        if self.plot_output_dir:
+            self.history['v_y'].add(stamp_sec, v_y_real, v_y_pred)
+            self.history['omega'].add(stamp_sec, omega_real, omega_pred)
+
+        sensor_msg = Float64MultiArray()
+        sensor_msg.data = [v_x, v_y_real, omega_real, delta]
+        self.state_sensor_pub.publish(sensor_msg)
+
+        estimate_msg = Float64MultiArray()
+        estimate_msg.data = [v_x, v_y_pred, omega_pred]
+        self.state_estimate_pub.publish(estimate_msg)
+
+        error_msg = Float64MultiArray()
+        error_msg.data = [abs(v_y_real - v_y_pred), abs(omega_real - omega_pred)]
+        self.state_error_pub.publish(error_msg)
+
+        if self.state_csv_writer is not None:
+            self.state_csv_writer.writerow([stamp_sec, v_y_real, v_y_pred, omega_real, omega_pred])
+
+        self.state_sample_count += 1
+        if self.state_sample_count % self.log_interval == 0:
+            self._log_and_publish_summary()
+
+    def _export_plots(self):
+        if not self.plot_output_dir:
+            return
+
+        try:
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+        except ImportError:
+            self.get_logger().warn('matplotlib not available - skipping benchmark plot export.')
+            return
+
+        out_dir = Path(self.plot_output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        self._plot_timeseries_grid(
+            plt, FORCE_SIGNALS, out_dir / 'tire_forces_timeseries.png',
+            'Tire Lateral Force: Ground Truth vs Estimate',
+        )
+        self._plot_timeseries_grid(
+            plt, STATE_SIGNALS, out_dir / 'vehicle_states_timeseries.png',
+            'Vehicle States: Ground Truth vs Estimate',
+        )
+        self._plot_error_hist_grid(
+            plt, FORCE_SIGNALS, out_dir / 'tire_forces_error_hist.png',
+            'Tire Lateral Force Error Distribution',
+        )
+        self._plot_error_hist_grid(
+            plt, STATE_SIGNALS, out_dir / 'vehicle_states_error_hist.png',
+            'Vehicle State Error Distribution',
+        )
+        self._plot_metrics_table(plt, FORCE_SIGNALS + STATE_SIGNALS, out_dir / 'metrics_summary.png')
+
+        self.get_logger().info(f'Benchmark plots saved to: {out_dir}')
+
+    def _grid_shape(self, n):
+        ncols = 1 if n <= 2 else 2
+        nrows = math.ceil(n / ncols)
+        return nrows, ncols
+
+    def _plot_timeseries_grid(self, plt, signals, save_path, suptitle):
+        nrows, ncols = self._grid_shape(len(signals))
+        fig, axes = plt.subplots(nrows, ncols, figsize=(7 * ncols, 3 * nrows), squeeze=False)
+
+        for idx, (key, label, unit) in enumerate(signals):
+            ax = axes[idx // ncols][idx % ncols]
+            hist = self.history[key]
+            if len(hist.stamps) == 0:
+                ax.set_title(f'{label} (no data)')
+                ax.axis('off')
+                continue
+            t0 = hist.stamps[0]
+            t = [s - t0 for s in hist.stamps]
+            ax.plot(t, hist.gt, label='Ground truth', linewidth=1.0)
+            ax.plot(t, hist.est, label='Estimate', linewidth=1.0, linestyle='--')
+            ax.set_title(label)
+            ax.set_xlabel('Time [s]')
+            ax.set_ylabel(f'{label} [{unit}]')
+            ax.grid(True, alpha=0.3)
+            ax.legend(loc='best', fontsize=8)
+
+        for idx in range(len(signals), nrows * ncols):
+            axes[idx // ncols][idx % ncols].axis('off')
+
+        fig.suptitle(suptitle, fontsize=14)
+        fig.tight_layout()
+        fig.savefig(save_path, dpi=150)
+        plt.close(fig)
+
+    def _plot_error_hist_grid(self, plt, signals, save_path, suptitle):
+        nrows, ncols = self._grid_shape(len(signals))
+        fig, axes = plt.subplots(nrows, ncols, figsize=(7 * ncols, 3 * nrows), squeeze=False)
+
+        for idx, (key, label, unit) in enumerate(signals):
+            ax = axes[idx // ncols][idx % ncols]
+            hist = self.history[key]
+            if len(hist.stamps) == 0:
+                ax.set_title(f'{label} (no data)')
+                ax.axis('off')
+                continue
+            errors = [g - e for g, e in zip(hist.gt, hist.est)]
+            ax.hist(errors, bins=40, color='tab:blue', alpha=0.8)
+            ax.set_title(label)
+            ax.set_xlabel(f'Error (GT - Estimate) [{unit}]')
+            ax.set_ylabel('Count')
+            ax.grid(True, alpha=0.3)
+
+        for idx in range(len(signals), nrows * ncols):
+            axes[idx // ncols][idx % ncols].axis('off')
+
+        fig.suptitle(suptitle, fontsize=14)
+        fig.tight_layout()
+        fig.savefig(save_path, dpi=150)
+        plt.close(fig)
+
+    def _plot_metrics_table(self, plt, signals, save_path):
+        col_labels = ['Signal', 'N', 'RMSE', 'MAE', 'NRMSE', 'MaxAE', 'Bias', 'Std', 'R2']
+        rows = []
+        for key, label, _unit in signals:
+            m = self.metrics[key].metrics()
+            if m['n_samples'] == 0:
+                rows.append([label, '0', '-', '-', '-', '-', '-', '-', '-'])
+                continue
+            nrmse = f"{m['nrmse']:.3f}" if not math.isnan(m['nrmse']) else 'N/A'
+            r2 = f"{m['r_squared']:.3f}" if not math.isnan(m['r_squared']) else 'N/A'
+            rows.append([
+                label, str(m['n_samples']), f"{m['rmse']:.3f}", f"{m['mae']:.3f}",
+                nrmse, f"{m['max_ae']:.3f}", f"{m['bias']:.3f}", f"{m['std_dev']:.3f}", r2,
+            ])
+
+        fig, ax = plt.subplots(figsize=(10, 0.4 * len(rows) + 1.2))
+        ax.axis('off')
+        table = ax.table(cellText=rows, colLabels=col_labels, loc='center', cellLoc='center')
+        table.auto_set_font_size(False)
+        table.set_fontsize(9)
+        table.scale(1, 1.4)
+        fig.suptitle('Benchmark Metrics Summary', fontsize=14)
+        fig.tight_layout()
+        fig.savefig(save_path, dpi=150)
+        plt.close(fig)
 
     def destroy_node(self):
         if self.csv_file is not None:
             self.csv_file.flush()
             self.csv_file.close()
+        if self.state_csv_file is not None:
+            self.state_csv_file.flush()
+            self.state_csv_file.close()
+        self._export_plots()
         super().destroy_node()
 
 

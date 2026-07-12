@@ -46,6 +46,7 @@ public:
     topics_ = param_manager_.topics();
     safety_ = param_manager_.safety();
     tire_bounds_ = param_manager_.tireBounds();
+    benchmark_forward_ = param_manager_.benchmarkForward();
 
     odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
       topics_.odom_topic, rclcpp::QoS(1), std::bind(&ManagerNode::odomCallback, this, _1));
@@ -114,6 +115,14 @@ public:
     mpc_update_params_client_ =
       create_client<adaptive_controller_interfaces::srv::IdentifiedParam>(
       topics_.mpc_update_params_service,
+      rclcpp::ServicesQoS().get_rmw_qos_profile(),
+      client_callback_group_);
+
+    // Always created (cheap) - only ever called if benchmark_forward_.enable
+    // is true, see forwardToBenchmark().
+    benchmark_update_params_client_ =
+      create_client<adaptive_controller_interfaces::srv::IdentifiedParam>(
+      benchmark_forward_.service,
       rclcpp::ServicesQoS().get_rmw_qos_profile(),
       client_callback_group_);
 
@@ -224,6 +233,47 @@ private:
     }
     RCLCPP_INFO(get_logger(), "sysid/update_params: accepted and stored new tire params");
     response->ack = true;
+
+    if (benchmark_forward_.enable) {
+      std::array<float, 8> params_copy;
+      {
+        std::lock_guard<std::mutex> lock(params_mutex_);
+        params_copy = stored_tire_params_;
+      }
+      forwardToBenchmark(params_copy);
+    }
+  }
+
+  // Best-effort forward of a freshly-accepted tire param set to a passive
+  // benchmarking node (tire_force_benchmark), independent of the PP/MPC
+  // arming FSM - unlike mpc/update_params, this consumer isn't actuating
+  // anything, so it should see every accepted identification immediately
+  // rather than wait for a handover window. Fire-and-forget: no ack / no
+  // service just logs a warning, no retry or version bookkeeping (the next
+  // re-identification cycle naturally resends anyway).
+  void forwardToBenchmark(const std::array<float, 8> & param_values)
+  {
+    if (!benchmark_update_params_client_->service_is_ready()) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "benchmark_update_params_enable is true but %s is not available - "
+        "is tire_force_benchmark running?", benchmark_forward_.service.c_str());
+      return;
+    }
+
+    auto request =
+      std::make_shared<adaptive_controller_interfaces::srv::IdentifiedParam::Request>();
+    std::copy(param_values.begin(), param_values.end(), request->param_values.begin());
+    benchmark_update_params_client_->async_send_request(
+      request,
+      [this](
+        rclcpp::Client<adaptive_controller_interfaces::srv::IdentifiedParam>::SharedFuture future) {
+        auto response = future.get();
+        if (!response || !response->ack) {
+          RCLCPP_WARN(
+            get_logger(), "benchmark/update_params was not acked by tire_force_benchmark");
+        }
+      });
   }
 
   // ---------------- Control loop (default callback group, timer) ----------------
@@ -749,6 +799,7 @@ private:
   TopicsConfig topics_;
   SafetyConfig safety_;
   TireBounds tire_bounds_;
+  BenchmarkForwardConfig benchmark_forward_;
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<f1tenth_msgs::msg::WaypointArray>::SharedPtr waypoint_sub_;
@@ -773,6 +824,8 @@ private:
     sysid_update_params_srv_;
   rclcpp::Client<adaptive_controller_interfaces::srv::IdentifiedParam>::SharedPtr
     mpc_update_params_client_;
+  rclcpp::Client<adaptive_controller_interfaces::srv::IdentifiedParam>::SharedPtr
+    benchmark_update_params_client_;
 
   rclcpp::TimerBase::SharedPtr timer_;
 

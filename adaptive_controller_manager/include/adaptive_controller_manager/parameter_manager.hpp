@@ -26,6 +26,16 @@ struct TopicsConfig
   std::string mpc_update_params_service;
 };
 
+// Optional, best-effort forward of every accepted sysid/update_params
+// submission to a passive benchmarking node (tire_force_benchmark), so it
+// can evaluate the freshly-identified model instead of a hardcoded one.
+// Disabled by default - opt in per-deployment via config.
+struct BenchmarkForwardConfig
+{
+  bool enable{false};
+  std::string service{"benchmark/update_params"};
+};
+
 struct SafetyConfig
 {
   double control_rate_hz{20.0};
@@ -77,6 +87,7 @@ public:
   TopicsConfig topics() const;
   SafetyConfig safety() const;
   TireBounds tireBounds() const;
+  BenchmarkForwardConfig benchmarkForward() const;
 
 private:
   rclcpp::Node * node_;

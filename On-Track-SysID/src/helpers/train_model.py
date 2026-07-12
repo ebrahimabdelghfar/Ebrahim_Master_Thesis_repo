@@ -528,7 +528,7 @@ def nn_train(training_data, racecar_version, save_LUT_name, plot_model):
     model = get_model_param(racecar_version)
     nn_params = get_nn_params()
     
-    num_of_iterations = 6
+    num_of_iterations = nn_params.get('num_of_iterations', 6)
     arch = nn_params.get('nn_architecture', 'baseline')
     
     training_data = process_data(training_data, model)   

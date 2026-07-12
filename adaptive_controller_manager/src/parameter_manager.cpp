@@ -45,6 +45,11 @@ void ParameterManager::declareAll()
     "tire_param_min", {0.0, 0.0, 0.0, -10.0, 0.0, 0.0, 0.0, -10.0});
   node_->declare_parameter<std::vector<double>>(
     "tire_param_max", {50.0, 10.0, 3.0, 10.0, 50.0, 10.0, 3.0, 10.0});
+
+  // Benchmark forwarding (optional, disabled by default)
+  node_->declare_parameter<bool>("benchmark_update_params_enable", false);
+  node_->declare_parameter<std::string>(
+    "benchmark_update_params_service", "benchmark/update_params");
 }
 
 TopicsConfig ParameterManager::topics() const
@@ -99,6 +104,14 @@ TireBounds ParameterManager::tireBounds() const
       node_->get_logger(),
       "tire_param_min/tire_param_max must each have exactly 8 elements - using built-in defaults");
   }
+  return b;
+}
+
+BenchmarkForwardConfig ParameterManager::benchmarkForward() const
+{
+  BenchmarkForwardConfig b;
+  b.enable = node_->get_parameter("benchmark_update_params_enable").as_bool();
+  b.service = node_->get_parameter("benchmark_update_params_service").as_string();
   return b;
 }
 
