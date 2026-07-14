@@ -53,7 +53,7 @@ adaptive_controller_manager:
     # YasMarina raceline curvature: median ~0.03 rad/m, p90 ~0.18, max ~0.70 -
     # 0.35 sits just above the p99 tail, so only the tightest hairpins count
     # as "sharp" and block the switch; retune per track/vehicle.
-    kappa_max_for_switch: 0.35       # rad/m
+    kappa_max_for_switch: 0.25       # rad/m
 
     # Global cap on how fast a commanded speed may decrease tick-to-tick -
     # covers the switch ramp, EMERGENCY_HALT, and stale-data fallback, so
