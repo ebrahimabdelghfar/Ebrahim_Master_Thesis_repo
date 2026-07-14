@@ -17,10 +17,8 @@ mpc_path_tracking:
     # ---------------- Horizon / timing ----------------
     horizon:
       N: 30                        # prediction steps
-      dt_min: 0.05                 # s, must be >= 1/control_rate_hz - a shorter internal
-                                    # step than the outer control period means the MPC
-                                    # solves assuming it gets to replan sooner than it
-                                    # actually does, holding u0 far longer than modeled.
+      dt_min: 0.02                 # s, floor is auto-raised to 1/control_rate_hz at
+                                    # startup if lower (see ParameterManager::mpcConfig)
       dt_max: 0.08                 # s
       dt_adaptive: true            # dt = clamp(horizon_distance_m / (N * max(vx_ref, v_floor)), dt_min, dt_max)
       horizon_distance_m: 3.0      # target look-ahead distance for the adaptive dt formula

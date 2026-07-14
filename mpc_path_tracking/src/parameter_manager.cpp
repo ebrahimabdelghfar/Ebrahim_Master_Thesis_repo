@@ -251,6 +251,23 @@ MpcConfig ParameterManager::mpcConfig() const
   c.dt_max = node_->get_parameter("horizon.dt_max").as_double();
   c.horizon_distance_m = node_->get_parameter("horizon.horizon_distance_m").as_double();
 
+  // dt_min must never be shorter than the outer control period: a shorter
+  // internal step means the solve assumes it gets to replan sooner than the
+  // control timer actually allows, so u0 ends up held far longer than the
+  // model that computed it assumed - a self-sustained control-chatter bug
+  // that only shows up once cruise speed pins the adaptive dt at its floor.
+  const double control_period_s = 1.0 / std::max(
+    node_->get_parameter("horizon.control_rate_hz").as_double(), 1.0);
+  if (c.dt_min < control_period_s) {
+    RCLCPP_WARN(
+      node_->get_logger(),
+      "horizon.dt_min=%.4fs is shorter than the control period (1/control_rate_hz=%.4fs) - "
+      "raising dt_min to %.4fs to keep the internal step >= the actual command-hold time",
+      c.dt_min, control_period_s, control_period_s);
+    c.dt_min = control_period_s;
+  }
+  c.dt_max = std::max(c.dt_max, c.dt_min);
+
   c.cost.Q = toVec5(node_->get_parameter("cost.Q").as_double_array(), "cost.Q");
   c.cost.Qf = toVec5(node_->get_parameter("cost.Qf").as_double_array(), "cost.Qf");
   c.cost.R = toVec2(node_->get_parameter("cost.R").as_double_array(), "cost.R");

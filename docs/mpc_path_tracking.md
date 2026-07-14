@@ -177,7 +177,7 @@ The prediction horizon step `dt` is recomputed every control cycle from the refe
 dt = clamp( horizon_distance_m / (N * max(vx_ref, v_floor)), dt_min, dt_max )
 ```
 
-This keeps the horizon's *look-ahead distance* roughly constant regardless of speed, while `dt_min`/`dt_max` bound it away from numerically degenerate (too small) or destabilizing (too coarse) values. This internal `dt` is deliberately decoupled from the outer ROS control-loop rate (`horizon.control_rate_hz`) — the control loop always runs at a fixed cadence; only the *internal* prediction spacing adapts.
+This keeps the horizon's *look-ahead distance* roughly constant regardless of speed, while `dt_min`/`dt_max` bound it away from numerically degenerate (too small) or destabilizing (too coarse) values. The internal prediction spacing adapts independently of the outer ROS control-loop rate (`horizon.control_rate_hz`) — but `dt_min` is not free to go arbitrarily low; see below.
 
 ![Dynamic dt plot](images/dynamic_dt.png)
 
@@ -188,6 +188,14 @@ The MPC controller works by predicting exactly `N=30` steps into the future. If 
 * **Top Panel ($dt$ vs Speed):** At slow speeds, the time step is large (clamped at `dt_max=80ms`) to ensure the prediction reaches far enough ahead. As speed increases, the time step smoothly shrinks down to `dt_min=20ms` to prevent the predictions from stretching too far.
 * **Middle Panel (Look-ahead Distance vs Speed):** In the ideal driving range (roughly 1.2 m/s to 5 m/s), the dynamic `dt` perfectly balances the speed, resulting in a flat look-ahead distance of exactly 3.0 meters. Above 5 m/s, the time step hits its 20ms safety floor. Because `dt` can no longer shrink to compensate for the higher speed, the look-ahead distance naturally and safely increases, giving the fast-moving car more distance to react to upcoming corners.
 * **Bottom Panel (Spatial Coverage):** This demonstrates the physical result. Whether driving at 2 m/s or 7 m/s, the physical coverage of the prediction steps (the dots) remains consistent. The fast car simply executes its steps much more rapidly (every 20ms instead of 67ms) to maintain that coverage.
+
+### Known issue: `dt_min` must not be shorter than the control period
+
+**Symptom:** once the sim settled into normal cruise speed (~6-7 m/s), the steering command developed a self-sustained, growing oscillation (~2.5 Hz, amplitude climbing toward ±0.24 rad) — visibly "shaking" in RViz — while `/mpc/debug/lateral_error` stayed millimeter-scale the whole time. The car wasn't actually off the path; the *control signal* was chattering around a near-perfect solution.
+
+**Root cause:** `computeAdaptiveDt()` floors `dt` at `dt_min` for any `vx_ref > horizon_distance_m / (N * dt_min)` — with the defaults (`horizon_distance_m=3.0`, `N=30`, `dt_min=0.02`) that threshold is `5 m/s`, comfortably below normal cruise speed. So in practice `dt` was pinned at `0.02s` almost the entire lap. But the outer ROS control timer (`horizon.control_rate_hz=20`) only re-solves every `0.05s`. The QP was solved assuming it gets to replan every 20ms and re-measure the true state; in reality `u0` is held for 50ms — 2.5x longer than the model that computed it assumed. This model/actuation-duration mismatch is what produced the chatter: because `Q` on `e_y`/`e_psi` dominates the cost and `R`/`R_rate` are small relative to it, a low-amplitude control wobble costs the QP almost nothing, so nothing in the objective pushed back against it — it went unnoticed in tracking-error telemetry and only showed up as steering shake.
+
+**Fix:** `dt_min` must always be `>= 1/control_rate_hz`. This is no longer left as a yaml convention to remember — `ParameterManager::mpcConfig()` (`parameter_manager.cpp`) computes `control_period_s = 1/control_rate_hz` at startup, raises `dt_min` (and `dt_max` if needed) to at least that value, and logs a warning if the configured `dt_min` was too low. Retuning `horizon.control_rate_hz` or `horizon.dt_min` can't silently reintroduce this bug.
 
 ### Reported solve cost
 
