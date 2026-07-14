@@ -96,7 +96,14 @@ def draw_activation(x, y_start, y_end):
 
 # ── Sequence Diagram Steps ──
 
-y = draw_note((participants["ROS 2 Context"] + participants["SolverInterface\n(OSQP)"]) / 2, y, 
+y = draw_note((participants["ROS 2 Context"] + participants["MpcNode"]) / 2, y,
+              r"Startup (once): ParameterManager::mpcConfig() enforces" + "\n" +
+              r"$dt_{min} \geq 1/\mathrm{control\_rate\_hz}$, raising it if the yaml" + "\n" +
+              r"value is lower - avoids solving for a replan cadence" + "\n" +
+              r"faster than the control timer actually delivers", width=7.0)
+y -= 0.3
+
+y = draw_note((participants["ROS 2 Context"] + participants["SolverInterface\n(OSQP)"]) / 2, y,
               r"Control Cycle (Triggered at horizon.control_rate_hz)", width=10)
 
 y = draw_arrow(participants["ROS 2 Context"], participants["MpcNode"], y, "Timer Callback")
@@ -104,9 +111,10 @@ y = draw_arrow(participants["MpcNode"], participants["MpcNode"], y, r"Fetch late
 y = draw_arrow(participants["MpcNode"], participants["MpcNode"], y, r"Fetch Track Waypoints (reference)")
 
 y -= 0.4
-y = draw_note(participants["MpcNode"] + 2.0, y, 
+y = draw_note(participants["MpcNode"] + 2.0, y,
               "Compute Adaptive Prediction Step\n"
-              r"$dt = \mathrm{clamp}\left(\frac{L}{N \cdot v}, dt_{min}, dt_{max}\right)$", width=3.6)
+              r"$dt = \mathrm{clamp}\left(\frac{L}{N \cdot v}, dt_{min}, dt_{max}\right)$" + "\n"
+              r"($dt_{min}$ already enforced $\geq 1/f_{control}$ at startup)", width=4.4)
 y -= 0.4
 
 y_activate_ctrl = y + 0.3
