@@ -24,6 +24,7 @@
   <exec_depend>pure_pursuit</exec_depend>
   <exec_depend>mpc_path_tracking</exec_depend>
   <exec_depend>on_track_sys_id</exec_depend>
+  <exec_depend>adaptive_controller_benchmark</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

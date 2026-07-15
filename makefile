@@ -18,3 +18,8 @@ launch_on_track_sys_id:
 launch_adaptive_controll:
 	source /opt/ros/humble/setup.bash && source ${WORKSPACE}/install/setup.bash && \
 	ros2 launch adaptive_controller_manager adaptive_stack.launch.py
+launch_adaptive_controll_with_graph:
+	source /opt/ros/humble/setup.bash && source ${WORKSPACE}/install/setup.bash && \
+	ros2 launch adaptive_controller_manager adaptive_stack.launch.py  \
+	enable_controller_benchmark:=true \
+	controller_benchmark_plot_output_dir:=/home/ebrahim/Ebrahim_Master_Thesis_repo/graphs

@@ -1,0 +1,25 @@
+adaptive_controller_benchmark_node:
+  ros__parameters:
+
+    # ---------------- Topics (must match adaptive_controller_manager's actual
+    # published/consumed names - see docs/adaptive_controller_manager.md section 7) ----------------
+    manager_state_topic: "manager/state"
+    lateral_error_topic: "manager/debug/lateral_error"
+    heading_error_topic: "manager/debug/heading_error"
+    odom_topic: "/odom"
+    drive_topic: "/drive"
+    pp_drive_topic: "pp/drive_cmd"
+    mpc_drive_topic: "mpc/drive_cmd"
+    waypoint_topic: "/raceline_waypoints"
+    # Published by mpc_path_tracking only if debug.enabled && debug.log_solve_time are
+    # both true (both default true - see mpc_path_tracking/config/mpc_path_tracking.yaml).
+    mpc_solve_time_topic: "/mpc/debug/solve_time_ms"
+
+    log_interval: 200          # control ticks between throttled console summaries
+
+    csv_output_path: ""        # set to a file path to enable raw per-tick CSV logging
+
+    # --- Academic plot export (on node shutdown, i.e. when the collecting script/node
+    # is closed - see docs/adaptive_controller_benchmark.md) ---
+    plot_output_dir: ""        # set to a directory path to enable PNG export
+    plot_max_points: 5000

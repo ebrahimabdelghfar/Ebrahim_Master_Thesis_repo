@@ -3,6 +3,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -13,10 +14,12 @@ def generate_launch_description():
     pp_share = get_package_share_directory('pure_pursuit')
     mpc_share = get_package_share_directory('mpc_path_tracking')
     sysid_share = get_package_share_directory('on_track_sys_id')
+    benchmark_share = get_package_share_directory('adaptive_controller_benchmark')
 
     manager_config = os.path.join(manager_share, 'config', 'adaptive_controller_manager.yaml')
     pp_config = os.path.join(pp_share, 'config', 'pure_pursuit.yaml')
     mpc_config = os.path.join(mpc_share, 'config', 'mpc_path_tracking.yaml')
+    benchmark_config = os.path.join(benchmark_share, 'config', 'benchmark_config.yaml')
 
     odom_topic_arg = DeclareLaunchArgument(
         'odom_topic', default_value='/odom',
@@ -33,6 +36,25 @@ def generate_launch_description():
     benchmark_update_params_service_arg = DeclareLaunchArgument(
         'benchmark_update_params_service', default_value='benchmark/update_params',
         description='IdentifiedParam service name tire_force_benchmark listens on')
+
+    # Distinct from benchmark_update_params_enable above (that one forwards identified
+    # tire params to tire_force_benchmark and is unrelated) - this gates
+    # adaptive_controller_benchmark, which passively benchmarks the PP/MPC switching
+    # FSM itself (tracking error, dwell time/switching transients, MPC compute cost).
+    enable_controller_benchmark_arg = DeclareLaunchArgument(
+        'enable_controller_benchmark', default_value='false',
+        description=(
+            'If true, also launch adaptive_controller_benchmark alongside the managed '
+            'stack to benchmark the PP/MPC switching FSM (see '
+            'docs/adaptive_controller_benchmark.md). Off by default.'))
+    controller_benchmark_plot_output_dir_arg = DeclareLaunchArgument(
+        'controller_benchmark_plot_output_dir', default_value='',
+        description='If set (and enable_controller_benchmark:=true), directory to export '
+                    'academic benchmark PNG plots to on shutdown')
+    controller_benchmark_csv_output_path_arg = DeclareLaunchArgument(
+        'controller_benchmark_csv_output_path', default_value='',
+        description='If set (and enable_controller_benchmark:=true), CSV file path for '
+                    'raw per-tick benchmark logging')
 
     # standalone_mode:=false is passed explicitly (not left to each package's
     # own YAML default) so a leftover standalone_mode:true from a solo-tuning
@@ -84,6 +106,26 @@ def generate_launch_description():
             'odom_topic': LaunchConfiguration('odom_topic'),
         }.items())
 
+    # Explicit launch_arguments for every param that could collide (same lesson as the
+    # pure_pursuit/mpc includes above): adaptive_controller_benchmark.launch.py declares
+    # its own odom_topic/waypoint_topic args, identically named to pure_pursuit's/
+    # mpc_path_tracking's - IfCondition-gated so it's a no-op unless explicitly enabled.
+    controller_benchmark_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(benchmark_share, 'launch', 'adaptive_controller_benchmark.launch.py')),
+        condition=IfCondition(LaunchConfiguration('enable_controller_benchmark')),
+        launch_arguments={
+            'config_file': benchmark_config,
+            'odom_topic': LaunchConfiguration('odom_topic'),
+            'waypoint_topic': LaunchConfiguration('waypoint_topic'),
+            'drive_topic': '/drive',
+            'pp_drive_topic': 'pp/drive_cmd',
+            'mpc_drive_topic': 'mpc/drive_cmd',
+            'manager_state_topic': 'manager/state',
+            'csv_output_path': LaunchConfiguration('controller_benchmark_csv_output_path'),
+            'plot_output_dir': LaunchConfiguration('controller_benchmark_plot_output_dir'),
+        }.items())
+
     manager_node = Node(
         package='adaptive_controller_manager',
         executable='adaptive_controller_manager_node',
@@ -104,8 +146,12 @@ def generate_launch_description():
         waypoint_topic_arg,
         benchmark_update_params_enable_arg,
         benchmark_update_params_service_arg,
+        enable_controller_benchmark_arg,
+        controller_benchmark_plot_output_dir_arg,
+        controller_benchmark_csv_output_path_arg,
         pure_pursuit_launch,
         mpc_launch,
         # sys_id_launch,
         manager_node,
+        controller_benchmark_launch,
     ])
