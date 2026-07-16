@@ -319,12 +319,14 @@ class AdaptiveControllerBenchmarkNode(Node):
 
     def _shade_states(self, ax):
         """axvspan background per contiguous FSM-state run, colored per STATE_COLORS -
-        ties tracking-error/speed behavior visually to which controller was active."""
+        ties tracking-error/speed behavior visually to which controller was active.
+        Returns the distinct states shaded, in STATE_ORDER, for legend building."""
         h = self.history
         if not h.t:
-            return
+            return []
         start_idx = 0
         n = len(h.t)
+        seen = set()
         for i in range(1, n + 1):
             if i == n or h.state[i] != h.state[start_idx]:
                 end_t = h.t[i - 1] if i - 1 > start_idx else h.t[start_idx] + 1e-3
@@ -332,7 +334,20 @@ class AdaptiveControllerBenchmarkNode(Node):
                     h.t[start_idx], end_t,
                     color=STATE_COLORS.get(h.state[start_idx], '#cccccc'),
                     alpha=0.15, linewidth=0)
+                seen.add(h.state[start_idx])
                 start_idx = i
+        return [s for s in STATE_ORDER if s in seen]
+
+    def _add_state_legend(self, ax, states):
+        """Legend mapping shaded background colors to FSM states (PP/MPC/switching/emergency zones)."""
+        if not states:
+            return
+        import matplotlib.patches as mpatches
+        handles = [
+            mpatches.Patch(color=STATE_COLORS.get(s, '#cccccc'), alpha=0.3, label=s)
+            for s in states
+        ]
+        ax.legend(handles=handles, loc='upper right', fontsize=6, framealpha=0.8, ncol=len(handles))
 
     def _plot_state_timeline(self, plt, save_path):
         h = self.history
@@ -362,12 +377,13 @@ class AdaptiveControllerBenchmarkNode(Node):
                 ax.set_title('(no data)')
                 ax.axis('off')
         else:
-            self._shade_states(axes[0])
+            states_seen = self._shade_states(axes[0])
             self._shade_states(axes[1])
             axes[0].plot(h.t, h.e_y, color='tab:blue', linewidth=1.0)
             axes[0].set_ylabel('e_y [m]')
             axes[0].set_title('Lateral tracking error (background shaded by active FSM state)')
             axes[0].grid(True, alpha=0.3)
+            self._add_state_legend(axes[0], states_seen)
             axes[1].plot(h.t, h.heading_error, color='tab:red', linewidth=1.0)
             axes[1].set_ylabel('heading error [rad]')
             axes[1].set_xlabel('Time [s]')
@@ -410,12 +426,13 @@ class AdaptiveControllerBenchmarkNode(Node):
             ax1.set_title('(no data)')
             ax1.axis('off')
         else:
-            self._shade_states(ax1)
+            states_seen = self._shade_states(ax1)
             ax1.plot(h.t, h.v_x, color='tab:green', linewidth=1.0)
             ax1.set_xlabel('Time [s]')
             ax1.set_ylabel('v_x [m/s]', color='tab:green')
             ax1.tick_params(axis='y', labelcolor='tab:green')
             ax1.grid(True, alpha=0.3)
+            self._add_state_legend(ax1, states_seen)
 
             ax2 = ax1.twinx()
             ax2.plot(h.t, h.solve_time_ms, color='tab:purple', linewidth=0.8, alpha=0.8)
