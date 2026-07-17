@@ -1,7 +1,7 @@
 tire_force_benchmark_node:
   ros__parameters:
     # --- Tire-force (Fy) benchmarking ---
-    enable_force_benchmarking: true   # false: no /tire_forces (or estimated_fy_topic) subscription at all
+    enable_force_benchmarking: false   # false: no /tire_forces (or estimated_fy_topic) subscription at all
     benchmark_mode: internal_pacejka   # internal_pacejka | external_topic
     tire_forces_topic: /tire_forces
     estimated_fy_topic: /estimated_tire_force_fy
@@ -22,6 +22,13 @@ tire_force_benchmark_node:
 
     model_file: ""   # path to a C_Pf/C_Pr(+m/I_z/l_f/l_r/l_wb) yaml, e.g. an
                       # On-Track-SysID models/<car>/<car>_pacejka.txt file
+
+    # Reference/prior model for the pacejka_identified_vs_nominal.png comparison plot
+    # only - unlike model_file above, this never seeds c_pf/c_pr/have_identified_params,
+    # so it's safe to point at a stale/prior *_pacejka.txt without contaminating the
+    # live benchmark. Requires a live identified model (via identified_params_service)
+    # to actually produce the plot.
+    nominal_model_file: "/home/ebrahim/Ebrahim_Master_Thesis_repo/On-Track-SysID/params/pacejka_params.yaml"
 
     # c_pf/c_pr have NO default - leave them unset (as below) to have the node
     # wait for freshly-identified params pushed via identified_params_service

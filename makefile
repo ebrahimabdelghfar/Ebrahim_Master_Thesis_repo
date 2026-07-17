@@ -15,6 +15,12 @@ launch_f1_simulator:
 launch_on_track_sys_id:
 	source /opt/ros/humble/setup.bash && source ${WORKSPACE}/install/setup.bash && \
 	ros2 launch on_track_sys_id sys_id.launch.py
+launch_on_track_sys_id_with_graph:
+	source /opt/ros/humble/setup.bash && source ${WORKSPACE}/install/setup.bash && \
+	ros2 launch on_track_sys_id sys_id.launch.py  \
+	enable_tire_force_benchmark:=true \
+	benchmark_update_params_enable:=true \
+	tire_force_benchmark_plot_output_dir:=/home/ebrahim/Ebrahim_Master_Thesis_repo/graphs/identification/
 launch_adaptive_controll:
 	source /opt/ros/humble/setup.bash && source ${WORKSPACE}/install/setup.bash && \
 	ros2 launch adaptive_controller_manager adaptive_stack.launch.py
@@ -22,7 +28,7 @@ launch_adaptive_controll_with_graph:
 	source /opt/ros/humble/setup.bash && source ${WORKSPACE}/install/setup.bash && \
 	ros2 launch adaptive_controller_manager adaptive_stack.launch.py  \
 	enable_controller_benchmark:=true \
-	controller_benchmark_plot_output_dir:=/home/ebrahim/Ebrahim_Master_Thesis_repo/graphs
+	controller_benchmark_plot_output_dir:=/home/ebrahim/Ebrahim_Master_Thesis_repo/graphs/control
 setup_ros2_workspace:
 	source /opt/ros/humble/setup.bash && \
 	bash ${WORKSPACE}/scripts/colcon_build.sh

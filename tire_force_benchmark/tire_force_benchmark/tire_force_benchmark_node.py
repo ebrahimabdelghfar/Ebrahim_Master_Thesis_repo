@@ -17,8 +17,19 @@ from std_msgs.msg import String
 
 from ackermann_msgs.msg import AckermannDriveStamped
 from adaptive_controller_interfaces.srv import IdentifiedParam
-from hellocm_msgs.msg import TireForcesArray
 from nav_msgs.msg import Odometry
+
+try:
+    # hellocm_msgs is IPG CarMaker's own message package - only present in a
+    # CarMaker-based workspace, not e.g. an f1tenth_simulator one. Imported
+    # lazily so a workspace without it can still run this node with
+    # enable_force_benchmarking:=false (state-only benchmarking) instead of
+    # crashing on import before parameters are even read.
+    from hellocm_msgs.msg import TireForcesArray
+    _HELLOCM_MSGS_AVAILABLE = True
+except ImportError:
+    TireForcesArray = None
+    _HELLOCM_MSGS_AVAILABLE = False
 
 from tire_force_benchmark.online_metrics import HistoryBuffer
 from tire_force_benchmark.online_metrics import OnlineBenchmark
@@ -37,6 +48,19 @@ STATE_SIGNALS = [
     ('omega', 'Yaw rate omega', 'rad/s'),
 ]
 G = 9.81
+
+# Fixed roles (not per-series-index) so ground truth / estimate keep the same
+# color across every figure: blue/red, the categorical pair validated for
+# CVD-safe adjacent contrast in both light and dark surfaces (see the
+# dataviz palette reference). Academic figures here use a light, printable
+# surface only.
+COLOR_GT = '#2a78d6'
+COLOR_EST = '#e34948'
+COLOR_NOMINAL = '#4a3aa7'
+COLOR_GRID = '#e1e0d9'
+COLOR_INK = '#0b0b0b'
+COLOR_SECONDARY_INK = '#52514e'
+COLOR_MUTED = '#898781'
 
 
 def pacejka_formula(params, alpha, fz):
@@ -68,6 +92,12 @@ class TireForceBenchmarkNode(Node):
         self.declare_parameter('c_pf', Parameter.Type.DOUBLE_ARRAY)
         self.declare_parameter('c_pr', Parameter.Type.DOUBLE_ARRAY)
         self.declare_parameter('identified_params_service', 'benchmark/update_params')
+        # Purely a plotting reference (see _plot_identified_vs_nominal) - unlike
+        # model_file above, this never seeds c_pf/c_pr/have_identified_params, so
+        # it can point at a stale/prior model (e.g. On-Track-SysID's previous-run
+        # *_pacejka.txt) without contaminating the live benchmark it's compared
+        # against.
+        self.declare_parameter('nominal_model_file', '')
         self.declare_parameter('csv_output_path', '')
 
         self.declare_parameter('enable_state_benchmarking', True)
@@ -114,7 +144,7 @@ class TireForceBenchmarkNode(Node):
 
         valid_modes = {'internal_pacejka', 'external_topic'}
         if self.benchmark_mode not in valid_modes:
-            self.get_logger().warn(
+            self.get_logger().debug(
                 f"Invalid benchmark_mode='{self.benchmark_mode}'. Falling back to 'internal_pacejka'."
             )
             self.benchmark_mode = 'internal_pacejka'
@@ -132,12 +162,18 @@ class TireForceBenchmarkNode(Node):
         if model_file != '':
             self._load_model_if_available(model_file)
 
+        self.nominal_c_pf = None
+        self.nominal_c_pr = None
+        nominal_model_file = str(self.get_parameter('nominal_model_file').value)
+        if nominal_model_file != '':
+            self._load_nominal_model_if_available(nominal_model_file)
+
         self._logged_waiting_for_params = False
 
         self.enable_state_benchmarking = bool(self.get_parameter('enable_state_benchmarking').value)
         if self.enable_state_benchmarking:
             if self.m <= 0.0 or self.I_z <= 0.0 or self.l_f <= 0.0 or self.l_r <= 0.0 or self.l_wb <= 0.0:
-                self.get_logger().warn(
+                self.get_logger().debug(
                     'enable_state_benchmarking requested but vehicle model constants '
                     '(m, I_z, l_f, l_r, l_wb) are missing/zero. Provide them via model_file '
                     '(the On-Track-SysID *_pacejka.txt format already contains them) or as '
@@ -162,6 +198,15 @@ class TireForceBenchmarkNode(Node):
         self.history = {
             key: HistoryBuffer(self.plot_max_points) for key, _, _ in FORCE_SIGNALS + STATE_SIGNALS
         }
+        # Per-axle (slip_angle, Fy_ground_truth, Fy_model) triples for the
+        # Pacejka curve validation plot (internal_pacejka mode only - see
+        # _plot_pacejka_curve). Reuses HistoryBuffer's bounded-memory
+        # decimation with 'stamps' repurposed to hold slip angle instead of
+        # a timestamp.
+        self.slip_history = {
+            'front': HistoryBuffer(self.plot_max_points),
+            'rear': HistoryBuffer(self.plot_max_points),
+        }
         self.sample_count = 0
         self.state_sample_count = 0
         self.latest_gt = None
@@ -176,6 +221,14 @@ class TireForceBenchmarkNode(Node):
         self.last_odom_time = None
 
         self.summary_pub = self.create_publisher(String, '/benchmarking/tire_force_summary', 10)
+
+        if self.enable_force_benchmarking and not _HELLOCM_MSGS_AVAILABLE:
+            self.get_logger().debug(
+                'enable_force_benchmarking requested but hellocm_msgs (IPG CarMaker\'s tire '
+                'forces message package) is not available in this workspace - disabling Fy '
+                'benchmarking. State benchmarking (v_y, omega) is unaffected.'
+            )
+            self.enable_force_benchmarking = False
 
         self.estimation_pub = None
         self.sub = None
@@ -229,26 +282,29 @@ class TireForceBenchmarkNode(Node):
         self.state_csv_writer = None
         self._setup_csv_if_enabled()
 
-        self.get_logger().info('TireForceBenchmarkNode started')
-        self.get_logger().info(f'Force (Fy) benchmarking enabled: {self.enable_force_benchmarking}')
+        # Startup banner - debug-only: this node should be silent except when
+        # handle_identified_params actually receives a new identification.
+        # Recoverable with --log-level debug.
+        self.get_logger().debug('TireForceBenchmarkNode started')
+        self.get_logger().debug(f'Force (Fy) benchmarking enabled: {self.enable_force_benchmarking}')
         if self.enable_force_benchmarking:
-            self.get_logger().info(f'Benchmark mode: {self.benchmark_mode}')
-            self.get_logger().info(f'Subscribing to: {tire_forces_topic}')
+            self.get_logger().debug(f'Benchmark mode: {self.benchmark_mode}')
+            self.get_logger().debug(f'Subscribing to: {tire_forces_topic}')
             if self.benchmark_mode == 'external_topic':
-                self.get_logger().info(f'Subscribing estimated Fy to: {self.estimated_fy_topic}')
-                self.get_logger().info(
+                self.get_logger().debug(f'Subscribing estimated Fy to: {self.estimated_fy_topic}')
+                self.get_logger().debug(
                     f'External alignment lead samples: {self.external_prediction_lead_samples}'
                 )
-                self.get_logger().info(f'External alignment max queue size: {self.external_max_queue_size}')
-        self.get_logger().info(f'Identified-params service: {identified_params_service}')
+                self.get_logger().debug(f'External alignment max queue size: {self.external_max_queue_size}')
+        self.get_logger().debug(f'Identified-params service: {identified_params_service}')
         if self.have_identified_params:
-            self.get_logger().info(f'Startup Pacejka params - C_Pf: {self.c_pf}, C_Pr: {self.c_pr}')
+            self.get_logger().debug(f'Startup Pacejka params - C_Pf: {self.c_pf}, C_Pr: {self.c_pr}')
         else:
-            self.get_logger().info(
+            self.get_logger().debug(
                 'No c_pf/c_pr or model_file at startup - waiting for identified params via service '
                 'before internal_pacejka benchmarking or state-prediction begins.'
             )
-        self.get_logger().info(f'State benchmarking enabled: {self.enable_state_benchmarking}')
+        self.get_logger().debug(f'State benchmarking enabled: {self.enable_state_benchmarking}')
 
     def _get_optional_double_array(self, name):
         try:
@@ -282,7 +338,7 @@ class TireForceBenchmarkNode(Node):
     def _load_model_if_available(self, model_file: str):
         model_path = Path(model_file)
         if not model_path.exists():
-            self.get_logger().warn(
+            self.get_logger().debug(
                 f'model_file not found: {model_file}. Waiting for identified_params_service instead.'
             )
             return
@@ -304,11 +360,42 @@ class TireForceBenchmarkNode(Node):
                 if value is not None:
                     setattr(self, key, float(value))
 
-            self.get_logger().info(f'Loaded vehicle model from model_file: {model_file}')
+            self.get_logger().debug(f'Loaded vehicle model from model_file: {model_file}')
         except Exception as exc:
-            self.get_logger().warn(
+            self.get_logger().debug(
                 f'Failed to load model_file {model_file}: {exc}. Waiting for identified_params_service instead.'
             )
+
+    def _load_nominal_model_if_available(self, nominal_model_file: str):
+        # Deliberately separate from _load_model_if_available: only ever sets
+        # nominal_c_pf/nominal_c_pr (for _plot_identified_vs_nominal), never
+        # c_pf/c_pr/have_identified_params - a nominal reference model here
+        # must not seed or contaminate the live benchmark.
+        model_path = Path(nominal_model_file)
+        if not model_path.exists():
+            self.get_logger().debug(f'nominal_model_file not found: {nominal_model_file}.')
+            return
+
+        try:
+            with model_path.open('r', encoding='utf-8') as f:
+                model_data = yaml.safe_load(f)
+            # Flat format (On-Track-SysID's models/<car>/<car>_pacejka.txt): top-level
+            # C_Pf/C_Pr. Falls back to On-Track-SysID's own params/pacejka_params.yaml
+            # nesting (pacejka_ref.C_Pf_ref/C_Pr_ref) - the "nominal" half of the same
+            # model/ref pair its own plot_results.py compares the identified fit against.
+            c_pf = model_data.get('C_Pf', None)
+            c_pr = model_data.get('C_Pr', None)
+            if c_pf is None or c_pr is None:
+                pacejka_ref = model_data.get('pacejka_ref', {})
+                c_pf = c_pf if c_pf is not None else pacejka_ref.get('C_Pf_ref', None)
+                c_pr = c_pr if c_pr is not None else pacejka_ref.get('C_Pr_ref', None)
+            if c_pf is not None and len(c_pf) == 4:
+                self.nominal_c_pf = [float(v) for v in c_pf]
+            if c_pr is not None and len(c_pr) == 4:
+                self.nominal_c_pr = [float(v) for v in c_pr]
+            self.get_logger().debug(f'Loaded nominal model from nominal_model_file: {nominal_model_file}')
+        except Exception as exc:
+            self.get_logger().debug(f'Failed to load nominal_model_file {nominal_model_file}: {exc}.')
 
     def _setup_csv_if_enabled(self):
         if self.csv_output_path == '':
@@ -326,14 +413,14 @@ class TireForceBenchmarkNode(Node):
             'rear_sum_gt', 'rear_sum_est',
             'total_sum_gt', 'total_sum_est',
         ])
-        self.get_logger().info(f'CSV logging enabled: {self.csv_output_path}')
+        self.get_logger().debug(f'CSV logging enabled: {self.csv_output_path}')
 
         if self.enable_state_benchmarking:
             state_csv_path = output_path.with_name(f'{output_path.stem}_states{output_path.suffix}')
             self.state_csv_file = state_csv_path.open('w', newline='', encoding='utf-8')
             self.state_csv_writer = csv.writer(self.state_csv_file)
             self.state_csv_writer.writerow(['stamp_sec', 'v_y_gt', 'v_y_est', 'omega_gt', 'omega_est'])
-            self.get_logger().info(f'State CSV logging enabled: {state_csv_path}')
+            self.get_logger().debug(f'State CSV logging enabled: {state_csv_path}')
 
     def _use_sample(self, tire_msg) -> bool:
         if self.require_on_road and not tire_msg.on_road:
@@ -364,7 +451,7 @@ class TireForceBenchmarkNode(Node):
         if self.benchmark_mode == 'internal_pacejka':
             if not self.have_identified_params:
                 if not self._logged_waiting_for_params:
-                    self.get_logger().warn(
+                    self.get_logger().debug(
                         'internal_pacejka: no identified Pacejka params yet - waiting for '
                         'identified_params_service before benchmarking starts.'
                     )
@@ -374,6 +461,11 @@ class TireForceBenchmarkNode(Node):
             fr_est = float(pacejka_formula(self.c_pf, fr.slip_angle, fr.fz))
             rl_est = float(pacejka_formula(self.c_pr, rl.slip_angle, rl.fz))
             rr_est = float(pacejka_formula(self.c_pr, rr.slip_angle, rr.fz))
+            if self.plot_output_dir:
+                self.slip_history['front'].add(fl.slip_angle, fl.fy, fl_est)
+                self.slip_history['front'].add(fr.slip_angle, fr.fy, fr_est)
+                self.slip_history['rear'].add(rl.slip_angle, rl.fy, rl_est)
+                self.slip_history['rear'].add(rr.slip_angle, rr.fy, rr_est)
             self._benchmark_and_publish(
                 stamp_sec,
                 [fl.fy, fr.fy, rl.fy, rr.fy],
@@ -397,7 +489,7 @@ class TireForceBenchmarkNode(Node):
         if not self.enable_force_benchmarking or self.benchmark_mode != 'external_topic':
             return
         if len(msg.data) < 4:
-            self.get_logger().warn('estimated_fy_topic message must contain at least 4 values [FL, FR, RL, RR].')
+            self.get_logger().debug('estimated_fy_topic message must contain at least 4 values [FL, FR, RL, RR].')
             return
 
         fl_est, fr_est, rl_est, rr_est = [float(v) for v in msg.data[:4]]
@@ -445,7 +537,7 @@ class TireForceBenchmarkNode(Node):
 
         if paired > 0 and (self.sample_count % self.log_interval == 0):
             if self.drop_count_gt > 0 or self.drop_count_est > 0:
-                self.get_logger().warn(
+                self.get_logger().debug(
                     f'Queue drops detected: gt={self.drop_count_gt}, est={self.drop_count_est}. '
                     f'Consider increasing external_max_queue_size or adjusting external_prediction_lead_samples.'
                 )
@@ -456,7 +548,7 @@ class TireForceBenchmarkNode(Node):
 
     def _log_and_publish_summary(self):
         summary_text = '\n'.join(self._build_summary_lines())
-        self.get_logger().info(f'\n{summary_text}')
+        self.get_logger().debug(f'\n{summary_text}')
 
         summary_msg = String()
         summary_msg.data = summary_text
@@ -592,19 +684,21 @@ class TireForceBenchmarkNode(Node):
             matplotlib.use('Agg')
             import matplotlib.pyplot as plt
         except ImportError:
-            self.get_logger().warn('matplotlib not available - skipping benchmark plot export.')
+            self.get_logger().debug('matplotlib not available - skipping benchmark plot export.')
             return
+
+        self._apply_academic_style(plt)
 
         out_dir = Path(self.plot_output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
         self._plot_timeseries_grid(
             plt, FORCE_SIGNALS, out_dir / 'tire_forces_timeseries.png',
-            'Tire Lateral Force: Ground Truth vs Estimate',
+            'Tire Lateral Force: Ground Truth vs. Estimate',
         )
         self._plot_timeseries_grid(
             plt, STATE_SIGNALS, out_dir / 'vehicle_states_timeseries.png',
-            'Vehicle States: Ground Truth vs Estimate',
+            'Vehicle States: Ground Truth vs. Estimate',
         )
         self._plot_error_hist_grid(
             plt, FORCE_SIGNALS, out_dir / 'tire_forces_error_hist.png',
@@ -614,9 +708,48 @@ class TireForceBenchmarkNode(Node):
             plt, STATE_SIGNALS, out_dir / 'vehicle_states_error_hist.png',
             'Vehicle State Error Distribution',
         )
+        self._plot_parity_grid(
+            plt, FORCE_SIGNALS, out_dir / 'tire_forces_parity.png',
+            'Tire Lateral Force: Estimate vs. Ground Truth (Parity)',
+        )
+        self._plot_parity_grid(
+            plt, STATE_SIGNALS, out_dir / 'vehicle_states_parity.png',
+            'Vehicle State: Estimate vs. Ground Truth (Parity)',
+        )
+        self._plot_pacejka_curve(plt, out_dir / 'pacejka_curve_validation.png')
+        self._plot_identified_vs_nominal(plt, out_dir / 'pacejka_identified_vs_nominal.png')
         self._plot_metrics_table(plt, FORCE_SIGNALS + STATE_SIGNALS, out_dir / 'metrics_summary.png')
 
-        self.get_logger().info(f'Benchmark plots saved to: {out_dir}')
+        self.get_logger().debug(f'Benchmark plots saved to: {out_dir}')
+
+    def _apply_academic_style(self, plt):
+        # Serif, gridded, high-DPI - the conventions of the vehicle-dynamics
+        # identification literature this package's model traces back to (see
+        # docs/tire_force_benchmark.md References: Pacejka/Bakker, Dikici et
+        # al. 2024), rather than a UI/dashboard look.
+        plt.rcParams.update({
+            'font.family': 'serif',
+            'font.size': 10,
+            'axes.titlesize': 11,
+            'axes.labelsize': 10,
+            'legend.fontsize': 8,
+            'axes.grid': True,
+            'grid.color': COLOR_GRID,
+            'grid.alpha': 0.6,
+            'grid.linewidth': 0.6,
+            'axes.edgecolor': COLOR_MUTED,
+            'axes.labelcolor': COLOR_INK,
+            'text.color': COLOR_INK,
+            'xtick.color': COLOR_SECONDARY_INK,
+            'ytick.color': COLOR_SECONDARY_INK,
+            'axes.spines.top': False,
+            'axes.spines.right': False,
+            'legend.frameon': True,
+            'legend.framealpha': 0.9,
+            'legend.edgecolor': COLOR_GRID,
+            'figure.dpi': 120,
+            'savefig.dpi': 300,
+        })
 
     def _grid_shape(self, n):
         ncols = 1 if n <= 2 else 2
@@ -636,20 +769,19 @@ class TireForceBenchmarkNode(Node):
                 continue
             t0 = hist.stamps[0]
             t = [s - t0 for s in hist.stamps]
-            ax.plot(t, hist.gt, label='Ground truth', linewidth=1.0)
-            ax.plot(t, hist.est, label='Estimate', linewidth=1.0, linestyle='--')
+            ax.plot(t, hist.gt, label='Ground truth', linewidth=1.2, color=COLOR_GT)
+            ax.plot(t, hist.est, label='Estimate', linewidth=1.2, linestyle='--', color=COLOR_EST)
             ax.set_title(label)
             ax.set_xlabel('Time [s]')
             ax.set_ylabel(f'{label} [{unit}]')
-            ax.grid(True, alpha=0.3)
-            ax.legend(loc='best', fontsize=8)
+            ax.legend(loc='best')
 
         for idx in range(len(signals), nrows * ncols):
             axes[idx // ncols][idx % ncols].axis('off')
 
         fig.suptitle(suptitle, fontsize=14)
         fig.tight_layout()
-        fig.savefig(save_path, dpi=150)
+        fig.savefig(save_path)
         plt.close(fig)
 
     def _plot_error_hist_grid(self, plt, signals, save_path, suptitle):
@@ -664,18 +796,181 @@ class TireForceBenchmarkNode(Node):
                 ax.axis('off')
                 continue
             errors = [g - e for g, e in zip(hist.gt, hist.est)]
-            ax.hist(errors, bins=40, color='tab:blue', alpha=0.8)
+            mean_err = float(np.mean(errors))
+            ax.hist(errors, bins=40, color=COLOR_GT, alpha=0.75,
+                    edgecolor='white', linewidth=0.3, label='Error samples')
+            ax.axvline(0.0, color=COLOR_MUTED, linestyle=':', linewidth=1.2, label='Zero error')
+            ax.axvline(mean_err, color=COLOR_EST, linestyle='--', linewidth=1.5,
+                       label=f'Mean bias = {mean_err:.3f}')
             ax.set_title(label)
             ax.set_xlabel(f'Error (GT - Estimate) [{unit}]')
             ax.set_ylabel('Count')
-            ax.grid(True, alpha=0.3)
+            ax.legend(loc='best')
 
         for idx in range(len(signals), nrows * ncols):
             axes[idx // ncols][idx % ncols].axis('off')
 
         fig.suptitle(suptitle, fontsize=14)
         fig.tight_layout()
-        fig.savefig(save_path, dpi=150)
+        fig.savefig(save_path)
+        plt.close(fig)
+
+    def _plot_parity_grid(self, plt, signals, save_path, suptitle):
+        # Predicted-vs-measured "parity" scatter with a y=x reference line -
+        # the standard model-validation figure in the tire/vehicle-state
+        # identification literature (e.g. Fig. 5/6 style validation in
+        # Dikici et al. 2024, arXiv:2411.17508), complementing the
+        # time-series overlay with a single view of fit quality across the
+        # whole run.
+        nrows, ncols = self._grid_shape(len(signals))
+        fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 4.3 * nrows), squeeze=False)
+
+        for idx, (key, label, unit) in enumerate(signals):
+            ax = axes[idx // ncols][idx % ncols]
+            hist = self.history[key]
+            if len(hist.stamps) == 0:
+                ax.set_title(f'{label} (no data)')
+                ax.axis('off')
+                continue
+
+            gt = np.asarray(hist.gt)
+            est = np.asarray(hist.est)
+            ax.scatter(gt, est, s=10, alpha=0.35, color=COLOR_GT,
+                      edgecolors='none', label='Samples')
+
+            lo = float(min(gt.min(), est.min()))
+            hi = float(max(gt.max(), est.max()))
+            pad = 0.05 * (hi - lo) if hi > lo else 1.0
+            bounds = [lo - pad, hi + pad]
+            ax.plot(bounds, bounds, color=COLOR_EST, linestyle='--',
+                   linewidth=1.5, label='Ideal (y = x)')
+
+            m = self.metrics[key].metrics()
+            r2 = f"{m['r_squared']:.3f}" if not math.isnan(m['r_squared']) else 'N/A'
+            ax.text(
+                0.05, 0.95, f"RMSE = {m['rmse']:.3f} {unit}\n$R^2$ = {r2}",
+                transform=ax.transAxes, va='top', ha='left', fontsize=8,
+                bbox=dict(boxstyle='round', facecolor='white', edgecolor=COLOR_GRID, alpha=0.9),
+            )
+
+            ax.set_xlim(bounds)
+            ax.set_ylim(bounds)
+            ax.set_aspect('equal', adjustable='box')
+            ax.set_title(label)
+            ax.set_xlabel(f'Ground truth {label} [{unit}]')
+            ax.set_ylabel(f'Estimate {label} [{unit}]')
+            ax.legend(loc='lower right')
+
+        for idx in range(len(signals), nrows * ncols):
+            axes[idx // ncols][idx % ncols].axis('off')
+
+        fig.suptitle(suptitle, fontsize=14)
+        # set_aspect('equal') above makes tight_layout's automatic top margin
+        # unreliable (rows expand to stay square, crowding the suptitle) -
+        # reserve the margin explicitly instead.
+        fig.tight_layout(rect=(0, 0, 1, 0.96))
+        fig.savefig(save_path)
+        plt.close(fig)
+
+    def _plot_pacejka_curve(self, plt, save_path):
+        # The other canonical figure in this literature (Pacejka & Bakker
+        # 1992; Fig. 6-style validation in Dikici et al. 2024): measured Fy
+        # vs. slip angle scatter overlaid with the identified Magic Formula
+        # curve, per axle. Only meaningful in internal_pacejka mode (the
+        # mode that actually holds a live C_Pf/C_Pr model) and once a model
+        # has been identified.
+        if self.benchmark_mode != 'internal_pacejka' or not self.have_identified_params:
+            return
+
+        if self.m <= 0.0 or self.l_wb <= 0.0:
+            self.get_logger().debug(
+                'Skipping pacejka_curve_validation.png - vehicle mass/wheelbase constants '
+                '(m, l_f, l_r, l_wb) are required to compute the nominal static axle loads '
+                'the fitted curve is drawn at.'
+            )
+            return
+
+        fzf = self.m * G * self.l_r / self.l_wb
+        fzr = self.m * G * self.l_f / self.l_wb
+        axle_specs = [
+            ('front', 'Front axle', self.c_pf, fzf),
+            ('rear', 'Rear axle', self.c_pr, fzr),
+        ]
+
+        fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+        any_data = False
+        for ax, (key, label, params, fz) in zip(axes, axle_specs):
+            hist = self.slip_history[key]
+            if len(hist.stamps) == 0:
+                ax.set_title(f'{label} (no data)')
+                ax.axis('off')
+                continue
+            any_data = True
+
+            alpha = np.asarray(hist.stamps)
+            fy_gt = np.asarray(hist.gt)
+            ax.scatter(np.degrees(alpha), fy_gt, s=8, alpha=0.3, color=COLOR_GT,
+                      edgecolors='none', label='Measured (ground truth)')
+
+            alpha_sweep = np.linspace(alpha.min(), alpha.max(), 200)
+            fy_model = pacejka_formula(params, alpha_sweep, fz)
+            ax.plot(np.degrees(alpha_sweep), fy_model, color=COLOR_EST,
+                   linewidth=2.0, label='Identified Magic Formula model')
+
+            ax.set_title(f'{label} ($F_z \\approx$ {fz:.1f} N)')
+            ax.set_xlabel(r'Slip angle $\alpha$ [deg]')
+            ax.set_ylabel(r'Lateral force $F_y$ [N]')
+            ax.legend(loc='best')
+
+        if not any_data:
+            plt.close(fig)
+            return
+
+        fig.suptitle('Pacejka Magic Formula Validation: $F_y$ vs. Slip Angle', fontsize=14)
+        fig.tight_layout()
+        fig.savefig(save_path)
+        plt.close(fig)
+
+    def _plot_identified_vs_nominal(self, plt, save_path):
+        # Model-vs-model comparison (no data scatter): the freshly identified
+        # Magic Formula against a nominal/prior reference model
+        # (nominal_model_file - see _load_nominal_model_if_available), swept
+        # analytically over a fixed slip-angle range at the nominal static
+        # axle load. Complements _plot_pacejka_curve (identified model vs.
+        # measured data) with "how much did identification actually change
+        # the model" - the other comparison this literature reports (Pacejka
+        # & Bakker 1992; Dikici et al. 2024).
+        if not self.have_identified_params or self.nominal_c_pf is None or self.nominal_c_pr is None:
+            return
+
+        if self.m <= 0.0 or self.l_wb <= 0.0:
+            self.get_logger().debug(
+                'Skipping pacejka_identified_vs_nominal.png - vehicle mass/wheelbase constants '
+                '(m, l_f, l_r, l_wb) are required to compute the nominal static axle loads.'
+            )
+            return
+
+        fzf = self.m * G * self.l_r / self.l_wb
+        fzr = self.m * G * self.l_f / self.l_wb
+        alpha_sweep = np.linspace(-0.20, 0.20, 200)
+        axle_specs = [
+            ('Front Tires', self.c_pf, self.nominal_c_pf, fzf, r'$F_{yf}$ [N]', r'$\alpha_f$ [rad]'),
+            ('Rear Tires', self.c_pr, self.nominal_c_pr, fzr, r'$F_{yr}$ [N]', r'$\alpha_r$ [rad]'),
+        ]
+
+        fig, axes = plt.subplots(2, 1, figsize=(7, 7))
+        for ax, (title, identified_params, nominal_params, fz, ylabel, xlabel) in zip(axes, axle_specs):
+            fy_identified = pacejka_formula(identified_params, alpha_sweep, fz)
+            fy_nominal = pacejka_formula(nominal_params, alpha_sweep, fz)
+            ax.plot(alpha_sweep, fy_identified, color=COLOR_EST, linewidth=2.0, label='Identified Model')
+            ax.plot(alpha_sweep, fy_nominal, color=COLOR_NOMINAL, linewidth=2.0, label='Nominal Model')
+            ax.set_title(title)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+            ax.legend(loc='best')
+
+        fig.tight_layout()
+        fig.savefig(save_path)
         plt.close(fig)
 
     def _plot_metrics_table(self, plt, signals, save_path):
@@ -693,15 +988,23 @@ class TireForceBenchmarkNode(Node):
                 nrmse, f"{m['max_ae']:.3f}", f"{m['bias']:.3f}", f"{m['std_dev']:.3f}", r2,
             ])
 
-        fig, ax = plt.subplots(figsize=(10, 0.4 * len(rows) + 1.2))
+        fig, ax = plt.subplots(figsize=(13, 0.4 * len(rows) + 1.2))
         ax.axis('off')
         table = ax.table(cellText=rows, colLabels=col_labels, loc='center', cellLoc='center')
         table.auto_set_font_size(False)
         table.set_fontsize(9)
+        # Columns default to equal width regardless of content - without this, long
+        # labels ("Front axle Fy sum", "Vehicle total Fy sum") get clipped instead
+        # of the column widening to fit them.
+        table.auto_set_column_width(col=list(range(len(col_labels))))
         table.scale(1, 1.4)
+        for (row, _col), cell in table.get_celld().items():
+            if row == 0:
+                cell.set_facecolor(COLOR_GRID)
+                cell.set_text_props(weight='bold')
         fig.suptitle('Benchmark Metrics Summary', fontsize=14)
         fig.tight_layout()
-        fig.savefig(save_path, dpi=150)
+        fig.savefig(save_path)
         plt.close(fig)
 
     def destroy_node(self):

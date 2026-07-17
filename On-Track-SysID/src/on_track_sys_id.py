@@ -45,6 +45,13 @@ class OnTrackSysId(Node):
         self.declare_parameter('ackermann_cmd_topic', '/drive')
         self.declare_parameter('benchmarking_log_interval', 100)
         self.declare_parameter('reidentification_interval_s', 30.0)
+        # If enabled, every accepted identification cycle is also forwarded
+        # (best-effort, fire-and-forget) to tire_force_benchmark via the same
+        # IdentifiedParam service contract adaptive_controller_manager uses
+        # for its own benchmark_update_params_enable/service - see
+        # forward_to_benchmark(). Off by default.
+        self.declare_parameter('benchmark_update_params_enable', False)
+        self.declare_parameter('benchmark_update_params_service', 'benchmark/update_params')
         # Get parameters
         self.racecar_version = self.get_parameter('racecar_version').value
         self.save_LUT_name = self.get_parameter('save_LUT_name').value
@@ -52,6 +59,9 @@ class OnTrackSysId(Node):
         odom_topic = self.get_parameter('odom_topic').value
         ackermann_topic = self.get_parameter('ackermann_cmd_topic').value
         self.bench_log_interval = self.get_parameter('benchmarking_log_interval').value
+        self.benchmark_update_params_enable = bool(
+            self.get_parameter('benchmark_update_params_enable').value)
+        benchmark_update_params_service = self.get_parameter('benchmark_update_params_service').value
         # Print parameters
         self.get_logger().info(f"Racecar_version: {self.racecar_version}")
         self.get_logger().info(f"Save_LUT_name: {self.save_LUT_name}")
@@ -106,6 +116,11 @@ class OnTrackSysId(Node):
         # Submits identified tire params to adaptive_controller_manager;
         # replaces the old one-shot latched /sysid/training_complete String.
         self.update_params_cli = self.create_client(IdentifiedParam, 'sysid/update_params')
+
+        # Always created (cheap) - only ever called if
+        # benchmark_update_params_enable is true, see forward_to_benchmark().
+        self.benchmark_update_params_cli = self.create_client(
+            IdentifiedParam, benchmark_update_params_service)
 
         # Online benchmarking accumulators
         self.bench_vy = OnlineBenchmark(name='v_y (lateral velocity)')
@@ -392,6 +407,42 @@ class OnTrackSysId(Node):
         # Idempotent after the first identification - harmless to republish
         # on every subsequent re-identification cycle too.
         self.first_run_pub.publish(Bool(data=False))
+
+        if self.benchmark_update_params_enable:
+            self.forward_to_benchmark(request.param_values)
+
+    def forward_to_benchmark(self, param_values):
+        """
+        Best-effort forward of a freshly-identified tire param set to a
+        passive benchmarking node (tire_force_benchmark), independent of the
+        adaptive_controller_manager arming FSM - unlike sysid/update_params,
+        this consumer isn't actuating anything, so it should see every
+        identification immediately rather than wait for a handover window.
+        Fire-and-forget: no ack means just a warning, no retry (the next
+        re-identification cycle naturally resends anyway).
+        """
+        if not self.benchmark_update_params_cli.service_is_ready():
+            self.get_logger().warn(
+                "benchmark_update_params_enable is true but "
+                f"{self.benchmark_update_params_cli.srv_name} is not available - "
+                "is tire_force_benchmark running?")
+            return
+
+        request = IdentifiedParam.Request()
+        # param_values here is read back off another IdentifiedParam.Request
+        # (rosidl's fixed-size float array field), which returns a numpy
+        # ndarray - list(...) alone yields numpy.float32 elements, and this
+        # field's setter strictly requires each element be a Python float.
+        request.param_values = [float(v) for v in param_values]
+
+        def _on_response(future):
+            response = future.result()
+            if response is None or not response.ack:
+                self.get_logger().warn(
+                    "benchmark/update_params was not acked by tire_force_benchmark")
+
+        future = self.benchmark_update_params_cli.call_async(request)
+        future.add_done_callback(_on_response)
 
     def handle_pending_ack(self):
         """

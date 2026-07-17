@@ -133,11 +133,14 @@ Signals benchmarked: FL/FR/RL/RR Fy, front/rear axle Fy sum, total vehicle Fy su
 
 ### Academic plot export
 
-If `plot_output_dir` is set, on node shutdown the following PNGs are written (matplotlib, publication-style — labeled axes with units, grid, legend):
+If `plot_output_dir` is set, on node shutdown the following PNGs are written (matplotlib, publication-style — serif font, labeled axes with units, grid, legend on every figure, 300 DPI):
 
 - `tire_forces_timeseries.png` — ground truth vs estimate, one subplot per Fy signal.
 - `vehicle_states_timeseries.png` — ground truth vs estimate for $v_y$, $\omega$.
-- `tire_forces_error_hist.png` / `vehicle_states_error_hist.png` — error distribution histograms.
+- `tire_forces_error_hist.png` / `vehicle_states_error_hist.png` — error distribution histograms, with the zero-error line and mean bias marked.
+- `tire_forces_parity.png` / `vehicle_states_parity.png` — estimate-vs-ground-truth parity (regression) scatter with a y=x reference line and RMSE/R² annotated, one subplot per signal — the standard model-validation figure in this field (cf. Dikici et al. 2024, Fig. 5/6-style validation).
+- `pacejka_curve_validation.png` — measured Fy vs. slip angle scatter overlaid with the identified Magic Formula curve, front/rear axle side by side at their nominal static loads (`internal_pacejka` mode only, once a model has been identified) — the canonical Pacejka-model validation plot (Bakker/Nyborg/Pacejka SAE 870421; Pacejka & Bakker 1992).
+- `pacejka_identified_vs_nominal.png` — the identified model vs. a nominal/prior reference model (`nominal_model_file`), swept analytically over a fixed slip-angle range, front/rear stacked — "how much did identification actually change the model," requires both a live identified model and `nominal_model_file` set.
 - `metrics_summary.png` — a table of RMSE/MAE/NRMSE/MaxAE/Bias/StdDev/R² for every signal.
 
 History is kept in a bounded-memory buffer (`plot_max_points`, logarithmic decimation) so long runs don't grow memory unbounded.
@@ -180,6 +183,7 @@ See `config/benchmark_config.yaml` for the full, documented, canonical list. Sum
 | `external_prediction_lead_samples` | `1` | `external_topic` only |
 | `external_max_queue_size` | `2000` | `external_topic` only |
 | `model_file` | `''` | `C_Pf`/`C_Pr` (+ optionally `m`/`I_z`/`l_f`/`l_r`/`l_wb`) |
+| `nominal_model_file` | `''` | reference `C_Pf`/`C_Pr` for `pacejka_identified_vs_nominal.png` only — never seeds the live benchmark model |
 | `c_pf` / `c_pr` | **none** | optional startup override; otherwise wait for `identified_params_service` |
 | `identified_params_service` | `/benchmark/update_params` | `adaptive_controller_interfaces/srv/IdentifiedParam` server |
 | `min_fz_threshold` | **none — mandatory** | see "Configuration" above |

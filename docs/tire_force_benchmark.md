@@ -32,6 +32,8 @@ $$
 
 Implemented identically (and verified byte-for-byte consistent) in `tire_force_benchmark_node.py`'s `pacejka_formula()`, `On-Track-SysID/src/helpers/pacejka_formula.py`, and `pacejka_identification`. Coefficient order throughout this codebase is `[B, C, D, E]`.
 
+On shutdown (`plot_output_dir` set), `pacejka_curve_validation.png` renders this curve directly — measured `(α, Fy)` scatter per axle against the model swept over the observed slip-angle range at the nominal static axle load, mirroring the field's standard validation figure (Bakker/Nyborg/Pacejka SAE 870421; Pacejka & Bakker 1992; Fig. 6-style plots in Dikici et al. 2024). The parity plots (`*_parity.png`) provide the complementary estimate-vs-ground-truth regression view used for the RMSE-based validation in the same references. See `tire_force_benchmark/README.md`'s "Academic plot export" section for the full plot list.
+
 ## One-step vehicle-state prediction (as implemented)
 
 Front/rear slip angles from the standard bicycle-model kinematics:
