@@ -1,6 +1,8 @@
 #ifndef MPC_PATH_TRACKING__SOLVER_INTERFACE_HPP_
 #define MPC_PATH_TRACKING__SOLVER_INTERFACE_HPP_
 
+#include <memory>
+#include <string>
 #include <vector>
 
 #include "mpc_path_tracking/vehicle_model.hpp"
@@ -93,6 +95,54 @@ public:
 
 private:
   OsqpSolverSettings settings_;
+};
+
+// Reports the same physically-meaningful cost (genuine non-negative squared
+// tracking error, see SolverProblem::cost_offset) for any backend, computed
+// directly from the solved trajectory rather than each backend's internal
+// QP objective value - so OsqpMpcSolver and AcadosMpcSolver agree even
+// though their internal objective scaling/augmentation differs.
+double computeSolutionCost(const SolverProblem & problem, const SolverSolution & solution);
+
+// Stage 2 backend: same SolverProblem/SolverSolution as OsqpMpcSolver, but
+// solved via acados' linear-MPC QP interface (acados_c/ocp_qp_interface.h -
+// no CasADi/Python codegen involved, this is the "OCP QP" C API, not
+// "OCP NLP"). acados' per-stage general constraints and stage cost are
+// strictly stage-local (only x_k, u_k - no cross-stage terms), so the
+// u_k - u_{k-1} rate limit/penalty this controller needs is expressed via
+// the standard augmented-state trick: x_aug = [x; u_prev] (nx_aug = 8),
+// with Bd_aug = [Bd; I] so stage k+1's u_prev slot always equals u_k. See
+// acados_mpc_solver.cpp for the exact per-stage matrix construction.
+struct AcadosSolverSettings
+{
+  std::string qp_solver{"PARTIAL_CONDENSING_HPIPM"};
+  int cond_N{5};          // partial-condensing block size (PARTIAL_CONDENSING_HPIPM only)
+  int iter_max{50};
+  double tol_stat{1e-4};
+  double tol_eq{1e-4};
+  double tol_ineq{1e-4};
+  double tol_comp{1e-4};
+  bool warm_start{true};
+  int print_level{0};
+};
+
+class AcadosMpcSolver : public SolverInterface
+{
+public:
+  // N: prediction horizon steps (fixed for the node's lifetime, see
+  // ParameterManager - horizon.N is not a runtime-mutable parameter), used
+  // to size the acados QP structures once at construction.
+  AcadosMpcSolver(int N, const AcadosSolverSettings & settings);
+  ~AcadosMpcSolver() override;
+
+  AcadosMpcSolver(const AcadosMpcSolver &) = delete;
+  AcadosMpcSolver & operator=(const AcadosMpcSolver &) = delete;
+
+  bool solve(const SolverProblem & problem, SolverSolution & solution) override;
+
+private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace mpc_path_tracking

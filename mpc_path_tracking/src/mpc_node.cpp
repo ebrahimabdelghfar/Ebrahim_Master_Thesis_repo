@@ -41,14 +41,24 @@ public:
     const TireParams tire_params = param_manager_.tireParams();
     vehicle_model_ = std::make_unique<VehicleModel>(vehicle_params, tire_params);
 
-    OsqpSolverSettings osqp_settings;
-    osqp_settings.max_iter = solver_cfg_.max_iter;
-    osqp_settings.eps_abs = solver_cfg_.eps_abs;
-    osqp_settings.eps_rel = solver_cfg_.eps_rel;
-    osqp_settings.warm_start = solver_cfg_.warm_start;
-    osqp_settings.polish = solver_cfg_.polish;
-    osqp_settings.time_limit_s = solver_cfg_.time_limit_ms / 1000.0;
-    auto solver = std::make_unique<OsqpMpcSolver>(osqp_settings);
+    std::unique_ptr<SolverInterface> solver;
+    if (solver_cfg_.backend == "acados") {
+      solver = std::make_unique<AcadosMpcSolver>(param_manager_.mpcConfig().N, solver_cfg_.acados);
+    } else {
+      if (solver_cfg_.backend != "osqp") {
+        RCLCPP_ERROR(
+          get_logger(), "unknown solver.backend '%s', falling back to osqp",
+          solver_cfg_.backend.c_str());
+      }
+      OsqpSolverSettings osqp_settings;
+      osqp_settings.max_iter = solver_cfg_.max_iter;
+      osqp_settings.eps_abs = solver_cfg_.eps_abs;
+      osqp_settings.eps_rel = solver_cfg_.eps_rel;
+      osqp_settings.warm_start = solver_cfg_.warm_start;
+      osqp_settings.polish = solver_cfg_.polish;
+      osqp_settings.time_limit_s = solver_cfg_.time_limit_ms / 1000.0;
+      solver = std::make_unique<OsqpMpcSolver>(osqp_settings);
+    }
 
     controller_ = std::make_unique<MpcController>(
       *vehicle_model_, std::move(solver), param_manager_.mpcConfig());
@@ -87,9 +97,9 @@ public:
       std::bind(&MpcNode::controlLoop, this));
 
     RCLCPP_INFO(
-      get_logger(), "mpc_path_tracking ready: odom=%s waypoints=%s drive=%s standalone=%s",
+      get_logger(), "mpc_path_tracking ready: odom=%s waypoints=%s drive=%s standalone=%s backend=%s",
       topics_.odom_topic.c_str(), topics_.waypoint_topic.c_str(), topics_.drive_topic.c_str(),
-      standalone_mode_ ? "true" : "false");
+      standalone_mode_ ? "true" : "false", solver_cfg_.backend.c_str());
   }
 
 private:

@@ -16,7 +16,7 @@ mpc_path_tracking:
 
     # ---------------- Horizon / timing ----------------
     horizon:
-      N: 20                        # prediction steps
+      N: 50                        # prediction steps
       dt_min: 0.02                 # s, floor is auto-raised to 1/control_rate_hz at
                                     # startup if lower (see ParameterManager::mpcConfig)
       dt_max: 0.07                 # s
@@ -28,8 +28,8 @@ mpc_path_tracking:
     # error order: [e_y, e_psi, vx_err, vy, r_err]
     cost:
       Q: [200.0, 200.0, 200.0, 10.0, 10.0]
-      R: [5.0, 5.0]                # [steering, accel]
-      R_rate: [20.0, 20.0]          # input-rate penalty
+      R: [10.0, 1.0]                # [steering, accel]
+      R_rate: [20.0, 5.0]          # input-rate penalty
       Qf: [200.0, 200.0, 200.0, 10.0, 10.0] #
 
     # ---------------- Vehicle geometry / mass ----------------
@@ -72,7 +72,7 @@ mpc_path_tracking:
 
     # ---------------- Solver settings ----------------
     solver:
-      backend: "osqp"                    # stage 1: osqp; stage 2 option: acados
+      backend: "acados"                    # "osqp" | "acados"
       max_iter: 200
       eps_abs: 1.0e-4
       eps_rel: 1.0e-4
@@ -80,6 +80,23 @@ mpc_path_tracking:
       polish: true
       time_limit_ms: 15.0                # hard wall-clock budget per solve
       fallback_on_failure: "hold_last"   # "hold_last" | "zero_command" | "brake"
+
+      # Used only when backend == "acados" (see AcadosMpcSolver in
+      # solver_interface.hpp). qp_solver picks the linear-QP algorithm acados
+      # runs internally: PARTIAL_CONDENSING_HPIPM (default, interior-point,
+      # scales well with horizon length), FULL_CONDENSING_HPIPM, or
+      # FULL_CONDENSING_QPOASES (active-set; built with ACADOS_WITH_QPOASES=ON,
+      # see scripts/thirdparty_lib_build/acados.sh).
+      acados:
+        qp_solver: "FULL_CONDENSING_QPOASES"
+        cond_N: 5                        # partial-condensing block size (PARTIAL_CONDENSING_HPIPM only)
+        iter_max: 50
+        tol_stat: 1.0e-4
+        tol_eq: 1.0e-4
+        tol_ineq: 1.0e-4
+        tol_comp: 1.0e-4
+        warm_start: true
+        print_level: 0
 
     # ---------------- Debug / diagnostics ----------------
     debug:

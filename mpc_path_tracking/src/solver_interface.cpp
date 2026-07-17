@@ -27,6 +27,35 @@ void addBlock(
 }
 }  // namespace
 
+double computeSolutionCost(const SolverProblem & problem, const SolverSolution & solution)
+{
+  // Reconstructs the same physical (non-negative, offset-corrected) cost
+  // that OsqpMpcSolver's "0.5*z^T P z + q^T z + cost_offset" formula
+  // produces, but directly from the solved trajectory instead of that
+  // flat-z quadratic form - so any backend reports an identical value as
+  // long as it returns the same solution.x/solution.u. Verified equivalent
+  // term-by-term against the P/q assembly above (Qx/qx blocks -> 0.5*2Qx +
+  // 2qx per stage; R blocks -> 0.5*2R per stage; the banded Rrate
+  // cross-blocks between u_k and u_{k-1} collapse to the standard
+  // telescoping quadratic-difference identity sum_k (u_k-u_{k-1})^T Rrate
+  // (u_k-u_{k-1})).
+  const int N = problem.N;
+  double raw = 0.0;
+  for (int k = 0; k <= N; ++k) {
+    const StateJacobian & Qx = (k < N) ? problem.stages[k].Qx : problem.Qx_terminal;
+    const State & qx = (k < N) ? problem.stages[k].qx : problem.qx_terminal;
+    raw += solution.x[k].dot(Qx * solution.x[k]) + 2.0 * qx.dot(solution.x[k]);
+  }
+  Input u_prev = problem.u_prev;
+  for (int k = 0; k < N; ++k) {
+    raw += solution.u[k].dot(problem.R * solution.u[k]);
+    const Input du = solution.u[k] - u_prev;
+    raw += du.dot(problem.Rrate * du);
+    u_prev = solution.u[k];
+  }
+  return raw + problem.cost_offset;
+}
+
 OsqpMpcSolver::OsqpMpcSolver(const OsqpSolverSettings & settings)
 : settings_(settings)
 {
@@ -168,14 +197,7 @@ bool OsqpMpcSolver::solve(const SolverProblem & problem, SolverSolution & soluti
   for (int k = 0; k < N; ++k) {
     solution.u[k] = z.segment<nu>(uIdx(k));
   }
-  // 0.5*z^T P z + q^T z is the raw QP objective built by "completing the
-  // square" around each stage's target - it is missing the constant
-  // target_k^T diag(Q) target_k term (and u_prev^T Rrate u_prev), which
-  // does not affect the argmin z* the solver finds, but does make the
-  // reported cost a physically-meaningless (and often large, always
-  // solvable-looking) offset rather than genuine squared tracking error.
-  // problem.cost_offset carries that sum back in.
-  solution.cost = 0.5 * z.dot(P * z) + q.dot(z) + problem.cost_offset;
+  solution.cost = computeSolutionCost(problem, solution);
   solution.solved = true;
   return true;
 }

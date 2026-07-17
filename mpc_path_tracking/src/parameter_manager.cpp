@@ -80,6 +80,18 @@ void ParameterManager::declareAll()
   node_->declare_parameter<double>("solver.time_limit_ms", 15.0);
   node_->declare_parameter<std::string>("solver.fallback_on_failure", "hold_last");
 
+  // Acados backend settings (only used when solver.backend == "acados";
+  // see AcadosMpcSolver/AcadosSolverSettings in solver_interface.hpp).
+  node_->declare_parameter<std::string>("solver.acados.qp_solver", "PARTIAL_CONDENSING_HPIPM");
+  node_->declare_parameter<int>("solver.acados.cond_N", 5);
+  node_->declare_parameter<int>("solver.acados.iter_max", 50);
+  node_->declare_parameter<double>("solver.acados.tol_stat", 1.0e-4);
+  node_->declare_parameter<double>("solver.acados.tol_eq", 1.0e-4);
+  node_->declare_parameter<double>("solver.acados.tol_ineq", 1.0e-4);
+  node_->declare_parameter<double>("solver.acados.tol_comp", 1.0e-4);
+  node_->declare_parameter<bool>("solver.acados.warm_start", true);
+  node_->declare_parameter<int>("solver.acados.print_level", 0);
+
   // Debug / diagnostics
   node_->declare_parameter<bool>("debug.enabled", true);
   node_->declare_parameter<bool>("debug.publish_predicted_path", true);
@@ -200,6 +212,19 @@ void ParameterManager::printAll() const
   RCLCPP_INFO(log, "  time_limit_ms             : %.1f ms", node_->get_parameter("solver.time_limit_ms").as_double());
   RCLCPP_INFO(log, "  fallback_on_failure       : %s", node_->get_parameter("solver.fallback_on_failure").as_string().c_str());
 
+  // --- Acados ---
+  RCLCPP_INFO(log, "──── Acados Settings (used iff solver.backend == \"acados\") ────");
+  RCLCPP_INFO(log, "  qp_solver                 : %s", node_->get_parameter("solver.acados.qp_solver").as_string().c_str());
+  RCLCPP_INFO(log, "  cond_N                    : %ld", node_->get_parameter("solver.acados.cond_N").as_int());
+  RCLCPP_INFO(log, "  iter_max                  : %ld", node_->get_parameter("solver.acados.iter_max").as_int());
+  RCLCPP_INFO(log, "  tol_stat/eq/ineq/comp     : %.1e / %.1e / %.1e / %.1e",
+    node_->get_parameter("solver.acados.tol_stat").as_double(),
+    node_->get_parameter("solver.acados.tol_eq").as_double(),
+    node_->get_parameter("solver.acados.tol_ineq").as_double(),
+    node_->get_parameter("solver.acados.tol_comp").as_double());
+  RCLCPP_INFO(log, "  warm_start                : %s", node_->get_parameter("solver.acados.warm_start").as_bool() ? "true" : "false");
+  RCLCPP_INFO(log, "  print_level               : %ld", node_->get_parameter("solver.acados.print_level").as_int());
+
   // --- Debug ---
   RCLCPP_INFO(log, "──── Debug / Diagnostics ────");
   RCLCPP_INFO(log, "  enabled                   : %s", node_->get_parameter("debug.enabled").as_bool() ? "true" : "false");
@@ -318,6 +343,15 @@ SolverConfig ParameterManager::solverConfig() const
   s.polish = node_->get_parameter("solver.polish").as_bool();
   s.time_limit_ms = node_->get_parameter("solver.time_limit_ms").as_double();
   s.fallback_on_failure = node_->get_parameter("solver.fallback_on_failure").as_string();
+  s.acados.qp_solver = node_->get_parameter("solver.acados.qp_solver").as_string();
+  s.acados.cond_N = static_cast<int>(node_->get_parameter("solver.acados.cond_N").as_int());
+  s.acados.iter_max = static_cast<int>(node_->get_parameter("solver.acados.iter_max").as_int());
+  s.acados.tol_stat = node_->get_parameter("solver.acados.tol_stat").as_double();
+  s.acados.tol_eq = node_->get_parameter("solver.acados.tol_eq").as_double();
+  s.acados.tol_ineq = node_->get_parameter("solver.acados.tol_ineq").as_double();
+  s.acados.tol_comp = node_->get_parameter("solver.acados.tol_comp").as_double();
+  s.acados.warm_start = node_->get_parameter("solver.acados.warm_start").as_bool();
+  s.acados.print_level = static_cast<int>(node_->get_parameter("solver.acados.print_level").as_int());
   return s;
 }
 

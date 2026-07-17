@@ -35,6 +35,7 @@ struct SolverConfig
   bool polish{true};
   double time_limit_ms{15.0};
   std::string fallback_on_failure{"hold_last"};
+  AcadosSolverSettings acados;
 };
 
 struct DebugConfig

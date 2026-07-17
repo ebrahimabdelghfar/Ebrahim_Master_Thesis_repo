@@ -58,6 +58,7 @@ add_library(${PROJECT_NAME}_core
   src/vehicle_model.cpp
   src/reference_trajectory_handler.cpp
   src/solver_interface.cpp
+  src/acados_mpc_solver.cpp
   src/mpc_controller.cpp
   src/parameter_manager.cpp
   src/debug_publisher.cpp
@@ -122,6 +123,10 @@ if(BUILD_TESTING)
   ament_add_gtest(test_reference_trajectory_handler test/test_reference_trajectory_handler.cpp)
   target_link_libraries(test_reference_trajectory_handler ${PROJECT_NAME}_core)
   set_target_properties(test_reference_trajectory_handler PROPERTIES BUILD_RPATH "${THIRDPARTY_LIB_RPATH}")
+
+  ament_add_gtest(test_acados_solver test/test_acados_solver.cpp)
+  target_link_libraries(test_acados_solver ${PROJECT_NAME}_core)
+  set_target_properties(test_acados_solver PROPERTIES BUILD_RPATH "${THIRDPARTY_LIB_RPATH}")
 endif()
 
 ament_package()
