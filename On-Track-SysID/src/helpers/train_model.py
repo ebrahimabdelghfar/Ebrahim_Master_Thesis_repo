@@ -311,6 +311,7 @@ def train_residual_nn(X_train_raw, y_train, params: dict, vehicle_model=None, cu
     log_per_iteration = params.get('log_per_iteration', True)
     loss_mode = params.get('loss_mode', 'mse')
     physics_loss_cfg = params.get('physics_loss', {})
+    sample_dt = float(params.get('sample_dt', 0.02))
     
     if arch == 'ensemble':
         members_to_train = list(model.members)
@@ -327,7 +328,8 @@ def train_residual_nn(X_train_raw, y_train, params: dict, vehicle_model=None, cu
         
         best_loss = float('inf')
         patience_counter = 0
-        
+        best_state = None
+
         if batch_size > 0:
             dataset = TensorDataset(X_t, y_t)
             loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
@@ -349,7 +351,7 @@ def train_residual_nn(X_train_raw, y_train, params: dict, vehicle_model=None, cu
                 for xb, yb in loader:
                     optimizer.zero_grad()
                     if loss_mode == 'physics_informed' and vehicle_model is not None:
-                        loss, terms = compute_physics_informed_loss(member, xb, yb, vehicle_model, 0.02, physics_loss_cfg)
+                        loss, terms = compute_physics_informed_loss(member, xb, yb, vehicle_model, sample_dt, physics_loss_cfg)
                     else:
                         out = member(xb)
                         loss = criterion(out, yb)
@@ -360,7 +362,7 @@ def train_residual_nn(X_train_raw, y_train, params: dict, vehicle_model=None, cu
             else:
                 optimizer.zero_grad()
                 if loss_mode == 'physics_informed' and vehicle_model is not None:
-                    loss, terms = compute_physics_informed_loss(member, X_t, y_t, vehicle_model, 0.02, physics_loss_cfg)
+                    loss, terms = compute_physics_informed_loss(member, X_t, y_t, vehicle_model, sample_dt, physics_loss_cfg)
                 else:
                     out = member(X_t)
                     loss = criterion(out, y_t)
@@ -372,14 +374,18 @@ def train_residual_nn(X_train_raw, y_train, params: dict, vehicle_model=None, cu
                 if best_loss - epoch_loss > min_delta:
                     best_loss = epoch_loss
                     patience_counter = 0
+                    best_state = {k: v.detach().clone() for k, v in member.state_dict().items()}
                 else:
                     patience_counter += 1
-                
+
                 if patience_counter >= patience:
                     break
-                    
+
         pbar.close()
-        
+
+        if early_stopping and best_state is not None:
+            member.load_state_dict(best_state)
+
         if log_per_iteration:
             print(f"Arch: {arch} | Member {m_idx} | iter loss: {epoch_loss:.6f}")
     
@@ -396,7 +402,7 @@ def simulated_data_gen(nn_model, vehicle_model, avg_vel, nn_params):
     I_z = vehicle_model['I_z']
     F_zf = m * 9.81 * l_r / l_wb
     F_zr = m * 9.81 * l_f / l_wb
-    dt = 0.02
+    dt = float(nn_params.get('sample_dt', 0.02))
     ode_solver = nn_params.get('ode_solver', 'euler').lower()
 
     timesteps = 500
@@ -519,8 +525,9 @@ def get_nn_params():
         nn_params = yaml.safe_load(file)
     return nn_params
 
-def generate_training_set(training_data, model):
-    v_y_next_pred, omega_next_pred = generate_predictions(training_data, model)
+def generate_training_set(training_data, model, nn_params=None):
+    dt = float((nn_params or {}).get('sample_dt', 0.02))
+    v_y_next_pred, omega_next_pred = generate_predictions(training_data, model, dt=dt)
     X_train, y_train = generate_inputs_errors(v_y_next_pred, omega_next_pred, training_data)
     return X_train, y_train
 
@@ -540,7 +547,7 @@ def nn_train(training_data, racecar_version, save_LUT_name, plot_model):
         if i == num_of_iterations:
             plot_model = True
             
-        X_train, y_train = generate_training_set(training_data, model)
+        X_train, y_train = generate_training_set(training_data, model, nn_params)
         
         log_info(f"Training iteration {i}/{num_of_iterations} | Architecture: {arch} | Loss Mode: {nn_params.get('loss_mode', 'mse')}")
         

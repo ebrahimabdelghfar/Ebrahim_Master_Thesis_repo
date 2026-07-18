@@ -1,17 +1,19 @@
 import numpy as np
 
-def generate_predictions(data, model):
+def generate_predictions(data, model, dt=0.02):
     """
     Generate predicted lateral velocity and yaw rate using Pacejka tire model.
 
     Args:
         data (numpy.ndarray): Input data array with shape (n_samples, 4).
         model (dict): Dictionary containing vehicle model parameters.
+        dt (float): Nominal integration step - MUST match on_track_sys_id.py's
+            1/rate (see nn_params.yaml's sample_dt).
 
     Returns:
         tuple: Tuple containing predicted lateral velocity and yaw rate arrays.
     """
-    
+
     # Load model parameters
     m = model['m']  # Mass
     I_z = model['I_z']  # Moment of inertia
@@ -19,7 +21,6 @@ def generate_predictions(data, model):
     l_r = model['l_r']  # Distance from center of mass to rear axle
     l_wb = model['l_wb']  # Wheelbase
     g_ = 9.81  # Gravity
-    dt = 0.02
 
     # Pacejka tire model parameters
     C_Pf_model = model['C_Pf_model']

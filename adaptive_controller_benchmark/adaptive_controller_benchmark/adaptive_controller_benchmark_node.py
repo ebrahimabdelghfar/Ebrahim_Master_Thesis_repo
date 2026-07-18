@@ -227,6 +227,7 @@ class AdaptiveControllerBenchmarkNode(Node):
             self.overall_v_x.update(self.v_x, dt, t_run)
             if self.lap_tracker.ready():
                 self.lap_tracker.update(t, self.pos_x, self.pos_y)
+        lap_idx = self.lap_tracker.current_lap_index()
 
         if self.has_solve_time:
             self.mpc_solve_time.update(self.solve_time_ms, dt, t_run)
@@ -242,13 +243,15 @@ class AdaptiveControllerBenchmarkNode(Node):
 
         self.history.add(
             t_run, state, self.e_y, self.heading_error, self.v_x, steering_cmd, v_cmd,
-            self.solve_time_ms if self.has_solve_time else 0.0)
+            self.solve_time_ms if self.has_solve_time else 0.0,
+            self.pos_x, self.pos_y, lap_idx)
 
         if self.csv_writer is not None:
             self.csv_writer.writerow([
                 f'{t_run:.4f}', state, f'{self.e_y:.5f}', f'{self.heading_error:.5f}',
                 f'{self.v_x:.4f}', f'{steering_cmd:.5f}', f'{v_cmd:.4f}',
                 f'{self.solve_time_ms:.4f}' if self.has_solve_time else '',
+                f'{self.pos_x:.5f}', f'{self.pos_y:.5f}', str(lap_idx),
             ])
 
         self.last_tick_t = t
@@ -278,6 +281,7 @@ class AdaptiveControllerBenchmarkNode(Node):
         self.csv_writer.writerow([
             't_run_s', 'state', 'e_y_m', 'heading_error_rad', 'v_x_mps',
             'steering_cmd_rad', 'speed_cmd_mps', 'mpc_solve_time_ms',
+            'pos_x_m', 'pos_y_m', 'lap_idx',
         ])
         self.get_logger().info(f'CSV logging enabled: {self.csv_output_path}')
 
@@ -313,6 +317,7 @@ class AdaptiveControllerBenchmarkNode(Node):
         self._plot_speed_and_compute_cost(plt, out_dir / 'speed_and_compute_cost.png')
         self._plot_handover_transient(plt, out_dir / 'handover_transient.png')
         self._plot_lap_times(plt, out_dir / 'lap_times.png')
+        self._plot_track_by_lap(plt, out_dir)
         self._plot_metrics_summary_table(plt, out_dir / 'metrics_summary_table.png')
 
         self.get_logger().info(f'Benchmark plots saved to: {out_dir}')
@@ -495,6 +500,61 @@ class AdaptiveControllerBenchmarkNode(Node):
         fig.tight_layout()
         fig.savefig(save_path, dpi=150)
         plt.close(fig)
+
+    def _plot_track_by_lap(self, plt, out_dir):
+        """Ground-truth track overlaid with the driven trajectory, one image per lap,
+        each trajectory point colored by active FSM state (same STATE_COLORS convention
+        as _plot_state_timeline/_plot_handover_transient)."""
+        if not self.lap_tracker.ready():
+            self.get_logger().info('No waypoints received - skipping per-lap track plots.')
+            return
+        h = self.history
+        laps_present = sorted(set(idx for idx in h.lap_idx if idx > 0))
+        if not laps_present:
+            self.get_logger().info('No lap data recorded - skipping per-lap track plots.')
+            return
+
+        import matplotlib.lines as mlines
+        import matplotlib.patches as mpatches
+        import numpy as np
+        from matplotlib.collections import LineCollection
+
+        track_x, track_y = self.lap_tracker.get_waypoints_xy()
+
+        for lap in laps_present:
+            xs = [x for x, idx in zip(h.pos_x, h.lap_idx) if idx == lap]
+            ys = [y for y, idx in zip(h.pos_y, h.lap_idx) if idx == lap]
+            states = [s for s, idx in zip(h.state, h.lap_idx) if idx == lap]
+
+            fig, ax = plt.subplots(figsize=(7, 7))
+            ax.plot(track_x, track_y, color='black', linewidth=1.0, linestyle='--',
+                    alpha=0.5, zorder=1)
+            if len(xs) > 1:
+                # LineCollection instead of scatter: at control-loop sample density,
+                # scatter markers overlap into a solid blob and hide the track underneath.
+                points = np.array([xs, ys]).T.reshape(-1, 1, 2)
+                segments = np.concatenate([points[:-1], points[1:]], axis=1)
+                seg_colors = [STATE_COLORS.get(s, '#cccccc') for s in states[:-1]]
+                ax.add_collection(LineCollection(segments, colors=seg_colors, linewidths=1.5, zorder=2))
+                ax.update_datalim(points.reshape(-1, 2))
+                ax.autoscale_view()
+            ax.set_aspect('equal', adjustable='datalim')
+            ax.set_xlabel('x [m]')
+            ax.set_ylabel('y [m]')
+            ax.set_title(f'Lap {lap}: driven trajectory vs. ground-truth track')
+            ax.grid(True, alpha=0.3)
+
+            track_handle = mlines.Line2D(
+                [], [], color='black', linestyle='--', alpha=0.5, label='Ground-truth track')
+            state_handles = [
+                mpatches.Patch(color=STATE_COLORS.get(s, '#cccccc'), label=s)
+                for s in STATE_ORDER if s in set(states)
+            ]
+            ax.legend(handles=[track_handle] + state_handles, loc='best', fontsize=7)
+
+            fig.tight_layout()
+            fig.savefig(out_dir / f'track_lap_{lap:02d}.png', dpi=150)
+            plt.close(fig)
 
     def _plot_metrics_summary_table(self, plt, save_path):
         rows = []

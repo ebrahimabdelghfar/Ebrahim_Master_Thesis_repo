@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <csignal>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -132,6 +133,16 @@ public:
 
     RCLCPP_INFO(
       get_logger(), "adaptive_controller_manager ready, starting in BOOTSTRAP_PP");
+  }
+
+  // Called from the SIGINT/SIGTERM handler so a killed manager leaves the
+  // car stopped instead of holding its last nonzero /drive command.
+  void publishZeroCommand()
+  {
+    ackermann_msgs::msg::AckermannDriveStamped cmd;
+    cmd.header.stamp = now();
+    cmd.header.frame_id = "base_link";
+    drive_pub_->publish(cmd);
   }
 
 private:
@@ -882,10 +893,29 @@ private:
 
 }  // namespace adaptive_controller_manager
 
+namespace
+{
+// Signal handlers can't take arguments, so the node is stashed here. Set
+// before installing the handlers and used to fire a zero /drive command
+// ahead of shutdown on Ctrl+C or a kill signal.
+std::shared_ptr<adaptive_controller_manager::ManagerNode> g_manager_node;
+
+void onShutdownSignal(int /*signum*/)
+{
+  if (g_manager_node) {
+    g_manager_node->publishZeroCommand();
+  }
+  rclcpp::shutdown();
+}
+}  // namespace
+
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<adaptive_controller_manager::ManagerNode>();
+  g_manager_node = node;
+  std::signal(SIGINT, onShutdownSignal);
+  std::signal(SIGTERM, onShutdownSignal);
   // MultiThreadedExecutor: sysid/update_params (server) and mpc/update_params
   // (client) each run on their own ReentrantCallbackGroup so neither ever
   // delays the arbitration timer, which stays on the default group.
@@ -893,5 +923,6 @@ int main(int argc, char ** argv)
   executor.add_node(node);
   executor.spin();
   rclcpp::shutdown();
+  g_manager_node.reset();
   return 0;
 }

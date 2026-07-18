@@ -86,8 +86,12 @@ class HandoverHistoryBuffer:
         self.steering = []
         self.speed_cmd = []
         self.solve_time_ms = []
+        self.pos_x = []
+        self.pos_y = []
+        self.lap_idx = []
 
-    def add(self, t, state, e_y, heading_error, v_x, steering, speed_cmd, solve_time_ms=0.0):
+    def add(self, t, state, e_y, heading_error, v_x, steering, speed_cmd, solve_time_ms=0.0,
+            pos_x=0.0, pos_y=0.0, lap_idx=0):
         self._count += 1
         if (self._count - 1) % self._stride != 0:
             return
@@ -99,6 +103,9 @@ class HandoverHistoryBuffer:
         self.steering.append(steering)
         self.speed_cmd.append(speed_cmd)
         self.solve_time_ms.append(solve_time_ms)
+        self.pos_x.append(pos_x)
+        self.pos_y.append(pos_y)
+        self.lap_idx.append(lap_idx)
         if len(self.t) > 2 * self.max_points:
             self.t = self.t[::2]
             self.state = self.state[::2]
@@ -108,6 +115,9 @@ class HandoverHistoryBuffer:
             self.steering = self.steering[::2]
             self.speed_cmd = self.speed_cmd[::2]
             self.solve_time_ms = self.solve_time_ms[::2]
+            self.pos_x = self.pos_x[::2]
+            self.pos_y = self.pos_y[::2]
+            self.lap_idx = self.lap_idx[::2]
             self._stride *= 2
 
 
@@ -210,12 +220,19 @@ class LapTracker:
         self._last_s = None
         self._lap_start_t = None
         self.lap_times = []
+        self.current_lap = 0
 
     def set_waypoints(self, x_m, y_m, s_m):
         self._x = np.asarray(x_m, dtype=float)
         self._y = np.asarray(y_m, dtype=float)
         self._s = np.asarray(s_m, dtype=float)
         self._track_length = float(self._s.max()) if self._s.size else 0.0
+
+    def get_waypoints_xy(self):
+        return self._x, self._y
+
+    def current_lap_index(self) -> int:
+        return self.current_lap
 
     def ready(self) -> bool:
         return self._x is not None and self._x.size > 0
@@ -238,6 +255,8 @@ class LapTracker:
                 if self._lap_start_t is not None:
                     self.lap_times.append(t - self._lap_start_t)
                 self._lap_start_t = t
+                self.current_lap += 1
         if self._lap_start_t is None:
             self._lap_start_t = t
+            self.current_lap = 1
         self._last_s = s
