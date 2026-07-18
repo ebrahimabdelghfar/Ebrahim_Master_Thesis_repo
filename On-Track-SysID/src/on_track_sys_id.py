@@ -11,8 +11,10 @@ import csv
 from nav_msgs.msg import Odometry
 from ackermann_msgs.msg import AckermannDriveStamped
 from std_msgs.msg import Float64MultiArray, String, Bool
+from sensor_msgs.msg import Imu
 from datetime import datetime
 import sys # Ensure sys is imported
+import torch
 from tqdm import tqdm
 
 from ament_index_python.packages import get_package_share_directory
@@ -20,18 +22,20 @@ from adaptive_controller_interfaces.srv import IdentifiedParam
 
 # Import helpers - handle both installed and development paths
 try:
-    from helpers.train_model import nn_train, get_model_param
+    from helpers.train_model import nn_train, get_model_param, resolve_device
     from helpers.pacejka_formula import pacejka_formula
     from helpers.benchmarking_metrics import OnlineBenchmark
+    from helpers.friction_warmstart import estimate_mu_from_buffer, estimate_mu_from_imu
 except ImportError:
     import sys
     # Add the src directory to path for development
     src_path = os.path.dirname(os.path.abspath(__file__))
     if src_path not in sys.path:
         sys.path.insert(0, src_path)
-    from helpers.train_model import nn_train, get_model_param
+    from helpers.train_model import nn_train, get_model_param, resolve_device
     from helpers.pacejka_formula import pacejka_formula
     from helpers.benchmarking_metrics import OnlineBenchmark
+    from helpers.friction_warmstart import estimate_mu_from_buffer, estimate_mu_from_imu
 
 
 class OnTrackSysId(Node):
@@ -73,6 +77,7 @@ class OnTrackSysId(Node):
         self.package_path = get_package_share_directory('on_track_sys_id')
         # Load parameters
         self.load_parameters()
+        self.log_torch_device()
         self.setup_data_storage()
 
         # Subscribe to the topics using the loaded parameter values
@@ -135,6 +140,14 @@ class OnTrackSysId(Node):
             self.get_logger().warn(f"Could not load model parameters: {e}")
             self.model_params = None
 
+        # Cold-start friction warm-start (see maybe_compute_warm_start_mu()) -
+        # applies only once, to the node's first-ever identification cycle.
+        self._is_first_identification = True
+        warm_start_cfg = (self.model_params or {}).get('friction_warm_start', {})
+        if warm_start_cfg.get('enable', False) and warm_start_cfg.get('accel_source', 'finite_diff') == 'imu':
+            imu_topic = warm_start_cfg.get('imu_topic', '/imu')
+            self.imu_sub = self.create_subscription(Imu, imu_topic, self.imu_cb, 1)
+
         self.prev_v_y = 0.0
         self.prev_omega = 0.0
         self.last_time = self.get_clock().now()
@@ -179,6 +192,16 @@ class OnTrackSysId(Node):
         self.current_state = np.zeros(4)
         self._collection_logged = False
 
+        # Friction warm-start (accel_source: imu path) - a rolling buffer of
+        # [a_x, a_y] kept in exact lockstep with self.data (appended at the
+        # same collect_data() ticks), so state/accel samples are 1:1 aligned
+        # by construction regardless of the IMU's actual publish rate
+        # (zero-order-hold: each tick uses the most recent IMU sample seen).
+        # Harmless to always allocate even if accel_source: finite_diff.
+        self._imu_accel_buffer = np.zeros((self.timesteps, 2))
+        self._latest_imu_accel = np.zeros(2)
+        self._imu_msg_count = 0
+
     def load_parameters(self):
         """
         Load neural network parameters from params/nn_params.yaml
@@ -186,7 +209,34 @@ class OnTrackSysId(Node):
         yaml_file = os.path.join(self.package_path, 'params', 'nn_params.yaml')
         with open(yaml_file, 'r') as file:
             self.nn_params = yaml.safe_load(file)
-    
+
+    def log_torch_device(self):
+        """
+        Logs which device (CPU or GPU) torch will actually train/simulate on,
+        resolved the same way train_model.py's resolve_device() will resolve
+        it at training time (nn_params.yaml's `device: auto|cpu|cuda`) - so
+        this is a truthful preview, not a separate/possibly-inconsistent check.
+
+        Also printed to stderr (not just get_logger().info()): sys_id.launch.py
+        runs this node with `--log-level warn` (suppresses INFO-level rclpy
+        logs entirely - see that launch file's own comment) and `output='log'`
+        (keeps this node's stdout out of the live `ros2 launch` console,
+        routing it to the per-run log file instead). stderr is the one
+        channel that's still empirically visible on the launch console under
+        that config (e.g. scipy's import-time UserWarning shows up there) -
+        mirroring onto it is what actually makes this line visible live,
+        rather than only ever landing in a log file nobody's tailing.
+        """
+        device = resolve_device(self.nn_params)
+        if device.type == 'cuda':
+            gpu_name = torch.cuda.get_device_name(device)
+            msg = (f"Torch device: cuda ({gpu_name}, torch {torch.__version__}, "
+                   f"CUDA {torch.version.cuda})")
+        else:
+            msg = f"Torch device: cpu (torch {torch.__version__})"
+        self.get_logger().info(msg)
+        print(f"[on_track_sys_id] {msg}", file=sys.stderr, flush=True)
+
     def export_data_as_csv(self):
         """
         Export collected data as a CSV file.
@@ -215,7 +265,12 @@ class OnTrackSysId(Node):
         
     def ackermann_cb(self, msg):
         self.current_state[3] = msg.drive.steering_angle
-        
+
+    def imu_cb(self, msg):
+        self._latest_imu_accel[0] = msg.linear_acceleration.x
+        self._latest_imu_accel[1] = msg.linear_acceleration.y
+        self._imu_msg_count += 1
+
     def collect_data(self):
         """
         Collects data during simulation. Called every tick regardless of
@@ -225,6 +280,8 @@ class OnTrackSysId(Node):
         if self.current_state[0] > 1:  # Only collect data when the car is moving
             self.data = np.roll(self.data, -1, axis=0)
             self.data[-1] = self.current_state
+            self._imu_accel_buffer = np.roll(self._imu_accel_buffer, -1, axis=0)
+            self._imu_accel_buffer[-1] = self._latest_imu_accel
             self.counter += 1
 
             # Log progress bar every 2% to avoid spamming too much but keeping it fluid
@@ -253,13 +310,62 @@ class OnTrackSysId(Node):
             return True
         return False
             
-    def run_nn_train(self):
+    def maybe_compute_warm_start_mu(self):
+        """
+        Non-vision friction warm-start (see helpers/friction_warmstart.py):
+        estimates a cold-start D_f/D_r initial guess from the buffer this
+        node already collects, replacing the static pacejka_params.yaml
+        default for the FIRST identification cycle only. Must be called
+        (and read self.data) BEFORE run_nn_train() - train_model.py's
+        filter_data() mutates its training_data argument's columns in place,
+        and self.data is passed by reference, so reading after training
+        would silently see Butterworth-filtered data instead of raw odom.
+        """
+        if not self._is_first_identification or self.model_params is None:
+            return None
+        cfg = self.model_params.get('friction_warm_start', {})
+        if not cfg.get('enable', False):
+            return None
+
+        l_f, l_r = self.model_params['l_f'], self.model_params['l_r']
+        accel_source = cfg.get('accel_source', 'finite_diff')
+
+        if accel_source == 'imu':
+            if self._imu_msg_count == 0:
+                # By the time this runs, data_collection_duration seconds
+                # have already elapsed - if the IMU topic were real, at
+                # least one message would have arrived by now. No need for
+                # a separate imu_wait_timeout_s timer on top of that.
+                self.get_logger().warn(
+                    f"friction_warm_start.accel_source is 'imu' but no message ever "
+                    f"arrived on {cfg.get('imu_topic', '/imu')} - falling back to finite_diff.")
+                mu_hat, n_used = estimate_mu_from_buffer(self.data.copy(), l_f, l_r, 1.0 / self.rate, cfg)
+            else:
+                mu_hat, n_used = estimate_mu_from_imu(
+                    self.data.copy(), self._imu_accel_buffer.copy(), l_f, l_r, cfg)
+        else:
+            mu_hat, n_used = estimate_mu_from_buffer(self.data.copy(), l_f, l_r, 1.0 / self.rate, cfg)
+
+        if mu_hat is None:
+            self.get_logger().warn(
+                f"Friction warm-start: only {n_used} low-slip samples "
+                f"(< min_samples={cfg.get('min_samples', 20)}) - falling back to "
+                "static pacejka_params.yaml D default.")
+            return None
+
+        self.get_logger().info(
+            f"Friction warm-start ({accel_source}): mu_hat={mu_hat:.4f} from {n_used} low-slip samples.")
+        return mu_hat
+
+    def run_nn_train(self, warm_start_mu=None):
         """
         Initiates training of the neural network using collected data.
         """
         self.get_logger().info("Training neural network...")
-        nn_train(self.data, self.racecar_version, self.save_LUT_name, self.plot_model)
-        
+        nn_train(self.data, self.racecar_version, self.save_LUT_name, self.plot_model,
+                  warm_start_mu=warm_start_mu)
+
+
     def publish_estimates(self):
         """
         Calculates and publishes estimated state and error using the identified parameters.
@@ -377,7 +483,9 @@ class OnTrackSysId(Node):
             # (expensive) retrain below more than one tick at a time.
             return
 
-        self.run_nn_train()
+        warm_start_mu = self.maybe_compute_warm_start_mu()
+        self.run_nn_train(warm_start_mu=warm_start_mu)
+        self._is_first_identification = False
         self.export_data_as_csv()
 
         self.get_logger().info("Reloading parameters for estimation...")

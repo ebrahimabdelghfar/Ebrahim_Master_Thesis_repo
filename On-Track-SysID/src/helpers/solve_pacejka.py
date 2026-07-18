@@ -121,9 +121,15 @@ def pacejka_error(params, *args):
     return y - F_y
 
 
+# [B, C, D, E] bounds shared by both axles. Single-sourced here so any other
+# module needing the D (peak-friction-coefficient) clip range - e.g. the
+# friction warm-start estimator - imports this instead of duplicating it.
+PACEJKA_BOUNDS = ([1.0, 0.1, 0.1, 0.0], [20.0, 20.0, 20.0, 5.0])
+
+
 def solve_pacejka(model, v_x, v_y, omega, delta):
     alpha_f, alpha_r, F_zf, F_zr, F_yf, F_yr = analyse_tires(model, v_x, v_y, omega, delta)
-    bounds = ([1.0, 0.1, 0.1, 0.0], [20.0, 20.0, 20.0, 5.0])
+    bounds = PACEJKA_BOUNDS
 
     # Optional solver tuning through model dict; defaults remain backward-compatible.
     solver_cfg = {

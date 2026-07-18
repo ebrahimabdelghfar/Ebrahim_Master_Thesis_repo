@@ -7,6 +7,10 @@ Supported architectures (set via nn_params.yaml -> nn_architecture):
   wide            : 4->16->2 MLP, 114 params [drop-in, weight_decay regularized]
   physics_inputs  : 6->8->2  MLP, 74 params  [slip-angle augmented inputs, RECOMMENDED]
   ensemble        : 3x(4->8->2), 174 params  [averaged ensemble, best noise robustness]
+  s4              : S4D temporal-residual (see helpers/s4_residual.py), ~102-110 params
+                    [windowed sequence input, carries hidden state through
+                    simulated_data_gen() - see s4_residual.py's module docstring
+                    for the S4D-vs-S4 scoping note. Not combinable with ensemble.]
 
 NN role: intermediate residual corrector only.
 Final model artifact: Pacejka parameters [Bf,Cf,Df,Ef,Br,Cr,Dr,Er].
@@ -25,14 +29,15 @@ from scipy.signal import butter, filtfilt
 from torch.optim import Adam
 from torch.utils.data import TensorDataset, DataLoader
 from helpers.generate_predictions import generate_predictions
-from helpers.generate_inputs_errors import generate_inputs_errors
+from helpers.generate_inputs_errors import generate_inputs_errors, generate_sequence_windows
 from helpers.data_processing import compute_slip_angles
 from helpers.pacejka_formula import pacejka_formula
 from helpers.plot_results import plot_results
-from helpers.solve_pacejka import solve_pacejka
+from helpers.solve_pacejka import solve_pacejka, PACEJKA_BOUNDS
 from helpers.save_model import save
 from helpers.load_model import get_dotdict
 from helpers.simulate_model import LookupGenerator
+from helpers.s4_residual import S4DResidual
 from tqdm import tqdm
 
 # Use ament_index for package path lookup
@@ -52,6 +57,21 @@ def log_info(msg):
 def log_warn(msg):
     logger.warning(msg)
     print(f"[WARN] {msg}")
+
+def resolve_device(params: dict) -> torch.device:
+    """nn_params.yaml's `device` key: auto | cpu | cuda. `auto` (default) picks
+    cuda if torch.cuda.is_available(), else cpu. `cuda` requested with no GPU
+    available falls back to cpu with a warning rather than crashing."""
+    choice = (params or {}).get('device', 'auto')
+    if choice == 'cpu':
+        return torch.device('cpu')
+    if choice == 'cuda':
+        if not torch.cuda.is_available():
+            log_warn("nn_params.yaml device: cuda requested but torch.cuda.is_available() "
+                      "is False (no GPU, or a CPU-only torch build) - falling back to cpu.")
+            return torch.device('cpu')
+        return torch.device('cuda')
+    return torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
 def get_package_path(package_name='on_track_sys_id'):
     if USE_AMENT:
@@ -100,15 +120,20 @@ def torch_pacejka_force(params, alpha, F_z):
     E = float(params[3])
     return F_z * D * torch.sin(C * torch.atan(B * alpha - E * (B * alpha - torch.atan(B * alpha))))
 
+def _last_step(X):
+    """(N,W,d) windowed s4 input -> (N,d) at the window's last timestep; (N,d) passes through."""
+    return X[:, -1, :] if X.dim() == 3 else X
+
 def compute_physics_informed_loss(nn_model, X_train, y_train, model, dt, lambda_cfg):
     criterion = nn.MSELoss()
     outputs = nn_model(X_train)
     data_loss = criterion(outputs, y_train)
 
-    v_x = X_train[:, 0]
-    v_y = X_train[:, 1]
-    omega = X_train[:, 2]
-    delta = X_train[:, 3]
+    X_state = _last_step(X_train)
+    v_x = X_state[:, 0]
+    v_y = X_state[:, 1]
+    omega = X_state[:, 2]
+    delta = X_state[:, 3]
 
     m = float(model['m'])
     I_z = float(model['I_z'])
@@ -155,12 +180,12 @@ def compute_physics_informed_loss(nn_model, X_train, y_train, model, dt, lambda_
         steady_loss = torch.mean(lat_dyn_residual ** 2) + torch.mean(yaw_dyn_residual ** 2)
 
     X_mirror = X_train.clone()
-    X_mirror[:, 1] = -X_mirror[:, 1]
-    X_mirror[:, 2] = -X_mirror[:, 2]
-    X_mirror[:, 3] = -X_mirror[:, 3]
-    if X_mirror.shape[1] >= 6:
-        X_mirror[:, 4] = -X_mirror[:, 4]
-        X_mirror[:, 5] = -X_mirror[:, 5]
+    X_mirror[..., 1] = -X_mirror[..., 1]
+    X_mirror[..., 2] = -X_mirror[..., 2]
+    X_mirror[..., 3] = -X_mirror[..., 3]
+    if X_mirror.shape[-1] >= 6:
+        X_mirror[..., 4] = -X_mirror[..., 4]
+        X_mirror[..., 5] = -X_mirror[..., 5]
     outputs_mirror = nn_model(X_mirror)
     symmetry_loss = torch.mean((outputs + outputs_mirror) ** 2)
 
@@ -260,46 +285,60 @@ def build_model(params: dict) -> nn.Module:
         n_members = params.get('ensemble_n_members', 3)
         base_seed = params.get('ensemble_base_seed', 42)
         return EnsembleMLP(slope, n_members, base_seed)
+    elif arch == 's4':
+        s4_cfg = params.get('s4', {}) or {}
+        d_in = 6 if s4_cfg.get('use_physics_inputs', False) else 4
+        return S4DResidual(
+            d_in=d_in,
+            H=s4_cfg.get('num_channels', 4),
+            N=s4_cfg.get('state_dim', 4),
+            num_layers=s4_cfg.get('num_layers', 1),
+            dt_min=s4_cfg.get('dt_min', 0.001),
+            dt_max=s4_cfg.get('dt_max', 0.1),
+            leaky_relu_slope=slope,
+        )
     else:
         raise ValueError(f"Unknown architecture: {arch}")
 
 def preprocess_inputs(X_raw, params: dict, vehicle_model=None) -> np.ndarray:
     arch = params.get('nn_architecture', 'baseline')
-    
+    s4_cfg = params.get('s4', {}) or {}
+    augment = (arch == 'physics_inputs') or (arch == 's4' and s4_cfg.get('use_physics_inputs', False))
+
     if isinstance(X_raw, torch.Tensor):
         X_np = X_raw.detach().cpu().numpy()
     else:
         X_np = np.asarray(X_raw)
-        
-    if arch == 'physics_inputs':
-        if vehicle_model is not None:
-            lf = vehicle_model['l_f']
-            lr = vehicle_model['l_r']
-        else:
-            lf = params.get('physics_inputs_lf', 0.15795)
-            lr = params.get('physics_inputs_lr', 0.17205)
-        
-        if X_np.ndim == 1:
-            vx, vy, omega, delta = X_np[0], X_np[1], X_np[2], X_np[3]
-        else:
-            vx, vy, omega, delta = X_np[:, 0], X_np[:, 1], X_np[:, 2], X_np[:, 3]
-            
-        alpha_f, alpha_r = compute_slip_angles(vx, vy, omega, delta, lf, lr)
-        
-        if X_np.ndim == 1:
-            return np.concatenate([X_np, [alpha_f, alpha_r]])
-        else:
-            return np.column_stack([X_np, alpha_f, alpha_r])
-    else:
+
+    if not augment:
         return X_np
 
+    if vehicle_model is not None:
+        lf = vehicle_model['l_f']
+        lr = vehicle_model['l_r']
+    else:
+        lf = params.get('physics_inputs_lf', 0.15795)
+        lr = params.get('physics_inputs_lr', 0.17205)
+
+    # Ellipsis-indexed: works uniformly whether X_np is a single row (4,),
+    # a flat batch (N,4), or an s4 window batch (N,W,4) - compute_slip_angles
+    # is already elementwise numpy, so it's rank-agnostic too.
+    vx, vy, omega, delta = X_np[..., 0], X_np[..., 1], X_np[..., 2], X_np[..., 3]
+    alpha_f, alpha_r = compute_slip_angles(vx, vy, omega, delta, lf, lr)
+
+    if X_np.ndim == 1:
+        return np.concatenate([X_np, [alpha_f, alpha_r]])
+    return np.concatenate([X_np, alpha_f[..., np.newaxis], alpha_r[..., np.newaxis]], axis=-1)
+
 def train_residual_nn(X_train_raw, y_train, params: dict, vehicle_model=None, current_iteration=None, total_iterations=None) -> nn.Module:
-    model = build_model(params)
-    
+    device = resolve_device(params)
+    model = build_model(params).to(device)
+
     X_train_np = preprocess_inputs(X_train_raw, params, vehicle_model)
-    X_t = torch.tensor(X_train_np, dtype=torch.float32)
-    y_t = torch.tensor(y_train, dtype=torch.float32) if not isinstance(y_train, torch.Tensor) else y_train.clone().detach().to(torch.float32)
-    
+    X_t = torch.tensor(X_train_np, dtype=torch.float32, device=device)
+    y_t = (torch.tensor(y_train, dtype=torch.float32, device=device) if not isinstance(y_train, torch.Tensor)
+           else y_train.clone().detach().to(dtype=torch.float32, device=device))
+
     arch = params.get('nn_architecture', 'baseline')
     epochs = params.get('epochs', 200)
     lr = params.get('learning_rate', 0.0005)
@@ -312,7 +351,10 @@ def train_residual_nn(X_train_raw, y_train, params: dict, vehicle_model=None, cu
     loss_mode = params.get('loss_mode', 'mse')
     physics_loss_cfg = params.get('physics_loss', {})
     sample_dt = float(params.get('sample_dt', 0.02))
-    
+
+    if log_per_iteration:
+        log_info(f"Training on device: {device}")
+
     if arch == 'ensemble':
         members_to_train = list(model.members)
         seeds = [model.base_seed + i for i in range(model.n_members)]
@@ -404,15 +446,29 @@ def simulated_data_gen(nn_model, vehicle_model, avg_vel, nn_params):
     F_zr = m * 9.81 * l_f / l_wb
     dt = float(nn_params.get('sample_dt', 0.02))
     ode_solver = nn_params.get('ode_solver', 'euler').lower()
+    arch = nn_params.get('nn_architecture', 'baseline')
+    # Same device the model was trained on (train_residual_nn already resolved
+    # nn_params['device'] and moved the model there) - reading it back off the
+    # model itself keeps this in sync without re-running device resolution
+    # (and its cuda-unavailable fallback logic) a second time.
+    device = next(nn_model.parameters()).device
 
     timesteps = 500
-    
+
     v_y = np.zeros(timesteps)
     omega = np.zeros(timesteps)
     v_x = np.ones(timesteps)*avg_vel
     delta = np.linspace(0.0, 0.4, timesteps)
-    
+
     nn_model.eval()
+
+    # arch=='s4' carries hidden state across this whole 500-step rollout.
+    # simulated_data_gen() is called fresh from nn_train()'s outer loop every
+    # iteration with a newly-trained nn_model, so this local variable resets
+    # automatically each outer iteration - intentional, do NOT hoist it out
+    # to persist across nn_train() iterations, since each iteration's Pacejka
+    # model has changed and stale state would carry over stale dynamics.
+    s4_state = nn_model.init_state(1, device=device) if arch == 's4' else None
     
     def dynamics(vy_val, omega_val, vx_val, delta_val):
         alpha_f_val = -np.arctan((vy_val + omega_val * l_f) / vx_val) + delta_val
@@ -470,15 +526,18 @@ def simulated_data_gen(nn_model, vehicle_model, avg_vel, nn_params):
             
         input_raw = torch.tensor([vx_t, vy_t, omega_t, delta_t], dtype=torch.float32)
         input_proc = preprocess_inputs(input_raw, nn_params, vehicle_model)
-        input_proc_t = torch.tensor(input_proc, dtype=torch.float32)
+        input_proc_t = torch.tensor(input_proc, dtype=torch.float32, device=device)
         if input_proc_t.dim() == 1:
             input_proc_t = input_proc_t.unsqueeze(0)
             
         with torch.no_grad():
-            predicted_means = nn_model(input_proc_t)
+            if arch == 's4':
+                predicted_means, s4_state = nn_model.step(input_proc_t, s4_state)
+            else:
+                predicted_means = nn_model(input_proc_t)
             if predicted_means.dim() == 2:
                 predicted_means = predicted_means.squeeze(0)
-                
+
         v_y[t+1] = vy_next + predicted_means[0].item()
         omega[t+1] = omega_next + predicted_means[1].item()
     
@@ -509,6 +568,7 @@ def get_model_param(racecar_version):
         "pacejka_num_starts": solver_cfg.get('num_starts', 1),
         "pacejka_start_jitter": solver_cfg.get('start_jitter', 0.05),
         "pacejka_seed": solver_cfg.get('seed', None),
+        "friction_warm_start": pacejka_params.get('friction_warm_start', {}),
         "m": vehicle_params['m'],
         "I_z": vehicle_params['I_z'],
         "l_f": vehicle_params['l_f'],
@@ -525,29 +585,62 @@ def get_nn_params():
         nn_params = yaml.safe_load(file)
     return nn_params
 
-def generate_training_set(training_data, model, nn_params=None):
-    dt = float((nn_params or {}).get('sample_dt', 0.02))
+def generate_training_set(training_data, model, nn_params=None, segment_len=None):
+    nn_params = nn_params or {}
+    dt = float(nn_params.get('sample_dt', 0.02))
     v_y_next_pred, omega_next_pred = generate_predictions(training_data, model, dt=dt)
     X_train, y_train = generate_inputs_errors(v_y_next_pred, omega_next_pred, training_data)
+
+    if nn_params.get('nn_architecture', 'baseline') == 's4':
+        s4_cfg = nn_params.get('s4', {}) or {}
+        window_size = int(s4_cfg.get('sequence_length', 20))
+        if segment_len is None:
+            raise ValueError("generate_training_set: segment_len is required for nn_architecture: s4")
+        X_train, y_train = generate_sequence_windows(X_train, y_train, window_size, segment_len)
+
     return X_train, y_train
 
-def nn_train(training_data, racecar_version, save_LUT_name, plot_model):
+def nn_train(training_data, racecar_version, save_LUT_name, plot_model, warm_start_mu=None):
     model = get_model_param(racecar_version)
     nn_params = get_nn_params()
-    
+
+    if warm_start_mu is not None:
+        d_lower, d_upper = PACEJKA_BOUNDS[0][2], PACEJKA_BOUNDS[1][2]
+        d_val = float(np.clip(warm_start_mu, d_lower, d_upper))
+        log_info(
+            f"Cold-start friction warm-start: overriding D_f/D_r initial guess "
+            f"({model['C_Pf_model'][2]:.4f}/{model['C_Pr_model'][2]:.4f} static default) "
+            f"with mu_hat={warm_start_mu:.4f} (clipped {d_val:.4f})")
+        model['C_Pf_model'][2] = d_val
+        model['C_Pr_model'][2] = d_val
+
     num_of_iterations = nn_params.get('num_of_iterations', 6)
     arch = nn_params.get('nn_architecture', 'baseline')
-    
-    training_data = process_data(training_data, model)   
-     
+
+    # filter_data() (inside process_data) trims a fixed 5 rows; negate_data()
+    # then concatenates the filtered trace with its mirrored copy. segment_len
+    # is each of those two physically-continuous halves' length, needed by
+    # generate_training_set()'s s4 windowing to avoid windowing across the
+    # boundary between them.
+    segment_len = training_data.shape[0] - 5
+    if arch == 's4':
+        window_size = int((nn_params.get('s4', {}) or {}).get('sequence_length', 20))
+        if segment_len - 1 < window_size:
+            raise ValueError(
+                f"nn_architecture: s4 needs segment_len-1={segment_len - 1} >= "
+                f"s4.sequence_length={window_size} - increase data_collection_duration "
+                "or lower s4.sequence_length in nn_params.yaml")
+
+    training_data = process_data(training_data, model)
+
     avg_vel = np.mean(training_data[:,0])
     avg_vel = np.clip(avg_vel, 2.0, 4)
-    
+
     for i in range(1, num_of_iterations+1):
         if i == num_of_iterations:
             plot_model = True
-            
-        X_train, y_train = generate_training_set(training_data, model, nn_params)
+
+        X_train, y_train = generate_training_set(training_data, model, nn_params, segment_len=segment_len)
         
         log_info(f"Training iteration {i}/{num_of_iterations} | Architecture: {arch} | Loss Mode: {nn_params.get('loss_mode', 'mse')}")
         

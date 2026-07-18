@@ -17,3 +17,27 @@ pacejka_solver:
   num_starts: 1
   start_jitter: 0.05
   seed: null
+
+# Friction-based cold-start warm-start for the Pacejka D (peak-mu)
+# coefficient's initial guess. Applied ONLY ONCE per node lifetime - the
+# very first identification cycle (see on_track_sys_id.py's
+# self._is_first_identification gate and helpers/friction_warmstart.py).
+# Every subsequent reidentification_interval_s retrain is unaffected: it
+# keeps cold-starting iteration 1 from pacejka_model's static D value
+# exactly as before this feature was added (see train_model.py::nn_train).
+# Non-vision analog of arXiv:2603.09399's camera-based friction prior,
+# adapted from arXiv:2509.15423's model-free friction-from-acceleration idea.
+friction_warm_start:
+  enable: true
+  method: friction_ratio       # only implementation for now; reserved key for future alternatives
+  accel_source: finite_diff    # finite_diff (default, verified working in SIM) | imu (real hardware
+                                # only - f1tenth_simulator's own /imu publisher is an unimplemented
+                                # stub, see node/simulator.cpp::pub_imu(); falls back to finite_diff
+                                # with a warning if no IMU message arrives within imu_wait_timeout_s)
+  imu_topic: "/imu"             # only used when accel_source: imu
+  imu_wait_timeout_s: 2.0       # only used when accel_source: imu
+  low_slip_alpha_f_max: 0.15   # rad — tighter subset of analyse_tires()'s abs(alpha_f)<=0.5
+  low_slip_alpha_r_max: 0.08   # rad — tighter subset of analyse_tires()'s abs(alpha_r)<=0.2
+  vx_min: 1.5                  # m/s — margin above collect_data()'s own vx>1 gate
+  omega_max: 5.0                # rad/s — mirrors analyse_tires()'s abs(omega)<=5 filter
+  min_samples: 20                # below this, skip override, fall back to static D default

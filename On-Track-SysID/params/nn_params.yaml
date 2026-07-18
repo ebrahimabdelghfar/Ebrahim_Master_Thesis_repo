@@ -1,7 +1,7 @@
 data_collection_duration: 30
 num_of_iterations: 6   # NN-train <-> Pacejka-refit co-identification loop count (README-documented, was previously hardcoded and ignored)
 sample_dt: 0.02         # MUST match 1/rate in on_track_sys_id.py (rate=50 Hz) - single source of truth for the nominal integration step used by generate_predictions.py, simulated_data_gen, and the physics-informed loss
-nn_architecture: "physics_inputs"   # options: baseline | wide | physics_inputs | ensemble
+nn_architecture: "s4"   # options: baseline | wide | physics_inputs | ensemble | s4
 
 ode_solver: "rk4" # options: euler | rk2 | rk4
 
@@ -14,6 +14,7 @@ physics_loss:
   steady_omega_dot_threshold: 6.0
 
 # Shared hyperparameters (apply to all architectures)
+device: cuda            # options: auto | cpu | cuda - auto picks cuda if torch.cuda.is_available(), else cpu; cuda with no GPU falls back to cpu with a warning
 learning_rate: 0.0005
 epochs: 200
 batch_size: -1          # -1 = full batch (entire dataset), positive int = mini-batch
@@ -27,6 +28,26 @@ ensemble_base_seed: 42
 # Physics-inputs-specific
 physics_inputs_lf: 0.15795   # meters — MUST match pacejka_params.yaml lf value
 physics_inputs_lr: 0.17205   # meters — MUST match pacejka_params.yaml lr value
+
+# S4D-specific (nn_architecture: s4) - a diagonal Structured State Space
+# temporal-residual model (Gu, Goel & Ré, "On the Parameterization and
+# Initialization of Diagonal State Space Models", arXiv:2206.11893) - NOT the
+# original FFT/Cauchy-kernel S4 (arXiv:2111.00396). S4D shares the same
+# HiPPO-derived complex-diagonal state matrix but is evaluated with a plain
+# causal recurrent scan - the right complexity/risk tradeoff given this
+# pipeline's short (~1500-sample) training sequences, vs. S4's FFT-convolution
+# machinery which targets sequences of thousands-to-millions of steps. See
+# helpers/s4_residual.py's module docstring for the full scoping note.
+s4:
+  state_dim: 4              # N: complex state dimension per channel
+  num_channels: 4            # H: number of independent SISO S4D channels
+  num_layers: 1               # stacked S4D blocks (residual-connected); keep at 1 - ~30s of data, don't overfit with a deep stack
+  sequence_length: 20          # W: sliding-window length (samples) fed per training example; 20 @ 50Hz sample_dt = 0.4s, matched to tire-relaxation timescales
+  dt_min: 0.001                 # learnable per-channel discretization step, log-uniform init range (standard S4D defaults) - NOT the same as sample_dt above, this is a free SSM hyperparameter, not tied to the physical 1/rate timestep
+  dt_max: 0.1
+  use_physics_inputs: false      # true => augment each timestep with slip angles alpha_f/alpha_r (6-dim input) before the S4D input projection
+  # NOTE: nn_architecture: ensemble + s4 is not supported - these are
+  # mutually exclusive top-level architecture choices, not composable.
 
 # Training behavior
 early_stopping: false          # set true to enable early stopping

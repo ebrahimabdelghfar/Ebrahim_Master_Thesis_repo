@@ -519,7 +519,14 @@ class AdaptiveControllerBenchmarkNode(Node):
         import numpy as np
         from matplotlib.collections import LineCollection
 
+        # Clear stale track_lap_*.png from a previous (e.g. longer) run first - otherwise
+        # a shorter run that never reaches lap N leaves that older run's track_lap_N.png
+        # sitting in out_dir, making it look like this run completed a lap it didn't.
+        for old in out_dir.glob('track_lap_*.png'):
+            old.unlink()
+
         track_x, track_y = self.lap_tracker.get_waypoints_xy()
+        n_completed = len(self.lap_tracker.lap_times)
 
         for lap in laps_present:
             xs = [x for x, idx in zip(h.pos_x, h.lap_idx) if idx == lap]
@@ -541,7 +548,10 @@ class AdaptiveControllerBenchmarkNode(Node):
             ax.set_aspect('equal', adjustable='datalim')
             ax.set_xlabel('x [m]')
             ax.set_ylabel('y [m]')
-            ax.set_title(f'Lap {lap}: driven trajectory vs. ground-truth track')
+            title = f'Lap {lap}: driven trajectory vs. ground-truth track'
+            if lap > n_completed:
+                title += ' (incomplete - run ended mid-lap)'
+            ax.set_title(title)
             ax.grid(True, alpha=0.3)
 
             track_handle = mlines.Line2D(

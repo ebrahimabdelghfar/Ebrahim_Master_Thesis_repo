@@ -27,10 +27,10 @@ mpc_path_tracking:
     # ---------------- Cost matrices ----------------
     # error order: [e_y, e_psi, vx_err, vy, r_err]
     cost:
-      Q: [200.0, 200.0, 200.0, 10.0, 10.0]
+      Q: [200.0, 10.0, 200.0, 10.0, 10.0]
       R: [10.0, 1.0]                # [steering, accel]
       R_rate: [50.0, 1.0]          # input-rate penalty
-      Qf: [200.0, 200.0, 200.0, 10.0, 10.0] #
+      Qf: [200.0, 10.0, 200.0, 10.0, 10.0] #
 
     # ---------------- Vehicle geometry / mass ----------------
     # Source: On-Track-SysID/models/SIM/SIM_pacejka.txt (identified, matches
