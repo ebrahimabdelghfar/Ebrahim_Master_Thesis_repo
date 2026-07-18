@@ -1,5 +1,9 @@
-from scipy.optimize import least_squares
+from types import SimpleNamespace
+from scipy.optimize import least_squares, minimize, differential_evolution
 import numpy as np
+
+# scipy.optimize.least_squares methods: gradient-based, need a residual vector + bounds.
+_LSQ_METHODS = ('trf', 'dogbox', 'lm')
 
 
 def _robust_f_scale(F_y, cfg_f_scale):
@@ -13,8 +17,35 @@ def _robust_f_scale(F_y, cfg_f_scale):
     return max(1e-3, 1.4826 * mad)
 
 
+def _pacejka_sse(params, alpha, F_z, F_y):
+    """Plain sum-of-squared-residuals objective for derivative-free/global solvers.
+
+    Nelder-Mead and differential-evolution optimize a scalar, not a residual
+    vector, so they can't use least_squares' soft_l1/f_scale robust loss -
+    they always see the raw SSE.
+    """
+    r = pacejka_error(params, alpha, F_z, F_y)
+    return float(np.dot(r, r))
+
+
 def _fit_pacejka_axle(alpha, F_z, F_y, start_params, bounds, solver_cfg):
-    """Fit one axle with optional lightweight multi-start for local-minimum robustness."""
+    """Fit one axle. method selects the optimizer family:
+
+    trf/dogbox/lm       - scipy.optimize.least_squares (gradient-based, fast, local).
+    nelder-mead         - scipy.optimize.minimize's derivative-free simplex search;
+                          same solver arXiv:2603.09399 (this repo's own SOTA follow-on
+                          paper) uses for iterative on-track Pacejka extraction.
+    differential-evolution - scipy.optimize.differential_evolution, a global
+                          population-based search; escapes local minima that
+                          multi-start trf/nelder-mead can still miss, at higher
+                          runtime cost. Same rationale this repo's own
+                          pacejka_identification/coefficient_identifier.py
+                          already applies via its genetic-algorithm identifier.
+
+    trf/dogbox/lm/nelder-mead all reuse the lightweight multi-start (jitter)
+    loop for local-minimum robustness; differential-evolution is already
+    global and runs once.
+    """
     method = solver_cfg.get('method', 'trf')
     loss = solver_cfg.get('loss', 'soft_l1')
     x_scale = solver_cfg.get('x_scale', 'jac')
@@ -28,6 +59,20 @@ def _fit_pacejka_axle(alpha, F_z, F_y, start_params, bounds, solver_cfg):
     ub = np.asarray(bounds[1], dtype=float)
     base = np.asarray(start_params, dtype=float)
 
+    if method == 'differential-evolution':
+        res = differential_evolution(
+            _pacejka_sse,
+            bounds=list(zip(lb, ub)),
+            args=(alpha, F_z, F_y),
+            seed=seed,
+            popsize=solver_cfg.get('de_popsize') or 15,
+            maxiter=solver_cfg.get('de_maxiter') or 1000,
+        )
+        return SimpleNamespace(x=res.x)
+
+    if method not in _LSQ_METHODS and method != 'nelder-mead':
+        raise ValueError(f"Unknown pacejka_solver.method: {method!r}")
+
     rng = np.random.default_rng(seed)
     starts = [np.clip(base, lb, ub)]
 
@@ -37,24 +82,36 @@ def _fit_pacejka_axle(alpha, F_z, F_y, start_params, bounds, solver_cfg):
             candidate = base + rng.normal(0.0, jitter * span)
             starts.append(np.clip(candidate, lb, ub))
 
-    best_res = None
+    best_x, best_cost = None, np.inf
     for x0 in starts:
-        res = least_squares(
-            pacejka_error,
-            x0,
-            args=(alpha, F_z, F_y),
-            bounds=bounds,
-            method=method,
-            loss=loss,
-            f_scale=f_scale,
-            x_scale=x_scale,
-            max_nfev=max_nfev,
-        )
+        if method in _LSQ_METHODS:
+            res = least_squares(
+                pacejka_error,
+                x0,
+                args=(alpha, F_z, F_y),
+                bounds=bounds,
+                method=method,
+                loss=loss,
+                f_scale=f_scale,
+                x_scale=x_scale,
+                max_nfev=max_nfev,
+            )
+            x, cost = res.x, res.cost
+        else:  # nelder-mead
+            res = minimize(
+                _pacejka_sse,
+                x0,
+                args=(alpha, F_z, F_y),
+                method='Nelder-Mead',
+                bounds=list(zip(lb, ub)),
+                options={'maxfev': max_nfev} if max_nfev else {},
+            )
+            x, cost = res.x, res.fun
 
-        if (best_res is None) or (res.cost < best_res.cost):
-            best_res = res
+        if cost < best_cost:
+            best_x, best_cost = x, cost
 
-    return best_res
+    return SimpleNamespace(x=best_x)
 
 def analyse_tires(model, v_x, v_y, omega, delta):
     delta = delta.copy()
@@ -141,6 +198,8 @@ def solve_pacejka(model, v_x, v_y, omega, delta):
         'num_starts': model.get('pacejka_num_starts', 1),
         'start_jitter': model.get('pacejka_start_jitter', 0.05),
         'seed': model.get('pacejka_seed', None),
+        'de_popsize': model.get('pacejka_de_popsize', None),
+        'de_maxiter': model.get('pacejka_de_maxiter', None),
     }
 
     # Fallback to previous coefficients when the filtered data is too sparse.

@@ -9,14 +9,30 @@ pacejka_ref:
 # Nonlinear least-squares settings for Pacejka identification.
 # Defaults are robust for noisy on-track data while keeping runtime low.
 pacejka_solver:
-  method: trf
-  loss: soft_l1
-  f_scale: null
-  x_scale: jac
-  max_nfev: null
-  num_starts: 1
+  # trf | dogbox | lm            - scipy.optimize.least_squares, gradient-based, fast, local.
+  # nelder-mead                  - scipy.optimize.minimize, derivative-free simplex search;
+  #                                 same solver arXiv:2603.09399 (this repo's own SOTA
+  #                                 follow-on paper) uses for iterative on-track Pacejka
+  #                                 extraction. Slower than trf, more robust to a poor
+  #                                 initial guess or a noisy/non-smooth cost surface.
+  # differential-evolution        - scipy.optimize.differential_evolution, a global
+  #                                 population-based search; escapes local minima that
+  #                                 multi-start trf/nelder-mead can still miss, at
+  #                                 significantly higher runtime cost. Same rationale
+  #                                 this repo's own pacejka_identification/
+  #                                 coefficient_identifier.py already applies via its
+  #                                 genetic-algorithm identifier.
+  method: differential-evolution 
+  loss: soft_l1               # trf/dogbox/lm only - ignored by nelder-mead/differential-evolution
+  f_scale: null                # trf/dogbox/lm only
+  x_scale: jac                  # trf/dogbox/lm only
+  max_nfev: null                 # trf/dogbox/lm (max function evals) / nelder-mead (maps to maxfev)
+  num_starts: 1                  # jitter restarts; applies to trf/dogbox/lm/nelder-mead,
+                                   # ignored by differential-evolution (already global)
   start_jitter: 0.05
-  seed: null
+  seed: null                       # also seeds differential-evolution's RNG
+  de_popsize: null                  # differential-evolution only; null = scipy default (15)
+  de_maxiter: null                  # differential-evolution only; null = scipy default (1000)
 
 # Friction-based cold-start warm-start for the Pacejka D (peak-mu)
 # coefficient's initial guess. Applied ONLY ONCE per node lifetime - the

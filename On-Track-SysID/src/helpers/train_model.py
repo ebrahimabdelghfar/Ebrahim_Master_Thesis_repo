@@ -568,6 +568,8 @@ def get_model_param(racecar_version):
         "pacejka_num_starts": solver_cfg.get('num_starts', 1),
         "pacejka_start_jitter": solver_cfg.get('start_jitter', 0.05),
         "pacejka_seed": solver_cfg.get('seed', None),
+        "pacejka_de_popsize": solver_cfg.get('de_popsize', None),
+        "pacejka_de_maxiter": solver_cfg.get('de_maxiter', None),
         "friction_warm_start": pacejka_params.get('friction_warm_start', {}),
         "m": vehicle_params['m'],
         "I_z": vehicle_params['I_z'],

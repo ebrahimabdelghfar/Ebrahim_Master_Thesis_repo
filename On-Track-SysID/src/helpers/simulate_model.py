@@ -125,7 +125,7 @@ class LookupGenerator:
         d_a_lats = np.diff(a_lats[0:max_idx])
         local_max_idx = np.argwhere(d_a_lats < 0)
         if local_max_idx.size != 0:
-          max_idx = local_max_idx[0]
+          max_idx = int(local_max_idx[0][0])
 
       # set everything above max_idx to nan
       self.lookup_table[max_idx+1:, vel_idx] = None
