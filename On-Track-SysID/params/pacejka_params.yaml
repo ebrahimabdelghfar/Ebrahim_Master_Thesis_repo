@@ -22,7 +22,7 @@ pacejka_solver:
   #                                 this repo's own pacejka_identification/
   #                                 coefficient_identifier.py already applies via its
   #                                 genetic-algorithm identifier.
-  method: differential-evolution 
+  method: trf 
   loss: soft_l1               # trf/dogbox/lm only - ignored by nelder-mead/differential-evolution
   f_scale: null                # trf/dogbox/lm only
   x_scale: jac                  # trf/dogbox/lm only

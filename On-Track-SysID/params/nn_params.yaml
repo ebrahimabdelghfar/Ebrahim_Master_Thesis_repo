@@ -1,11 +1,11 @@
 data_collection_duration: 30
 num_of_iterations: 6   # NN-train <-> Pacejka-refit co-identification loop count (README-documented, was previously hardcoded and ignored)
 sample_dt: 0.02         # MUST match 1/rate in on_track_sys_id.py (rate=50 Hz) - single source of truth for the nominal integration step used by generate_predictions.py, simulated_data_gen, and the physics-informed loss
-nn_architecture: "physics_inputs"   # options: baseline | wide | physics_inputs | ensemble | s4
+nn_architecture: "baseline"   # options: baseline | wide | physics_inputs | ensemble | s4
 
 ode_solver: "rk4" # options: euler | rk2 | rk4
 
-loss_mode: physics_informed # options: mse | physics_informed
+loss_mode: mse # options: mse | physics_informed
 physics_loss:
   lambda_steady: 0.1
   lambda_symmetry: 0.05
