@@ -6,7 +6,7 @@ reset= \033[0m
 # Usage: make [command]
 SHELL:=/bin/bash
 WORKSPACE=$(shell pwd)
-RACELINE_CSV?=$(WORKSPACE)/src/on_track_sys_id/config/raceline.csv
+RACELINE_CSV?=$(WORKSPACE)/traj_race_cl.csv
 WAYPOINT_TOPIC?=/raceline_waypoints
 FRAME_ID?=map
 PUBLISH_INITIAL_POSE?=true
@@ -29,7 +29,7 @@ launch_f1_simulator:
 	source /opt/ros/humble/setup.bash && source ${WORKSPACE}/install/setup.bash && \
 	ros2 launch f1tenth_simulator simulator.launch.py
 launch_raceline_publisher:
-	source /opt/ros/humble/setup.bash && source ${WORKSPACE}/install/setup.bash && \
+	@source /opt/ros/humble/setup.bash && source ${WORKSPACE}/install/setup.bash && \
 	ros2 launch raceline_publisher raceline_publisher.launch.py \
 	raceline_csv:=$(RACELINE_CSV) \
 	waypoint_topic:=$(WAYPOINT_TOPIC) \
