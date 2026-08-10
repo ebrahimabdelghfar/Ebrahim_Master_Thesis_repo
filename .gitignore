@@ -10,3 +10,4 @@ GEMINI.md
 skills-lock.json
 agent/
 .agents/
+data/skills/*
