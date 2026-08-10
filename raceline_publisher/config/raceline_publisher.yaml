@@ -1,0 +1,6 @@
+raceline_publisher:
+  ros__parameters:
+    raceline_csv: ""
+    waypoint_topic: "/raceline_waypoints"
+    frame_id: "map"
+    publish_initial_pose: true

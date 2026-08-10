@@ -91,13 +91,18 @@ def vehicle_dynamics_st_delayed(x, uInit, p, type):
         F_yf = F_zf * C_Sf * alpha_f
         F_yr = F_zr * C_Sr * alpha_r
 
-    f = [x[4]*math.cos(x[3]) - x[5]*math.sin(x[3]), 
-        x[4]*math.sin(x[3]) + x[5]*math.cos(x[3]), 
+    # Front tire force acts in the (steered) wheel frame; project onto the
+    # vehicle body y-axis with cos(delta) - same convention as every other
+    # dynamics implementation in this package (on_track_sys_id.py,
+    # generate_predictions.py, train_model.py, plot_results.py, README's
+    # physics-informed-loss equations). Steering angle here is the state x[2].
+    f = [x[4]*math.cos(x[3]) - x[5]*math.sin(x[3]),
+        x[4]*math.sin(x[3]) + x[5]*math.cos(x[3]),
         (u[0] - x[2])/0.2,
-        x[6], 
-        u[1], 
-        1/m * (F_yr + F_yf) - x[4] * x[6],
-        1/I * (-lr * F_yr + lf * F_yf)]         
+        x[6],
+        u[1],
+        1/m * (F_yr + F_yf * math.cos(x[2])) - x[4] * x[6],
+        1/I * (-lr * F_yr + lf * F_yf * math.cos(x[2]))]
 
     return f
 
@@ -182,12 +187,16 @@ def vehicle_dynamics_st(x, uInit, p, type):
         F_yf = F_zf * C_Sf * alpha_f
         F_yr = F_zr * C_Sr * alpha_r
 
-    f = [x[3]*math.cos(x[2]) - x[4]*math.sin(x[2]), 
-        x[3]*math.sin(x[2]) + x[4]*math.cos(x[2]), 
-        x[5], 
-        u[1], 
-        1/m * (F_yr + F_yf) - x[3] * x[5],
-        1/I * (-lr * F_yr + lf * F_yf)] 
+    # Front tire force acts in the (steered) wheel frame; project onto the
+    # vehicle body y-axis with cos(delta) - same convention as every other
+    # dynamics implementation in this package. No steering-lag state here,
+    # so delta is the input u[0] directly.
+    f = [x[3]*math.cos(x[2]) - x[4]*math.sin(x[2]),
+        x[3]*math.sin(x[2]) + x[4]*math.cos(x[2]),
+        x[5],
+        u[1],
+        1/m * (F_yr + F_yf * math.cos(u[0])) - x[3] * x[5],
+        1/I * (-lr * F_yr + lf * F_yf * math.cos(u[0]))]
     return f
 
     #------------- END OF CODE --------------

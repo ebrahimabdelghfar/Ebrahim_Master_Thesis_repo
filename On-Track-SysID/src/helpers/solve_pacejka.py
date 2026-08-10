@@ -2,6 +2,8 @@ from types import SimpleNamespace
 from scipy.optimize import least_squares, minimize, differential_evolution
 import numpy as np
 
+from helpers.pacejka_formula import pacejka_formula
+
 # scipy.optimize.least_squares methods: gradient-based, need a residual vector + bounds.
 _LSQ_METHODS = ('trf', 'dogbox', 'lm')
 
@@ -165,11 +167,6 @@ def analyse_tires(model, v_x, v_y, omega, delta):
 
     return alpha_f, alpha_r, F_zf, F_zr, F_yf, F_yr
 
-
-def pacejka_formula(params, alpha, F_z):
-    B, C, D, E = params
-    y =  F_z * D * np.sin(C*np.arctan(B*alpha - E * (B*alpha -np.arctan(B * alpha))))
-    return y
 
 def pacejka_error(params, *args):
     alpha, F_z, F_y = args

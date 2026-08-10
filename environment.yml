@@ -25,7 +25,7 @@ dependencies:
   - xz
   - zlib
   - pytorch
-  - pytorch-cuda=12.6   # matches the host's pip-installed torch==2.12.1+cu126; GPU actually usable inside the Docker container only if it's run with the nvidia container runtime (docker/docker_compose.yml already sets NVIDIA_VISIBLE_DEVICES/NVIDIA_DRIVER_CAPABILITIES - assumes the Docker daemon's default runtime is nvidia)
+  - pytorch-cuda=12.4   # nvidia channel has no 12.6 build yet; closest available to host's pip-installed torch==2.12.1+cu126. GPU actually usable inside the Docker container only if it's run with the nvidia container runtime (docker/docker_compose.yml already sets NVIDIA_VISIBLE_DEVICES/NVIDIA_DRIVER_CAPABILITIES - assumes the Docker daemon's default runtime is nvidia)
   - pip:
     - numpy<2.0
     - matplotlib
