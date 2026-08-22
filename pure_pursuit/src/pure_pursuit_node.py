@@ -12,12 +12,12 @@ from nav_msgs.msg import Odometry
 from visualization_msgs.msg import Marker
 from std_msgs.msg import Header, ColorRGBA, Float64, Bool
 from rcl_interfaces.msg import SetParametersResult
-from tf_transformations import euler_from_quaternion, quaternion_from_euler
+from tf_compat import euler_from_quaternion
 from geometry_msgs.msg import PoseStamped, Point, Twist, Quaternion, Pose, Vector3
 from ackermann_msgs.msg import AckermannDriveStamped, AckermannDrive
 from ament_index_python.packages import get_package_share_directory
 from f1tenth_msgs.msg import WaypointArray
-from rclpy.qos import QoSProfile, DurabilityPolicy
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 
 
 class PurePursuitNode(Node):
@@ -78,12 +78,25 @@ class PurePursuitNode(Node):
         self.start_working = False
         self.last_odom_time = None
         
+        # Sensor-stream QoS: request BEST_EFFORT so this subscription matches
+        # best-effort /odom publishers (simulator / CarMaker bridge). A plain
+        # depth argument requests RELIABLE, which DDS refuses to match against a
+        # best-effort offer - the endpoints stay unconnected and the only
+        # symptom is "incompatible QoS ... Last incompatible policy: RELIABILITY".
+        # BEST_EFFORT requests still match RELIABLE publishers, so this is safe
+        # regardless of which side is running.
+        qos_sensor = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+
         # Create subscriber and publisher
         self.odom_sub = self.create_subscription(
             Odometry,
             odom_topic,
             self.pose_callback,
-            1
+            qos_sensor
         )
         
         # QoS for latched topic

@@ -163,6 +163,87 @@ TEST(VehicleModel, LinearizeDiscreteReproducesNominalPoint)
   }
 }
 
+TEST(VehicleModel, IntegrationSubstepsScaleWithStiffnessAndInverseSpeed)
+{
+  VehicleParams vp;
+  vp.mass = 240.0;
+  vp.Iz = 51.1;
+  vp.l_f = 1.0653;
+  vp.l_r = 1.0653;
+
+  TireParams stiff;
+  stiff.Bf = 20.0; stiff.Cf = 1.2; stiff.Df = 1.3107; stiff.Ef = -3.0;
+  stiff.Br = 7.9577; stiff.Cr = 1.2; stiff.Dr = 1.04; stiff.Er = 0.5506;
+  const VehicleModel stiff_model(vp, stiff);
+
+  State slow, fast;
+  slow << 0.0, 0.0, 0.0, 8.0, 0.0, 0.0;
+  fast << 0.0, 0.0, 0.0, 40.0, 0.0, 0.0;
+  EXPECT_GT(stiff_model.integrationSubsteps(slow, 0.05), 1);
+  EXPECT_GT(
+    stiff_model.integrationSubsteps(slow, 0.05), stiff_model.integrationSubsteps(fast, 0.05));
+  EXPECT_LE(stiff_model.integrationSubsteps(slow, 0.05), VehicleModel::kMaxSubsteps);
+
+  // A soft tire set at the same speed needs no sub-stepping, so the cost is
+  // only paid where the dynamics actually are stiff.
+  TireParams soft = stiff;
+  soft.Bf = 2.0; soft.Df = 0.6; soft.Br = 2.0; soft.Dr = 0.6;
+  EXPECT_LT(
+    VehicleModel(vp, soft).integrationSubsteps(slow, 0.05),
+    stiff_model.integrationSubsteps(slow, 0.05));
+}
+
+// Pins the mechanism behind the "QP solve failed" fallbacks seen right after
+// a PP->MPC switch: the sysid run that produced SIM_pacejka.txt fitted a
+// front axle roughly 3x stiffer than the rear on a 50/50 CG, i.e. a strongly
+// oversteering car. The linear single-track model is then open-loop unstable
+// above v_crit = L*sqrt(Cf*Cr/(m*(l_f*Cf - l_r*Cr))) ~= 17 m/s, and since
+// MpcController linearizes each stage about the *reference* speed
+// (14.9-46 m/s on traj_race_cl.csv) most of the horizon sits above it.
+// rho(Ad) > 1 compounds over N stages until the condensed QP is numerically
+// meaningless. Understeering params keep every stage contractive.
+TEST(VehicleModel, OversteeringTireSetMakesLinearizationUnstableAboveCriticalSpeed)
+{
+  VehicleParams vp;      // CARLA asurt_fsai, as configured in mpc_path_tracking.yaml
+  vp.mass = 240.0;
+  vp.Iz = 51.1;
+  vp.l_f = 1.0653;
+  vp.l_r = 1.0653;
+
+  TireParams identified;   // On-Track-SysID output pushed via mpc/update_params
+  identified.Bf = 20.0; identified.Cf = 1.2; identified.Df = 1.3107; identified.Ef = -3.0;
+  identified.Br = 7.9577; identified.Cr = 1.2; identified.Dr = 1.04; identified.Er = 0.5506;
+
+  const VehicleModel model(vp, identified);
+  double fz_f, fz_r;
+  model.normalLoads(fz_f, fz_r);
+  const double c_front = fz_f * identified.Bf * identified.Cf * identified.Df;
+  const double c_rear = fz_r * identified.Br * identified.Cr * identified.Dr;
+  ASSERT_GT(vp.l_f * c_front - vp.l_r * c_rear, 0.0) << "expected an oversteering fit";
+  const double v_crit = (vp.l_f + vp.l_r) *
+    std::sqrt(c_front * c_rear / (vp.mass * (vp.l_f * c_front - vp.l_r * c_rear)));
+  EXPECT_NEAR(v_crit, 17.4, 0.5);
+
+  auto spectral_radius = [&model](double vx) {
+      State x;
+      x << 0.0, 0.0, 0.0, vx, 0.0, 0.0;
+      const Input u(0.0, 0.0);
+      mpc_path_tracking::StateJacobian Ad;
+      mpc_path_tracking::InputJacobian Bd;
+      State c;
+      model.linearizeDiscrete(x, u, 0.05, Ad, Bd, c);
+      return Eigen::EigenSolver<mpc_path_tracking::StateJacobian>(Ad, false)
+             .eigenvalues().cwiseAbs().maxCoeff();
+    };
+
+  // Below v_crit the lateral modes are contractive (the two position states
+  // contribute the marginal unit eigenvalues, hence the tolerance).
+  EXPECT_LE(spectral_radius(10.0), 1.0 + 1e-6);
+  // Above it the reference-speed stages of the horizon diverge outright.
+  EXPECT_GT(spectral_radius(30.0), 1.3);
+  EXPECT_GT(spectral_radius(46.0), 1.7);
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

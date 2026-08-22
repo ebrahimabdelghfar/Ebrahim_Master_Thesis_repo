@@ -14,11 +14,17 @@ mkdir -p "$INSTALL_DIR"
 
 cd "$BUILD_DIR"
 
+# libacados.so pulls in libqpOASES_e/libhpipm/libblasfeo as transitive deps.
+# A consumer's DT_RUNPATH is not used to resolve *its* dependencies' needs, so
+# without an RPATH of its own libacados.so only loads when the acados lib dir
+# happens to be on LD_LIBRARY_PATH. $ORIGIN makes it self-locating.
 cmake "$SRC_DIR" \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_SHARED_LIBS=ON \
     -DACADOS_WITH_QPOASES=ON \
     -DACADOS_WITH_OPENMP=ON \
+    -DCMAKE_INSTALL_RPATH='$ORIGIN' \
+    -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
     -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}"
 
 make -j"${NUM_CORES:-$(nproc)}"

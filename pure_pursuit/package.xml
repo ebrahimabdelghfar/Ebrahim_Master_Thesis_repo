@@ -20,7 +20,7 @@
   <exec_depend>f1tenth_msgs</exec_depend>
 
   <!-- For tf transformations in Python -->
-  <exec_depend>tf_transformations</exec_depend>
+  <exec_depend>python3-transforms3d</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-matplotlib</exec_depend>
 

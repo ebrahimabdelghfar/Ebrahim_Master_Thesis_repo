@@ -49,8 +49,14 @@ public:
     tire_bounds_ = param_manager_.tireBounds();
     benchmark_forward_ = param_manager_.benchmarkForward();
 
+    // Request BEST_EFFORT on /odom. The publisher (simulator / CarMaker bridge)
+    // offers best-effort, while a bare rclcpp::QoS(1) requests RELIABLE - DDS
+    // refuses that pair, so no odometry is ever delivered and the only symptom
+    // is an "incompatible QoS ... RELIABILITY" warning. A best-effort request
+    // still matches reliable publishers, so this is safe either way.
     odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
-      topics_.odom_topic, rclcpp::QoS(1), std::bind(&ManagerNode::odomCallback, this, _1));
+      topics_.odom_topic, rclcpp::QoS(1).best_effort(),
+      std::bind(&ManagerNode::odomCallback, this, _1));
 
     rclcpp::QoS waypoint_qos(1);
     waypoint_qos.transient_local();

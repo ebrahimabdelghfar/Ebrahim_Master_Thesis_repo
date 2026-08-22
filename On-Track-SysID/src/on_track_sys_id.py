@@ -80,12 +80,29 @@ class OnTrackSysId(Node):
         self.log_torch_device()
         self.setup_data_storage()
 
+        # Sensor-stream QoS. The /odom publisher (simulator / CarMaker bridge)
+        # offers BEST_EFFORT, while a subscription created with a plain depth
+        # requests RELIABLE. That request is incompatible with a best-effort
+        # offer, so DDS refuses the match, silently delivers nothing and only
+        # logs:
+        #   "New publisher discovered on topic '/odom', offering incompatible
+        #    QoS. No messages will be received from it.
+        #    Last incompatible policy: RELIABILITY"
+        # Requesting BEST_EFFORT is compatible with BOTH best-effort and
+        # reliable publishers, so it is the safe request for high-rate sensor
+        # data. depth stays 1: this node always wants the freshest sample.
+        qos_sensor = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+
         # Subscribe to the topics using the loaded parameter values
         self.odom_sub = self.create_subscription(
             Odometry,
             odom_topic,
             self.odom_cb,
-            1
+            qos_sensor
         )
         self.ackermann_sub = self.create_subscription(
             AckermannDriveStamped,
@@ -146,7 +163,10 @@ class OnTrackSysId(Node):
         warm_start_cfg = (self.model_params or {}).get('friction_warm_start', {})
         if warm_start_cfg.get('enable', False) and warm_start_cfg.get('accel_source', 'finite_diff') == 'imu':
             imu_topic = warm_start_cfg.get('imu_topic', '/imu')
-            self.imu_sub = self.create_subscription(Imu, imu_topic, self.imu_cb, 1)
+            # Same reasoning as qos_sensor above: IMU drivers almost always
+            # publish best-effort, and this subscription would fail the same
+            # silent way.
+            self.imu_sub = self.create_subscription(Imu, imu_topic, self.imu_cb, qos_sensor)
 
         self.prev_v_y = 0.0
         self.prev_omega = 0.0

@@ -2,6 +2,7 @@
 #define MPC_PATH_TRACKING__MPC_CONTROLLER_HPP_
 
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "mpc_path_tracking/reference_trajectory_handler.hpp"
@@ -50,6 +51,10 @@ struct MpcOutput
   double solve_time_ms{0.0};
   double cost{0.0};
   double dt_used{0.0};
+  // On failure: the backend's own status plus, when the linearized model is
+  // the culprit, the worst stage's spectral radius and how far the
+  // prediction diverges over the horizon (see diagnoseHorizon).
+  std::string status{"OK"};
 };
 
 // Builds and solves one LTV-MPC QP per control cycle: linearizes the
@@ -84,6 +89,15 @@ private:
   void errorCostMatrices(
     const ReferencePoint & ref, const Eigen::Matrix<double, 5, 1> & Qdiag,
     StateJacobian & Qx, State & qx, double & cost_offset) const;
+
+  // Failure-path only: finds the stage whose discrete-time Jacobian has the
+  // largest spectral radius and reports it together with the reference speed
+  // there and the resulting rho^N growth over the horizon. An open-loop
+  // unstable linearization (oversteering tire set, too-coarse dt) makes the
+  // condensed QP span tens of orders of magnitude, which every dense QP
+  // solver reports as a generic failure with no hint at the real cause.
+  std::string diagnoseHorizon(
+    const SolverProblem & problem, const std::vector<ReferencePoint> & horizon) const;
 
   VehicleModel model_;
   std::unique_ptr<SolverInterface> solver_;

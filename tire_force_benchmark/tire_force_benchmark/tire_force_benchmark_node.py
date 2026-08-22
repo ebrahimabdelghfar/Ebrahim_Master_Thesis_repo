@@ -12,6 +12,7 @@ import yaml
 from rclpy.exceptions import ParameterUninitializedException
 from rclpy.node import Node
 from rclpy.parameter import Parameter
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 from std_msgs.msg import Float64MultiArray
 from std_msgs.msg import String
 
@@ -263,7 +264,16 @@ class TireForceBenchmarkNode(Node):
             state_sensor_topic = str(self.get_parameter('state_sensor_topic').value)
             state_error_topic = str(self.get_parameter('state_error_topic').value)
 
-            self.odom_sub = self.create_subscription(Odometry, odom_topic, self.odom_callback, 10)
+            # /odom requested BEST_EFFORT: the publisher offers best-effort and
+            # a plain depth argument requests RELIABLE, which DDS refuses to
+            # match (silent - only an "incompatible QoS ... RELIABILITY" warn).
+            # Best-effort requests still match reliable publishers.
+            qos_sensor = QoSProfile(
+                depth=10,
+                reliability=ReliabilityPolicy.BEST_EFFORT,
+                durability=DurabilityPolicy.VOLATILE,
+            )
+            self.odom_sub = self.create_subscription(Odometry, odom_topic, self.odom_callback, qos_sensor)
             self.ackermann_sub = self.create_subscription(
                 AckermannDriveStamped, ackermann_topic, self.ackermann_callback, 10
             )

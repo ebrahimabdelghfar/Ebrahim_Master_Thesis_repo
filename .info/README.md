@@ -224,10 +224,24 @@ Typical package-selective build:
 3. `ros2 launch <package> <launch_file>`
 
 ## 6.2 Python/scientific environment
-- `environment.yml` declares a conda environment with Python 3.12 and scientific stack:
-  - NumPy, SciPy, pandas, scikit-learn, matplotlib, PyTorch CPU, etc.
+- `environment.yml` declares the `identification_env` conda environment with Python 3.10 and scientific stack:
+  - NumPy (<2), SciPy, pandas, scikit-learn, matplotlib, PyTorch (CUDA 12.6), etc.
+- **PyTorch is installed from pip, not conda.** A bare `- pytorch` conda dep resolves to
+  conda-forge's `cpu_generic` build variant and `torch.cuda.is_available()` comes back False,
+  even with `pytorch-cuda` also installed. The manifest pins `torch==2.12.1+cu126` from
+  `https://download.pytorch.org/whl/cu126` - that lane still ships Turing (`sm_75`) kernels
+  for the RTX 2080. Verify with:
+  `python -c "import torch; print(torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))"`
 
-Use this environment for offline analysis/training scripts and notebook-style experiments.
+Use this environment for offline analysis/training scripts and notebook-style experiments,
+and also for running/building ROS 2 nodes.
+
+**Python must stay at 3.10.** ROS 2 Humble ships C extensions built for the CPython 3.10 ABI
+only (`rclpy/_rclpy_pybind11.cpython-310-x86_64-linux-gnu.so`). Any other interpreter fails at
+`import rclpy` with `ModuleNotFoundError: No module named 'rclpy._rclpy_pybind11'`. The same
+applies to workspace interface packages: anything built while a non-3.10 env was active must be
+rebuilt (`rm -rf build/<pkg> install/<pkg> && colcon build --packages-select <pkg>`), otherwise
+its generated typesupport raises `UnsupportedTypeSupport: Could not import 'rosidl_typesupport_c'`.
 
 ## 6.3 Container workflow
 Top-level `makefile` supports:

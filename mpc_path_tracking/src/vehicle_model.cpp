@@ -117,13 +117,52 @@ State VehicleModel::continuousDynamics(const State & x, const Input & u) const
   return xdot;
 }
 
+int VehicleModel::integrationSubsteps(const State & x, double dt) const
+{
+  TireParams tire;
+  {
+    std::lock_guard<std::mutex> lock(tire_mutex_);
+    tire = tire_;
+  }
+  double fz_f, fz_r;
+  normalLoads(fz_f, fz_r);
+  // Linear (zero-slip) cornering stiffness per axle - the steepest the
+  // Magic Formula ever gets, so this over- rather than under-estimates the
+  // stiffness of the lateral dynamics.
+  const double c_front = fz_f * tire.Bf * tire.Cf * tire.Df;
+  const double c_rear = fz_r * tire.Br * tire.Cr * tire.Dr;
+  const double vx = std::max(x(3), kVxFloor);
+  // |trace| of the (vy, r) subsystem's Jacobian bounds its fastest mode:
+  // (Cf+Cr)/(m*vx) + (l_f^2*Cf + l_r^2*Cr)/(Iz*vx).
+  const double lambda_max =
+    (c_front + c_rear) / (vehicle_.mass * vx) +
+    (vehicle_.l_f * vehicle_.l_f * c_front + vehicle_.l_r * vehicle_.l_r * c_rear) /
+    (vehicle_.Iz * vx);
+  const double steps = std::ceil(lambda_max * dt / kMaxLambdaDt);
+  return std::clamp(static_cast<int>(steps), 1, kMaxSubsteps);
+}
+
 State VehicleModel::integrateRk4(const State & x, const Input & u, double dt) const
 {
-  const State k1 = continuousDynamics(x, u);
-  const State k2 = continuousDynamics(x + 0.5 * dt * k1, u);
-  const State k3 = continuousDynamics(x + 0.5 * dt * k2, u);
-  const State k4 = continuousDynamics(x + dt * k3, u);
-  return x + (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
+  // Explicit RK4 is only stable for |lambda|*h < ~2.78. A stiff tire set on a
+  // small Iz puts the yaw mode at |lambda| > 100 1/s, which the control
+  // period (dt = 1/control_rate_hz = 0.05 s) violates by a wide margin: the
+  // "discretized" Jacobian then has a spectral radius in the tens or
+  // hundreds, and over an N-stage horizon the QP the solver is handed spans
+  // dozens of orders of magnitude and fails outright. Sub-stepping keeps the
+  // integrator inside its stability region without shortening the horizon or
+  // raising the control rate.
+  const int substeps = integrationSubsteps(x, dt);
+  const double h = dt / substeps;
+  State xi = x;
+  for (int i = 0; i < substeps; ++i) {
+    const State k1 = continuousDynamics(xi, u);
+    const State k2 = continuousDynamics(xi + 0.5 * h * k1, u);
+    const State k3 = continuousDynamics(xi + 0.5 * h * k2, u);
+    const State k4 = continuousDynamics(xi + h * k3, u);
+    xi += (h / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
+  }
+  return xi;
 }
 
 void VehicleModel::linearizeDiscrete(

@@ -25,6 +25,8 @@ void ReferenceTrajectoryHandler::setWaypoints(const f1tenth_msgs::msg::WaypointA
 {
   waypoints_.clear();
   waypoints_.reserve(msg.waypoints.size());
+  clamped_count_ = 0;
+  max_raw_speed_ = 0.0;
   for (const auto & wp : msg.waypoints) {
     ReferencePoint rp;
     rp.s = wp.s_m;
@@ -32,7 +34,19 @@ void ReferenceTrajectoryHandler::setWaypoints(const f1tenth_msgs::msg::WaypointA
     rp.y = wp.y_m;
     rp.psi = wp.psi_rad;
     rp.kappa = wp.kappa_radpm;
-    rp.vx = wp.vx_mps;
+    // A reference speed above the vehicle's own speed_max is not a target,
+    // it is an infeasibility: vx_ref is unreachable, r_ref = vx_ref*kappa
+    // asks for a yaw rate the car cannot produce at the speed it is allowed
+    // to drive, and buildHorizon walks arc length forward at vx_ref, placing
+    // stage k further down the track than the car can possibly be at k*dt.
+    // See setSpeedLimit().
+    max_raw_speed_ = std::max(max_raw_speed_, wp.vx_mps);
+    if (wp.vx_mps > speed_limit_) {
+      rp.vx = speed_limit_;
+      ++clamped_count_;
+    } else {
+      rp.vx = wp.vx_mps;
+    }
     rp.ax = wp.ax_mps2;
     waypoints_.push_back(rp);
   }

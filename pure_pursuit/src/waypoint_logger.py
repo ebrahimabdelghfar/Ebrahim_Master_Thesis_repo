@@ -6,12 +6,13 @@ Records waypoints from odometry topic and saves them to a CSV file.
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 import numpy as np
 import atexit
 from os.path import expanduser
 from time import gmtime, strftime
 from numpy import linalg as LA
-from tf_transformations import euler_from_quaternion
+from tf_compat import euler_from_quaternion
 from nav_msgs.msg import Odometry
 
 
@@ -26,11 +27,21 @@ class WaypointLogger(Node):
         
         self.get_logger().info(f"Saving to file - {self.file_name}")
         
+        # BEST_EFFORT: the CarMaker odom bridge publishes best-effort, and a
+        # plain depth argument would request RELIABLE - an incompatible pair
+        # that silently delivers nothing. Best-effort requests still match
+        # reliable publishers.
+        qos_sensor = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+
         self.subscription = self.create_subscription(
             Odometry,
             '/carmaker/odom',
             self.save_waypoint,
-            1
+            qos_sensor
         )
         
         atexit.register(self.shutdown)

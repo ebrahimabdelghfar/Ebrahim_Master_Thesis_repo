@@ -84,7 +84,11 @@ void ParameterManager::declareAll()
   // see AcadosMpcSolver/AcadosSolverSettings in solver_interface.hpp).
   node_->declare_parameter<std::string>("solver.acados.qp_solver", "PARTIAL_CONDENSING_HPIPM");
   node_->declare_parameter<int>("solver.acados.cond_N", 5);
-  node_->declare_parameter<int>("solver.acados.iter_max", 50);
+  // qpOASES reads this as max_nwsr (working-set recalculations), so it must
+  // scale with the condensed problem size, not with a nominal "few SQP
+  // iterations" - see the note in mpc_path_tracking.yaml. 1000 is both
+  // acados' and qpOASES' own default.
+  node_->declare_parameter<int>("solver.acados.iter_max", 1000);
   node_->declare_parameter<double>("solver.acados.tol_stat", 1.0e-4);
   node_->declare_parameter<double>("solver.acados.tol_eq", 1.0e-4);
   node_->declare_parameter<double>("solver.acados.tol_ineq", 1.0e-4);

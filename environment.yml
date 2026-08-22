@@ -1,4 +1,14 @@
-name: ros2_env
+# Conda env for the ROS 2 Humble workspace.
+#
+# PYTHON VERSION IS LOAD-BEARING - DO NOT BUMP IT.
+# ROS 2 Humble ships prebuilt C extensions for CPython 3.10 only, e.g.
+#   /opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/_rclpy_pybind11.cpython-310-x86_64-linux-gnu.so
+# Any other Python (3.12 was used here previously) imports the pure-Python half
+# of rclpy off PYTHONPATH and then dies with:
+#   ModuleNotFoundError: No module named 'rclpy._rclpy_pybind11'
+# because the .so is ABI-tagged cpython-310. There is no shim for this - the
+# interpreter must be 3.10 to match the binaries.
+name: identification_env
 channels:
   - conda-forge
   - pytorch
@@ -16,7 +26,7 @@ dependencies:
   - ncurses
   - openssl
   - pip
-  - python=3.12
+  - python=3.10   # must match ROS 2 Humble's cpython-310 ABI - see header note
   - readline
   - setuptools
   - sqlite
@@ -24,10 +34,21 @@ dependencies:
   - wheel
   - xz
   - zlib
-  - pytorch
-  - pytorch-cuda=12.4   # nvidia channel has no 12.6 build yet; closest available to host's pip-installed torch==2.12.1+cu126. GPU actually usable inside the Docker container only if it's run with the nvidia container runtime (docker/docker_compose.yml already sets NVIDIA_VISIBLE_DEVICES/NVIDIA_DRIVER_CAPABILITIES - assumes the Docker daemon's default runtime is nvidia)
+  # NOTE: PyTorch is installed via pip below, NOT via conda.
+  # A bare `- pytorch` conda dep resolves to conda-forge's `cpu_generic` build variant
+  # (torch.version.cuda is None, torch.cuda.is_available() is False). conda-forge selects GPU
+  # support through the build string (pytorch=*=cuda126*), and the `pytorch-cuda` metapackage
+  # does NOT force it - so the CPU build wins silently. The official wheels below are explicit.
   - pip:
-    - numpy<2.0
+    # CUDA 12.6 wheels: newest lane that still ships Turing (sm_75) kernels for the RTX 2080,
+    # and cu126 is forward-compatible with the host's CUDA 13.0 driver (580.173.02).
+    - --extra-index-url https://download.pytorch.org/whl/cu126
+    - torch==2.12.1+cu126   # the +cu126 local version exists only on the index above, never on
+                            # PyPI, so the CPU wheel can never be substituted by the resolver
+    # GPU inside Docker additionally requires the nvidia container runtime; docker/docker_compose.yml
+    # already sets NVIDIA_VISIBLE_DEVICES/NVIDIA_DRIVER_CAPABILITIES and assumes the daemon's
+    # default runtime is nvidia.
+    - numpy<2.0   # keep below 2.0: ROS 2 Humble's Python bindings are built against numpy 1.x
     - matplotlib
     - sympy
     - scipy
@@ -40,3 +61,5 @@ dependencies:
     - catkin-pkg
     - pyyaml
     - transforms3d
+    - typeguard   # required by ROS's generate_parameter_library_py; present for the system
+                  # python3 but not here, so the conda env needs its own copy (same trap as empy/lark)

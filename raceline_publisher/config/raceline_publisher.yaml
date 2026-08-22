@@ -3,4 +3,11 @@ raceline_publisher:
     raceline_csv: ""
     waypoint_topic: "/raceline_waypoints"
     frame_id: "map"
-    publish_initial_pose: true
+    publish_initial_pose: false
+    # Offset added to every CSV psi_rad. The stack assumes the ROS convention
+    # psi = atan2(dy, dx). The bundled f1tenth_racetracks/* racelines already
+    # use it, so 0.0 is correct for them. Raw global_racetrajectory_optimization
+    # output ("traj_race_cl.csv") defines psi = 0 along +y instead - use
+    # 1.5707963268 for those, or the node logs an ERROR at load time telling you
+    # exactly which value to set.
+    psi_offset_rad: 0.0

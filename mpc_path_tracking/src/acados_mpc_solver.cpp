@@ -15,6 +15,43 @@ namespace
 // const_cast is safe either way since we only ever pass string literals.
 inline char * fld(const char * s) {return const_cast<char *>(s);}
 
+// acados' return_values_t (acados/utils/types.h). Only ACADOS_SUCCESS is
+// named by the public header, so the rest are spelled out here to turn a
+// bare integer into something a log reader can act on.
+const char * acadosStatusName(int status)
+{
+  switch (status) {
+    case -1: return "UNKNOWN";
+    case 0: return "SUCCESS";
+    case 1: return "NAN_DETECTED";
+    case 2: return "MAXITER";
+    case 3: return "MINSTEP";
+    case 4: return "QP_FAILURE";
+    case 5: return "READY";
+    case 6: return "UNBOUNDED";
+    case 7: return "TIMEOUT";
+    case 8: return "QPSCALING_BOUNDS_NOT_SATISFIED";
+    case 9: return "INFEASIBLE";
+    default: return "?";
+  }
+}
+
+// Non-finite QP data makes both HPIPM and qpOASES fail in ways that report
+// as a generic solver error (or worse, silently return garbage), so it is
+// screened out here where the offending stage index is still known.
+int firstNonFiniteStage(const SolverProblem & problem)
+{
+  for (int k = 0; k < problem.N; ++k) {
+    const MpcStage & s = problem.stages[k];
+    if (!s.Ad.allFinite() || !s.Bd.allFinite() || !s.c.allFinite() ||
+      !s.Qx.allFinite() || !s.qx.allFinite())
+    {
+      return k;
+    }
+  }
+  return -1;
+}
+
 constexpr int kNx = 6;    // State: [X, Y, psi, vx, vy, r]
 constexpr int kNu = 2;    // Input: [delta, a]
 // Augmented state x_aug = [x; u_prev], nx_aug = 8. acados' per-stage
@@ -121,6 +158,16 @@ bool AcadosMpcSolver::solve(const SolverProblem & problem, SolverSolution & solu
   auto * config = impl_->config;
   auto * qp_in = impl_->qp_in;
 
+  const int bad_stage = firstNonFiniteStage(problem);
+  if (bad_stage >= 0 || !problem.x0.allFinite() || !problem.u_prev.allFinite()) {
+    solution.solved = false;
+    solution.status = bad_stage >= 0 ?
+      "non-finite QP data at stage " + std::to_string(bad_stage) :
+      std::string("non-finite x0/u_prev");
+    solution.status_code = 1;   // ACADOS_NAN_DETECTED
+    return false;
+  }
+
   // Fixed x_aug_0 = [x0; u_prev] - pins the augmented "previous control"
   // slot to the real previous command, so stage 0's rate constraint/cost
   // (below) is w.r.t. the actual last-applied input, exactly like OSQP's
@@ -214,8 +261,20 @@ bool AcadosMpcSolver::solve(const SolverProblem & problem, SolverSolution & solu
   const auto t_end = std::chrono::steady_clock::now();
   solution.solve_time_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
 
+  // qp_out->misc carries the solver's own metrics (filled by
+  // ocp_qp_xcond_solve); num_iter is qpOASES' consumed nWSR budget for the
+  // FULL_CONDENSING_QPOASES backend, HPIPM's iteration count otherwise.
+  solution.status_code = acados_status;
+  if (impl_->qp_out->misc != nullptr) {
+    solution.iterations = static_cast<qp_info *>(impl_->qp_out->misc)->num_iter;
+  }
+
   if (acados_status != ACADOS_SUCCESS) {
     solution.solved = false;
+    solution.status = std::string("acados ") + acadosStatusName(acados_status) +
+      " (code " + std::to_string(acados_status) + ", " +
+      std::to_string(solution.iterations) + " iters, " +
+      std::to_string(impl_->settings.iter_max) + " allowed)";
     return false;
   }
 

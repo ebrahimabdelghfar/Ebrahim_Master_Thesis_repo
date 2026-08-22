@@ -1,6 +1,8 @@
 #ifndef MPC_PATH_TRACKING__REFERENCE_TRAJECTORY_HANDLER_HPP_
 #define MPC_PATH_TRACKING__REFERENCE_TRAJECTORY_HANDLER_HPP_
 
+#include <cstddef>
+#include <limits>
 #include <vector>
 
 #include "f1tenth_msgs/msg/waypoint_array.hpp"
@@ -29,6 +31,26 @@ public:
   bool hasWaypoints() const { return !waypoints_.empty(); }
   size_t waypointCount() const { return waypoints_.size(); }
 
+  // Upper bound applied to every waypoint's vx_mps at ingest, normally
+  // limits.speed_max. A raceline whose speed profile was optimized for a
+  // faster car than the one running it makes EVERY downstream reference
+  // quantity infeasible at once: the tracked speed target vx_ref, the yaw
+  // rate target r_ref = vx_ref * kappa, the arc-length advance
+  // s_{k+1} = s_k + vx_ref*dt that places the horizon, and the adaptive dt.
+  // The horizon then anchors itself vx_ref/speed_max times further down the
+  // track than the car can reach, so each stage's lateral-error frame
+  // belongs to a piece of track the car is not on, and the resulting
+  // command weaves. Clamping at ingest keeps all four consistent.
+  // Must be called before setWaypoints() to affect the current raceline.
+  void setSpeedLimit(double speed_max) { speed_limit_ = speed_max; }
+  double speedLimit() const { return speed_limit_; }
+
+  // Number of waypoints whose vx_mps exceeded speed_limit_ and were clamped
+  // by the last setWaypoints() call, and the largest speed seen. Non-zero
+  // means the raceline does not match the vehicle it is being driven on.
+  size_t clampedWaypointCount() const { return clamped_count_; }
+  double maxRawSpeed() const { return max_raw_speed_; }
+
   // Nearest reference point (by Euclidean distance) to (x, y). Uses
   // last_nearest_index_ as a search hint and wraps around for closed
   // (looped) tracks, so cost stays near O(1) per call in steady tracking.
@@ -48,6 +70,9 @@ private:
 
   std::vector<ReferencePoint> waypoints_;
   double track_length_{0.0};
+  double speed_limit_{std::numeric_limits<double>::infinity()};
+  size_t clamped_count_{0};
+  double max_raw_speed_{0.0};
   mutable size_t last_nearest_index_{0};
   mutable bool has_prior_nearest_{false};
 };

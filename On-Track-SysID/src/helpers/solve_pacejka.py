@@ -178,7 +178,29 @@ def pacejka_error(params, *args):
 # [B, C, D, E] bounds shared by both axles. Single-sourced here so any other
 # module needing the D (peak-friction-coefficient) clip range - e.g. the
 # friction warm-start estimator - imports this instead of duplicating it.
-PACEJKA_BOUNDS = ([1.0, 0.1, 0.1, 0.0], [20.0, 20.0, 20.0, 5.0])
+#
+# These MUST stay in sync with adaptive_controller_manager.yaml's
+# tire_param_min/tire_param_max ([Bf,Cf,Df,Ef,Br,Cr,Dr,Er]) - a fit that lands
+# outside those is silently rejected by the manager and the MPC never gets it.
+#
+# Previous value was ([1.0, 0.1, 0.1, 0.0], [20.0, 20.0, 20.0, 5.0]). Those
+# admitted parameter sets that are not valid Magic Formula at all, and the
+# solver repeatedly converged onto the rails: observed fits included C=0.1,
+# C=19.98, D=0.1, D=19.9989 and E=5.0 - every one of them exactly a bound.
+# Feeding those to the MPC made its QP fail to solve (2026-08-16). Each bound
+# below is a property of the formula Fy = D*Fz*sin(C*atan(B*a - E*(B*a - atan(B*a)))):
+#
+#   B  4.0 .. 20.0  stiffness factor; cornering stiffness is B*C*D*Fz.
+#   C  1.2 ..  2.2  shape factor. MUST be > 1 or the lateral curve has no peak.
+#                   C*atan() spans +/-C*pi/2, so C ~ 20 wraps the sine through
+#                   ~5 periods - the "tire curve" then changes sign 6 times over
+#                   alpha in [0, 0.4] rad and its Jacobian is meaningless.
+#   D  0.4 ..  2.0  peak friction coefficient (Fy = D*Fz). For the CARLA
+#                   asurt_fsai this should converge near 1.5, the PhysX
+#                   wheel tire_friction set in carla_interface_config.yaml.
+#   E -3.0 ..  1.0  curvature factor; the Magic Formula requires E <= 1, above
+#                   which the argument folds back and the curve is non-physical.
+PACEJKA_BOUNDS = ([4.0, 1.2, 0.4, -3.0], [20.0, 2.2, 2.0, 1.0])
 
 
 def solve_pacejka(model, v_x, v_y, omega, delta):

@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <string>
 
 namespace mpc_path_tracking
 {
@@ -53,6 +55,38 @@ void MpcController::errorCostMatrices(
   cost_offset = r.transpose() * Qdiag_mat * r;
 }
 
+std::string MpcController::diagnoseHorizon(
+  const SolverProblem & problem, const std::vector<ReferencePoint> & horizon) const
+{
+  int worst_k = -1;
+  double worst_rho = 0.0;
+  for (int k = 0; k < problem.N; ++k) {
+    const StateJacobian & Ad = problem.stages[k].Ad;
+    if (!Ad.allFinite()) {
+      return " | stage " + std::to_string(k) + " Jacobian is non-finite";
+    }
+    // Eigenvalues only - no eigenvectors - of a 6x6, on the failure path
+    // only, so the cost is irrelevant next to the failed solve itself.
+    const double rho = Eigen::EigenSolver<StateJacobian>(Ad, false)
+      .eigenvalues().cwiseAbs().maxCoeff();
+    if (rho > worst_rho) {
+      worst_rho = rho;
+      worst_k = k;
+    }
+  }
+  if (worst_k < 0) {
+    return "";
+  }
+  char buf[220];
+  std::snprintf(
+    buf, sizeof(buf),
+    " | worst stage k=%d: rho(Ad)=%.3f at v_ref=%.1f m/s, kappa=%.4f 1/m, dt=%.3f s "
+    "-> prediction grows 1e%+.1f over N=%d",
+    worst_k, worst_rho, horizon[worst_k].vx, horizon[worst_k].kappa, problem.dt,
+    problem.N * std::log10(std::max(worst_rho, 1e-12)), problem.N);
+  return buf;
+}
+
 MpcStage MpcController::buildStage(
   const ReferencePoint & ref_k, double dt, const Eigen::Matrix<double, 5, 1> & Qdiag) const
 {
@@ -75,6 +109,7 @@ MpcOutput MpcController::computeCommand(
 {
   MpcOutput out;
   if (!ref_handler.hasWaypoints()) {
+    out.status = "no waypoints";
     return out;
   }
 
@@ -82,6 +117,8 @@ MpcOutput MpcController::computeCommand(
   const double dt = computeAdaptiveDt(nearest);
   const auto horizon = ref_handler.buildHorizon(x0(0), x0(1), x0(2), config_.N, dt);
   if (static_cast<int>(horizon.size()) != config_.N + 1) {
+    out.status = "short reference horizon (" + std::to_string(horizon.size()) + "/" +
+      std::to_string(config_.N + 1) + " points)";
     return out;
   }
 
@@ -118,6 +155,10 @@ MpcOutput MpcController::computeCommand(
 
   out.solved = ok && solution.solved;
   out.dt_used = dt;
+  if (!out.solved) {
+    out.solve_time_ms = solution.solve_time_ms;
+    out.status = solution.status + diagnoseHorizon(problem, horizon);
+  }
   if (out.solved) {
     out.u0 = solution.u.front();
     out.predicted_states = solution.x;

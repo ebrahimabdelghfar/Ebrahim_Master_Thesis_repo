@@ -60,8 +60,15 @@ public:
   // Continuous-time nonlinear dynamics xdot = f(x, u).
   State continuousDynamics(const State & x, const Input & u) const;
 
-  // RK4 integration of the nonlinear dynamics over one step of size dt.
+  // RK4 integration of the nonlinear dynamics over one step of size dt,
+  // internally sub-stepped so that explicit RK4 stays inside its stability
+  // region for the current tire stiffness and speed (see
+  // integrationSubsteps).
   State integrateRk4(const State & x, const Input & u, double dt) const;
+
+  // Number of RK4 sub-steps integrateRk4 splits `dt` into, from the fastest
+  // lateral mode implied by the current tire params, mass/Iz and vx.
+  int integrationSubsteps(const State & x, double dt) const;
 
   // Discrete-time affine LTV approximation about (x, u) with step dt:
   //   x_{k+1} approx Ad*x_k + Bd*u_k + c
@@ -101,6 +108,10 @@ public:
 
   static constexpr double kVxFloor = 0.5;      // m/s, slip-angle/Jacobian clamp only
   static constexpr double kSlipClamp = 0.5236; // rad (~30 deg), Pacejka extrapolation guard
+  // Explicit RK4 is stable for |lambda|*h < ~2.78; 1.5 keeps a margin while
+  // costing at most kMaxSubsteps dynamics evaluations per integration step.
+  static constexpr double kMaxLambdaDt = 1.5;
+  static constexpr int kMaxSubsteps = 12;
 
 private:
   static double pacejka(double alpha, double B, double C, double D, double E);

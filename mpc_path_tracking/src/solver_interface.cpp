@@ -175,6 +175,7 @@ bool OsqpMpcSolver::solve(const SolverProblem & problem, SolverSolution & soluti
 
   if (!solver.initSolver()) {
     solution.solved = false;
+    solution.status = "osqp setup failed";
     return false;
   }
 
@@ -185,6 +186,8 @@ bool OsqpMpcSolver::solve(const SolverProblem & problem, SolverSolution & soluti
 
   if (!ok) {
     solution.solved = false;
+    // OsqpEigen::Status mirrors osqp's own status codes (see OsqpEigen/Constants.hpp)
+    solution.status = "osqp status " + std::to_string(static_cast<int>(solver.getStatus()));
     return false;
   }
 

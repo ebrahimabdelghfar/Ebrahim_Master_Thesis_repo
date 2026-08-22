@@ -112,8 +112,13 @@ public:
             joy_topic, 1, std::bind(&BehaviorController::joy_callback, this, _1));
         imu_sub = this->create_subscription<sensor_msgs::msg::Imu>(
             imu_topic, 1, std::bind(&BehaviorController::imu_callback, this, _1));
+        // BEST_EFFORT request: a bare depth requests RELIABLE, which cannot
+        // match a best-effort odom publisher (silent - no data, just an
+        // "incompatible QoS ... RELIABILITY" warning). Best-effort requests
+        // still match reliable publishers such as the simulator's own.
         odom_sub = this->create_subscription<nav_msgs::msg::Odometry>(
-            odom_topic, 1, std::bind(&BehaviorController::odom_callback, this, _1));
+            odom_topic, rclcpp::QoS(1).best_effort(),
+            std::bind(&BehaviorController::odom_callback, this, _1));
         key_sub = this->create_subscription<std_msgs::msg::String>(
             keyboard_topic, 1, std::bind(&BehaviorController::key_callback, this, _1));
         brake_bool_sub = this->create_subscription<std_msgs::msg::Bool>(

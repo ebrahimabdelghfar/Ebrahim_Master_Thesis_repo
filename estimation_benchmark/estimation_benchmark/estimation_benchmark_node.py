@@ -142,8 +142,18 @@ class EstimationBenchmarkNode(Node):
                 String, '/estimation_benchmark/tire_force_summary', 10)
 
         # ── Subscribers ──
+        # /odom is requested BEST_EFFORT: the publisher (simulator / CarMaker
+        # bridge) offers best-effort, and a plain depth argument requests
+        # RELIABLE, which DDS will not match - no data arrives and the only
+        # symptom is an "incompatible QoS ... RELIABILITY" warning. Best-effort
+        # requests remain compatible with reliable publishers too.
+        qos_sensor = QoSProfile(
+            depth=10,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+        )
         self.odom_sub = self.create_subscription(
-            Odometry, odom_topic, self._odom_cb, 10)
+            Odometry, odom_topic, self._odom_cb, qos_sensor)
         self.ackermann_sub = self.create_subscription(
             AckermannDriveStamped, ackermann_topic, self._ackermann_cb, 10)
 

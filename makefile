@@ -10,6 +10,14 @@ RACELINE_CSV?=$(WORKSPACE)/traj_race_cl.csv
 WAYPOINT_TOPIC?=/raceline_waypoints
 FRAME_ID?=map
 PUBLISH_INITIAL_POSE?=true
+# traj_race_cl.csv is raw global_racetrajectory_optimization output: its psi_rad
+# column is zero along +y, while the whole stack assumes the ROS convention
+# psi = atan2(dy, dx), zero along +x. Without this +pi/2 the manager's
+# heading_error sits pinned at ~1.571 rad and the theta_max arming gate never
+# passes, so MPC is never handed the identified tire params.
+# Set PSI_OFFSET_RAD=0 when pointing RACELINE_CSV at an f1tenth_racetracks/* CSV,
+# which is already in the ROS convention.
+PSI_OFFSET_RAD?=1.5707963268
 ENV_NAME?=identification_env
 setup_conda_env:
 	@echo -e "${green}Setting up conda environment: $(ENV_NAME)${reset}"
@@ -34,7 +42,8 @@ launch_raceline_publisher:
 	raceline_csv:=$(RACELINE_CSV) \
 	waypoint_topic:=$(WAYPOINT_TOPIC) \
 	frame_id:=$(FRAME_ID) \
-	publish_initial_pose:=$(PUBLISH_INITIAL_POSE)
+	publish_initial_pose:=$(PUBLISH_INITIAL_POSE) \
+	psi_offset_rad:=$(PSI_OFFSET_RAD)
 launch_on_track_sys_id:
 	@source /opt/ros/humble/setup.bash && source ${WORKSPACE}/install/setup.bash && \
 	ros2 launch on_track_sys_id sys_id.launch.py

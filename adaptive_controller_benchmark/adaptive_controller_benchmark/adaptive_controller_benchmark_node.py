@@ -12,6 +12,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy
 from rclpy.qos import QoSProfile
+from rclpy.qos import ReliabilityPolicy
 
 from ackermann_msgs.msg import AckermannDriveStamped
 from f1tenth_msgs.msg import WaypointArray
@@ -119,7 +120,16 @@ class AdaptiveControllerBenchmarkNode(Node):
 
         waypoint_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
 
-        self.odom_sub = self.create_subscription(Odometry, odom_topic, self._odom_cb, 10)
+        # /odom requested BEST_EFFORT: the publisher offers best-effort, and a
+        # plain depth argument requests RELIABLE - an incompatible pair that
+        # delivers nothing and only logs "incompatible QoS ... RELIABILITY".
+        # Best-effort requests still match reliable publishers.
+        qos_sensor = QoSProfile(
+            depth=10,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+        self.odom_sub = self.create_subscription(Odometry, odom_topic, self._odom_cb, qos_sensor)
         self.drive_sub = self.create_subscription(
             AckermannDriveStamped, drive_topic, self._drive_cb, 10)
         self.pp_drive_sub = self.create_subscription(

@@ -39,6 +39,12 @@ def generate_launch_description():
         default_value=str(params['publish_initial_pose']),
         description='Whether to publish the first waypoint as /initialpose'
     )
+    psi_offset_rad_arg = DeclareLaunchArgument(
+        'psi_offset_rad',
+        default_value=str(params['psi_offset_rad']),
+        description='Offset added to every CSV psi_rad; 1.5707963268 for raw '
+                    'global_racetrajectory_optimization output, 0.0 for f1tenth_racetracks'
+    )
 
     # Load the YAML file first for full defaults, then apply the dict of
     # LaunchConfiguration overrides second: for matching keys, later entries
@@ -55,6 +61,7 @@ def generate_launch_description():
                 'waypoint_topic': LaunchConfiguration('waypoint_topic'),
                 'frame_id': LaunchConfiguration('frame_id'),
                 'publish_initial_pose': LaunchConfiguration('publish_initial_pose'),
+                'psi_offset_rad': LaunchConfiguration('psi_offset_rad'),
             },
         ],
         output='screen'
@@ -66,5 +73,6 @@ def generate_launch_description():
         waypoint_topic_arg,
         frame_id_arg,
         publish_initial_pose_arg,
+        psi_offset_rad_arg,
         raceline_publisher_node,
     ])

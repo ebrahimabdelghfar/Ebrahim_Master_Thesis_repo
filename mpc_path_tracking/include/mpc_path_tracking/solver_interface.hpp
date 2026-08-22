@@ -62,6 +62,13 @@ struct SolverSolution
   std::vector<State> x;    // size N+1
   double cost{0.0};
   double solve_time_ms{0.0};
+  // Why the solve ended the way it did, in the backend's own terms
+  // ("MAXITER", "INFEASIBLE", "non-finite QP data at stage 37", ...).
+  // Without this every distinct failure mode surfaces as the same
+  // "QP solve failed" fallback line and there is nothing to act on.
+  std::string status{"OK"};
+  int status_code{0};      // backend-native code (acados return_values_t)
+  int iterations{0};       // qpOASES working-set recalculations / HPIPM iters
 };
 
 class SolverInterface
@@ -117,7 +124,9 @@ struct AcadosSolverSettings
 {
   std::string qp_solver{"PARTIAL_CONDENSING_HPIPM"};
   int cond_N{5};          // partial-condensing block size (PARTIAL_CONDENSING_HPIPM only)
-  int iter_max{50};
+  // HPIPM interior-point iterations; qpOASES working-set recalculations
+  // (max_nwsr) - the latter scales with the condensed problem size.
+  int iter_max{1000};
   double tol_stat{1e-4};
   double tol_eq{1e-4};
   double tol_ineq{1e-4};

@@ -52,8 +52,12 @@ public:
         drive_pub = this->create_publisher<ackermann_msgs::msg::AckermannDriveStamped>(drive_topic, 10);
 
         // Start a subscriber to listen to odom messages
+        // BEST_EFFORT request: a bare depth requests RELIABLE, which cannot
+        // match a best-effort odom publisher. Best-effort requests still match
+        // reliable publishers such as the simulator's own.
         odom_sub = this->create_subscription<nav_msgs::msg::Odometry>(
-            odom_topic, 1, std::bind(&RandomWalker::odom_callback, this, _1));
+            odom_topic, rclcpp::QoS(1).best_effort(),
+            std::bind(&RandomWalker::odom_callback, this, _1));
 
         RCLCPP_INFO(this->get_logger(), "Random walker initialized");
     }

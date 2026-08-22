@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <string>
 
@@ -65,8 +66,13 @@ public:
 
     debug_pub_ = std::make_unique<DebugPublisher>(this, topics_, param_manager_.debugConfig());
 
+    // Request BEST_EFFORT on /odom - a bare rclcpp::QoS(1) requests RELIABLE,
+    // which never matches the best-effort odom publisher (silent: no data, one
+    // "incompatible QoS ... RELIABILITY" warning). Best-effort requests still
+    // match reliable publishers.
     odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
-      topics_.odom_topic, rclcpp::QoS(1), std::bind(&MpcNode::odomCallback, this, _1));
+      topics_.odom_topic, rclcpp::QoS(1).best_effort(),
+      std::bind(&MpcNode::odomCallback, this, _1));
 
     rclcpp::QoS waypoint_qos(1);
     waypoint_qos.transient_local();
@@ -100,6 +106,7 @@ public:
       get_logger(), "mpc_path_tracking ready: odom=%s waypoints=%s drive=%s standalone=%s backend=%s",
       topics_.odom_topic.c_str(), topics_.waypoint_topic.c_str(), topics_.drive_topic.c_str(),
       standalone_mode_ ? "true" : "false", solver_cfg_.backend.c_str());
+    logModelStability(tire_params);
   }
 
 private:
@@ -135,7 +142,43 @@ private:
     // ever used as the one-time construction template for that copy).
     controller_->setTireParams(tire);
     RCLCPP_INFO(get_logger(), "tire params updated via mpc/update_params");
+    logModelStability(tire);
     response->ack = true;
+  }
+
+  // The MPC linearizes about the *reference* at every stage, so an
+  // oversteering tire set makes each stage Jacobian open-loop unstable above
+  // the critical speed and the horizon amplifies that by rho^N - which the
+  // QP solver can only report as a generic failure. Logging the critical
+  // speed at the moment params change makes that visible up front.
+  void logModelStability(const TireParams & tire)
+  {
+    const VehicleParams & vp = vehicle_model_->vehicleParams();
+    double fz_f = 0.0, fz_r = 0.0;
+    vehicle_model_->normalLoads(fz_f, fz_r);
+    // d/dalpha of the Magic Formula at alpha = 0 is Fz*B*C*D (the E term
+    // cancels there), i.e. the axle's linear cornering stiffness.
+    const double c_front = fz_f * tire.Bf * tire.Cf * tire.Df;
+    const double c_rear = fz_r * tire.Br * tire.Cr * tire.Dr;
+    const double wheelbase = vp.l_f + vp.l_r;
+    // Linear single-track stability: det(A_lat) > 0 <=> Cf*Cr*L^2/(m*v^2) >
+    // l_f*Cf - l_r*Cr. Non-positive right-hand side => understeering, stable
+    // at every speed.
+    const double stability_margin = vp.l_f * c_front - vp.l_r * c_rear;
+    if (stability_margin <= 0.0) {
+      RCLCPP_INFO(
+        get_logger(),
+        "model check: C_front=%.0f N/rad C_rear=%.0f N/rad -> understeering, "
+        "linearization stable at all speeds", c_front, c_rear);
+      return;
+    }
+    const double v_crit =
+      wheelbase * std::sqrt(c_front * c_rear / (vp.mass * stability_margin));
+    RCLCPP_WARN(
+      get_logger(),
+      "model check: C_front=%.0f N/rad C_rear=%.0f N/rad -> OVERSTEERING, prediction model is "
+      "open-loop unstable above v_crit=%.1f m/s; every horizon stage linearized above that "
+      "speed diverges and the QP becomes ill-conditioned", c_front, c_rear, v_crit);
   }
 
   void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
@@ -152,9 +195,41 @@ private:
 
   void waypointCallback(const f1tenth_msgs::msg::WaypointArray::SharedPtr msg)
   {
-    ref_handler_.setWaypoints(*msg);
     last_waypoints_msg_ = *msg;
-    RCLCPP_INFO(get_logger(), "received %zu raceline waypoints", ref_handler_.waypointCount());
+    ingestWaypoints();
+  }
+
+  // Re-clamps and re-loads the last received raceline against the CURRENT
+  // limits.speed_max. Split out of waypointCallback so a runtime
+  // `ros2 param set .. limits.speed_max` takes effect immediately: the
+  // raceline arrives once on a transient_local (latched) topic, so without
+  // this the stored reference would keep whatever cap was in force when the
+  // single WaypointArray landed.
+  void ingestWaypoints()
+  {
+    // The raceline's own speed profile is only a valid reference if the car
+    // is actually allowed to drive it. Clamping to limits.speed_max keeps
+    // vx_ref, r_ref = vx_ref*kappa, the horizon's arc-length advance and the
+    // adaptive dt mutually consistent - see
+    // ReferenceTrajectoryHandler::setSpeedLimit.
+    ref_handler_.setSpeedLimit(get_parameter("limits.speed_max").as_double());
+    ref_handler_.setWaypoints(last_waypoints_msg_);
+    RCLCPP_INFO(
+      get_logger(), "loaded %zu raceline waypoints at speed cap %.2f m/s",
+      ref_handler_.waypointCount(), ref_handler_.speedLimit());
+    if (ref_handler_.clampedWaypointCount() > 0) {
+      RCLCPP_WARN(
+        get_logger(),
+        "raceline speed profile exceeds limits.speed_max=%.2f m/s at %zu/%zu waypoints "
+        "(max %.2f m/s, %.1fx the limit) - clamped. The raceline was optimized for a faster "
+        "vehicle than this one; regenerate it with v_max=%.2f m/s for a usable speed profile. "
+        "Raising limits.speed_max only helps if the VEHICLE can really go that fast - the cap "
+        "must describe the plant, not the ambition.",
+        ref_handler_.speedLimit(), ref_handler_.clampedWaypointCount(),
+        ref_handler_.waypointCount(), ref_handler_.maxRawSpeed(),
+        ref_handler_.maxRawSpeed() / std::max(ref_handler_.speedLimit(), 1e-9),
+        ref_handler_.speedLimit());
+    }
   }
 
   void applyFallback(const std::string & reason)
@@ -191,6 +266,13 @@ private:
       return;
     }
 
+    // Pick up a runtime change to limits.speed_max without needing the
+    // raceline republished. Cheap scalar compare per cycle; the O(n) re-ingest
+    // only runs on an actual change.
+    if (get_parameter("limits.speed_max").as_double() != ref_handler_.speedLimit()) {
+      ingestWaypoints();
+    }
+
     constexpr double kStaleOdomTimeoutS = 0.5;
     if ((now() - last_odom_stamp_).seconds() > kStaleOdomTimeoutS) {
       applyFallback("stale odometry");
@@ -199,7 +281,7 @@ private:
 
     const MpcOutput out = controller_->computeCommand(current_state_, u_prev_, ref_handler_);
     if (!out.solved) {
-      applyFallback("QP solve failed");
+      applyFallback("QP solve failed: " + out.status);
       return;
     }
 

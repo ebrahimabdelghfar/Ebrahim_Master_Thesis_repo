@@ -20,6 +20,12 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# Imported by the nodes above (sys.path[0] is their install dir)
+install(FILES
+  src/tf_compat.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 # Install launch files and config
 install(DIRECTORY
   launch

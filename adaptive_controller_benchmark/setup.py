@@ -16,7 +16,7 @@ setup(
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='Ebrahim',
-    maintainer_email='ebrahim@local',
+    maintainer_email='ebrahimabdelghfar550@gmail.com',
     description='Academic benchmark of the adaptive_controller_manager PP/MPC switching FSM.',
     license='MIT',
     tests_require=['pytest'],

@@ -23,7 +23,14 @@ adaptive_controller_manager:
     v_min: 0.5                  # m/s
 
     # Safety 1B: track alignment required before arming MPC
-    e_y_max: 0.1                # m
+    # 0.1 m was an F1TENTH number (0.3 m wheelbase). The vehicle now driven in
+    # CARLA is full-scale, and pure_pursuit - still configured with
+    # wheelbase 0.3302 - holds a steady-state |e_y| of roughly 0.1-0.9 m on it,
+    # so 0.1 blocked arming almost permanently. Scaled by the wheelbase ratio
+    # (0.1 * 2.7/0.307 ~ 0.9) and rounded to 1.0.
+    # PROVISIONAL: the right fix is to give pure_pursuit the real vehicle
+    # wheelbase so its tracking error drops; tighten this again afterwards.
+    e_y_max: 1.0                # m
     # 0.1 rad was the original illustrative default, but live testing on
     # YasMarina showed pure_pursuit's own heading error (it doesn't
     # explicitly minimize heading, only lookahead-point lateral geometry)
@@ -59,13 +66,8 @@ adaptive_controller_manager:
     # covers the switch ramp, EMERGENCY_HALT, and stale-data fallback, so
     # none of them ever reads as an instant stop.
     max_decel_mps2: 8.26          # m/s^2, matches f1tenth_simulator's max_decel
-
-    # ---------------- Tire-param plausibility bounds ----------------
-    # Coarse sanity bounds on a submitted [Bf,Cf,Df,Ef,Br,Cr,Dr,Er] array -
-    # catches a grossly wrong identification (NaN, sign flip, orders of
-    # magnitude off), not a validated physical range. Retune per vehicle.
-    tire_param_min: [0.0, 0.0, 0.0, -10.0, 0.0, 0.0, 0.0, -10.0]
-    tire_param_max: [50.0, 10.0, 20.0, 10.0, 50.0, 10.0, 20.0, 10.0]
+    tire_param_min: [4.0, 1.2, 0.2, -3.0, 4.0, 1.2, 0.2, -3.0]
+    tire_param_max: [20.0, 2.2, 2.0, 1.0, 20.0, 2.2, 2.0, 1.0]
 
     # ---------------- Benchmark forwarding (optional) ----------------
     # If enabled, every accepted sysid/update_params submission is also

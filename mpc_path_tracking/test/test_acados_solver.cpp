@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
+#include <string>
 #include <utility>
 
 #include <gtest/gtest.h>
@@ -130,4 +132,31 @@ TEST(AcadosMpcSolver, AgreesWithOsqpBoxLimitBinding)
   const auto problem = buildProblem(/*u_rate_max=*/10.0, /*u_box_max=*/0.2);
   const auto [osqp_solution, acados_solution] = solveBoth(problem);
   expectSolutionsAgree(osqp_solution, acados_solution);
+}
+
+TEST(AcadosMpcSolver, ReportsStatusOnSuccess)
+{
+  const auto problem = buildProblem(/*u_rate_max=*/10.0, /*u_box_max=*/10.0);
+  AcadosSolverSettings settings;
+  AcadosMpcSolver acados(problem.N, settings);
+  SolverSolution solution;
+  ASSERT_TRUE(acados.solve(problem, solution));
+  EXPECT_EQ(solution.status, "OK");
+  EXPECT_EQ(solution.status_code, 0);
+}
+
+// A diverging linearization (or any NaN leaking out of the tire model) must
+// be caught before it reaches acados, and must say which stage was bad -
+// otherwise every failure mode reads as the same "QP solve failed".
+TEST(AcadosMpcSolver, RejectsNonFiniteStageDataWithDiagnosis)
+{
+  auto problem = buildProblem(/*u_rate_max=*/10.0, /*u_box_max=*/10.0);
+  problem.stages[3].Ad(2, 2) = std::numeric_limits<double>::quiet_NaN();
+
+  AcadosSolverSettings settings;
+  AcadosMpcSolver acados(problem.N, settings);
+  SolverSolution solution;
+  EXPECT_FALSE(acados.solve(problem, solution));
+  EXPECT_FALSE(solution.solved);
+  EXPECT_NE(solution.status.find("stage 3"), std::string::npos) << solution.status;
 }

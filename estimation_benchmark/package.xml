@@ -5,7 +5,7 @@
   <version>0.1.0</version>
   <description>ROS2 package for multi-step estimation benchmarking of identified vehicle dynamics models with academic metrics and optional tire force validation.</description>
 
-  <maintainer email="ebrahim@local">Ebrahim</maintainer>
+  <maintainer email="ebrahimabdelghfar550@gmail.com">Ebrahim</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_python</buildtool_depend>
@@ -16,7 +16,7 @@
   <exec_depend>ackermann_msgs</exec_depend>
 
   <!-- Optional: only needed when tire force benchmarking is enabled -->
-  <exec_depend condition="$ENABLE_TIRE_FORCE_BENCHMARK">hellocm_msgs</exec_depend>
+  <exec_depend condition="$ENABLE_TIRE_FORCE_BENCHMARK == '1'">hellocm_msgs</exec_depend>
 
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>

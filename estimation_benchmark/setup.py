@@ -17,7 +17,7 @@ setup(
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='Ebrahim',
-    maintainer_email='ebrahim@local',
+    maintainer_email='ebrahimabdelghfar550@gmail.com',
     description='Multi-step estimation benchmarking for identified vehicle dynamics models.',
     license='MIT',
     tests_require=['pytest'],

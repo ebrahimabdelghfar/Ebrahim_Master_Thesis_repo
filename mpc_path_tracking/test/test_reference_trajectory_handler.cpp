@@ -110,3 +110,64 @@ int main(int argc, char ** argv)
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
+
+// Regression: bug-mpc-standalone-steering-limit-cycle. A raceline whose speed
+// profile exceeds the vehicle's limits.speed_max must be clamped at ingest,
+// because vx_ref simultaneously sets the speed target, r_ref = vx_ref*kappa,
+// the horizon's arc-length advance and the adaptive dt. Left unclamped, the
+// horizon anchors vx_ref/speed_max times further down the track than the car
+// can reach and the command weaves at the control rate.
+TEST(ReferenceTrajectoryHandler, ClampsReferenceSpeedToVehicleLimit)
+{
+  ReferenceTrajectoryHandler handler;
+  handler.setSpeedLimit(11.1111);
+  handler.setWaypoints(makeStraightLine(2.0, 100, 46.0));
+
+  EXPECT_EQ(handler.clampedWaypointCount(), 100u);
+  EXPECT_DOUBLE_EQ(handler.maxRawSpeed(), 46.0);
+  EXPECT_DOUBLE_EQ(handler.nearestPoint(0.0, 0.0).vx, 11.1111);
+}
+
+TEST(ReferenceTrajectoryHandler, LeavesFeasibleReferenceSpeedUntouched)
+{
+  ReferenceTrajectoryHandler handler;
+  handler.setSpeedLimit(11.1111);
+  handler.setWaypoints(makeStraightLine(2.0, 100, 8.0));
+
+  EXPECT_EQ(handler.clampedWaypointCount(), 0u);
+  EXPECT_DOUBLE_EQ(handler.nearestPoint(0.0, 0.0).vx, 8.0);
+}
+
+// Without setSpeedLimit() the handler must behave exactly as before (no cap),
+// so the managed/adaptive path is unaffected until mpc_node opts in.
+TEST(ReferenceTrajectoryHandler, NoSpeedLimitByDefault)
+{
+  ReferenceTrajectoryHandler handler;
+  handler.setWaypoints(makeStraightLine(2.0, 100, 46.0));
+
+  EXPECT_EQ(handler.clampedWaypointCount(), 0u);
+  EXPECT_DOUBLE_EQ(handler.nearestPoint(0.0, 0.0).vx, 46.0);
+}
+
+// The clamped speed must actually shorten the horizon's reach: at 46 m/s the
+// N-step horizon runs ~4x further down the track than the car can travel.
+TEST(ReferenceTrajectoryHandler, SpeedClampShortensHorizonReach)
+{
+  const int kN = 100;
+  const double kDt = 0.05;
+
+  ReferenceTrajectoryHandler unclamped;
+  unclamped.setWaypoints(makeStraightLine(2.0, 4000, 46.0));
+  const auto far = unclamped.buildHorizon(0.0, 0.0, 0.0, kN, kDt);
+
+  ReferenceTrajectoryHandler clamped;
+  clamped.setSpeedLimit(11.1111);
+  clamped.setWaypoints(makeStraightLine(2.0, 4000, 46.0));
+  const auto near = clamped.buildHorizon(0.0, 0.0, 0.0, kN, kDt);
+
+  ASSERT_EQ(far.size(), static_cast<size_t>(kN + 1));
+  ASSERT_EQ(near.size(), static_cast<size_t>(kN + 1));
+  // 46 * 100 * 0.05 = 230 m vs 11.1111 * 100 * 0.05 = 55.6 m
+  EXPECT_NEAR(far.back().s, 230.0, 1.0);
+  EXPECT_NEAR(near.back().s, 55.6, 1.0);
+}
