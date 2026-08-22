@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 
 #include <gtest/gtest.h>
@@ -248,4 +249,98 @@ int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
+}
+
+namespace
+{
+// The CARLA vehicle.vehicle.asurt_fsai the stack currently drives, with the
+// yaml startup tire prior. This is the configuration in which the high-speed
+// steering limit cycle was observed.
+VehicleModel makeCarlaModel()
+{
+  VehicleParams vp;
+  vp.mass = 240.0;
+  vp.Iz = 51.1;
+  vp.l_f = 0.738142;
+  vp.l_r = 0.795362;
+  vp.h_cg = 0.31538;
+
+  TireParams tp;
+  tp.Bf = 10.0; tp.Cf = 1.9; tp.Df = 1.5; tp.Ef = 0.97;
+  tp.Br = 10.0; tp.Cr = 1.9; tp.Dr = 1.5; tp.Er = 0.97;
+  return VehicleModel(vp, tp);
+}
+}  // namespace
+
+// Regression: bug-mpc-highspeed-infeasible-reference. steadyStateCornering must
+// return a point at which the lateral dynamics are genuinely in equilibrium -
+// that is the whole reason it exists. Previously MpcController linearized about
+// (vy = 0, r = v*kappa, delta = atan(L*kappa)), where vy_dot was -7.40 m/s^2 at
+// 27 m/s, i.e. not an equilibrium at all.
+TEST(VehicleModel, SteadyStateCorneringIsAnActualEquilibrium)
+{
+  const VehicleModel model = makeCarlaModel();
+
+  // Sweep the (v, kappa) envelope the raceline actually demands: traj_race_cl.csv
+  // peaks at a_y = 12.0 m/s^2 whatever the speed cap (against ~14.7 available)
+  // and at kappa = 0.0536 1/m. Outside that envelope there is no steady state
+  // to find - see the Unachievable test.
+  constexpr double kRacelineKappaMax = 0.0536;
+  for (double v : {5.0, 11.11, 20.0, 27.0, 30.0}) {
+    for (double a_y : {0.0, 1.0, 6.0, 12.0}) {
+      const double kappa = std::min(a_y / (v * v), kRacelineKappaMax);
+      const auto ss = model.steadyStateCornering(v, kappa);
+      ASSERT_TRUE(ss.converged) << "v=" << v << " kappa=" << kappa;
+
+      State x;
+      x << 0.0, 0.0, 0.0, v, ss.vy, v * kappa;
+      const Input u(ss.delta, 0.0);
+      const State xdot = model.continuousDynamics(x, u);
+
+      EXPECT_NEAR(xdot(4), 0.0, 1e-6) << "vy_dot at v=" << v << " kappa=" << kappa;
+      EXPECT_NEAR(xdot(5), 0.0, 1e-6) << "r_dot at v=" << v << " kappa=" << kappa;
+    }
+  }
+}
+
+// Sideslip is what makes the old zero-vy reference wrong, and it is negligible
+// at low speed and large at high speed - which is exactly why the oscillation
+// only showed up once limits.speed_max was raised.
+TEST(VehicleModel, SteadyStateSideslipGrowsWithSpeed)
+{
+  const VehicleModel model = makeCarlaModel();
+  const double kappa = 0.0145;
+
+  const auto slow = model.steadyStateCornering(11.11, kappa);
+  const auto fast = model.steadyStateCornering(27.0, kappa);
+
+  ASSERT_TRUE(slow.converged);
+  ASSERT_TRUE(fast.converged);
+
+  EXPECT_LT(std::abs(slow.vy), 0.15) << "at 11 m/s the old vy_ref = 0 was harmless";
+  EXPECT_GT(std::abs(fast.vy), 0.5) << "at 27 m/s it is not";
+  EXPECT_GT(std::abs(fast.beta), 3.0 * std::abs(slow.beta));
+}
+
+// Straight-line driving must return exactly zero, so the reference is unchanged
+// on the parts of the track where the old formulation was already correct.
+TEST(VehicleModel, SteadyStateCorneringZeroOnStraightLine)
+{
+  const VehicleModel model = makeCarlaModel();
+  const auto ss = model.steadyStateCornering(27.0, 0.0);
+
+  EXPECT_TRUE(ss.converged);
+  EXPECT_DOUBLE_EQ(ss.vy, 0.0);
+  EXPECT_DOUBLE_EQ(ss.delta, 0.0);
+  EXPECT_DOUBLE_EQ(ss.beta, 0.0);
+}
+
+// A turn beyond the tire model's grip has no steady state; it must be reported
+// rather than returning a bogus "equilibrium" the MPC would then track.
+TEST(VehicleModel, SteadyStateCorneringReportsUnachievableTurns)
+{
+  const VehicleModel model = makeCarlaModel();
+  // 40 m/s on kappa = 0.05 needs 80 m/s^2 of lateral accel against ~14.7 available.
+  const auto ss = model.steadyStateCornering(40.0, 0.05);
+  EXPECT_FALSE(ss.converged);
 }

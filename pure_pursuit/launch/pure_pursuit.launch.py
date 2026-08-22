@@ -35,6 +35,21 @@ def generate_launch_description():
         description='Desired velocity in m/s'
     )
 
+    use_fixed_reference_speed_arg = DeclareLaunchArgument(
+        'use_fixed_reference_speed',
+        default_value=str(params.get('use_fixed_reference_speed', False)),
+        description='True: ignore the per-waypoint vx_mps and track '
+                    'fixed_reference_speed everywhere. False: follow the '
+                    "raceline's own speed profile."
+    )
+
+    fixed_reference_speed_arg = DeclareLaunchArgument(
+        'fixed_reference_speed',
+        default_value=str(params.get('fixed_reference_speed', 3.0)),
+        description='Hardcoded reference speed in m/s, used only when '
+                    'use_fixed_reference_speed is true'
+    )
+
     odom_topic_arg = DeclareLaunchArgument(
         'odom_topic',
         default_value=params['odom_topic'],
@@ -85,6 +100,10 @@ def generate_launch_description():
             LaunchConfiguration('config_file'),
             {
                 'lookahead_distance': LaunchConfiguration('lookahead_distance'),
+                'use_fixed_reference_speed': LaunchConfiguration(
+                    'use_fixed_reference_speed'),
+                'fixed_reference_speed': LaunchConfiguration(
+                    'fixed_reference_speed'),
                 'odom_topic': LaunchConfiguration('odom_topic'),
                 'waypoint_topic': LaunchConfiguration('waypoint_topic'),
                 'drive_topic': LaunchConfiguration('drive_topic'),
@@ -100,6 +119,8 @@ def generate_launch_description():
         waypoint_file_arg,
         lookahead_arg,
         velocity_arg,
+        use_fixed_reference_speed_arg,
+        fixed_reference_speed_arg,
         odom_topic_arg,
         waypoint_topic_arg,
         drive_topic_arg,

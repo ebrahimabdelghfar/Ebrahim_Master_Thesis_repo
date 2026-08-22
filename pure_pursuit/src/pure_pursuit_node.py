@@ -42,6 +42,8 @@ class PurePursuitNode(Node):
         # Declare parameters
         self.declare_parameter('lookahead_distance', 1.5)
         self.declare_parameter('wheelbase', 0.3302)
+        self.declare_parameter('use_fixed_reference_speed', False)
+        self.declare_parameter('fixed_reference_speed', 3.0)
         self.declare_parameter('kp_vel', 2.0)
         self.declare_parameter('ki_vel', 0.05)
         self.declare_parameter('kd_vel', 0.1)
@@ -58,6 +60,10 @@ class PurePursuitNode(Node):
         # Get parameters
         self.LOOKAHEAD = self.get_parameter('lookahead_distance').value
         self.WB = self.get_parameter('wheelbase').value
+        self.use_fixed_reference_speed = self.get_parameter(
+            'use_fixed_reference_speed').value
+        self.fixed_reference_speed = self.get_parameter(
+            'fixed_reference_speed').value
         self.kp_vel = self.get_parameter('kp_vel').value
         self.ki_vel = self.get_parameter('ki_vel').value
         self.kd_vel = self.get_parameter('kd_vel').value
@@ -139,11 +145,49 @@ class PurePursuitNode(Node):
         # Add parameter callback for online tuning
         self.add_on_set_parameters_callback(self.parameter_callback)
         
+        if self.fixed_reference_speed < 0.0:
+            self.get_logger().warn(
+                f'fixed_reference_speed {self.fixed_reference_speed} is negative, '
+                'clamping to 0.0'
+            )
+            self.fixed_reference_speed = 0.0
+
         self.get_logger().info('Pure Pursuit Node initialized')
+        if self.use_fixed_reference_speed:
+            self.get_logger().info(
+                'Speed reference: FIXED at '
+                f'{self.fixed_reference_speed:.2f} m/s '
+                '(per-waypoint vx_mps ignored)'
+            )
+        else:
+            self.get_logger().info(
+                'Speed reference: per-waypoint vx_mps from the raceline'
+            )
 
     def parameter_callback(self, params):
         for param in params:
-            if param.name == 'kp_vel':
+            if param.name == 'use_fixed_reference_speed':
+                if param.value != self.use_fixed_reference_speed:
+                    # The setpoint jumps when the source changes; a stale
+                    # integral term would kick the commanded speed.
+                    self.integral_error = 0.0
+                    self.v_prev_error = 0.0
+                self.use_fixed_reference_speed = param.value
+                self.get_logger().info(
+                    'Updated use_fixed_reference_speed to '
+                    f'{self.use_fixed_reference_speed}'
+                )
+            elif param.name == 'fixed_reference_speed':
+                if param.value < 0.0:
+                    return SetParametersResult(
+                        successful=False,
+                        reason='fixed_reference_speed must be >= 0.0'
+                    )
+                self.fixed_reference_speed = param.value
+                self.get_logger().info(
+                    f'Updated fixed_reference_speed to {self.fixed_reference_speed}'
+                )
+            elif param.name == 'kp_vel':
                 self.kp_vel = param.value
                 self.get_logger().info(f'Updated kp_vel to {self.kp_vel}')
             elif param.name == 'ki_vel':
@@ -273,7 +317,12 @@ class PurePursuitNode(Node):
         target_x = float(self.waypoints[idx_near_lookahead][0])
         target_y = float(self.waypoints[idx_near_lookahead][1])
         
-        target_vx = float(self.waypoints[idx_near_lookahead][2])
+        # Speed reference: either the raceline's own profile or a single
+        # hardcoded value for the whole lap (use_fixed_reference_speed).
+        if self.use_fixed_reference_speed:
+            target_vx = float(self.fixed_reference_speed)
+        else:
+            target_vx = float(self.waypoints[idx_near_lookahead][2])
         target_ax = float(self.waypoints[idx_near_lookahead][3])
         
         # Velocity PID controller

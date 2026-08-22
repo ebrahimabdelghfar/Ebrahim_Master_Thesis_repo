@@ -87,6 +87,114 @@ void VehicleModel::setTireParams(const TireParams & tire)
   tire_ = tire;
 }
 
+VehicleModel::SteadyState VehicleModel::steadyStateCornering(double vx, double kappa) const
+{
+  SteadyState ss;
+
+  const double v = std::max(vx, kVxFloor);
+  const double r = v * kappa;
+  if (std::abs(r) < 1e-9) {
+    return ss;   // straight line: vy = delta = beta = 0 is exact
+  }
+
+  TireParams tire;
+  {
+    std::lock_guard<std::mutex> lock(tire_mutex_);
+    tire = tire_;
+  }
+  double fz_f, fz_r;
+  normalLoads(fz_f, fz_r);
+  const double l_f = vehicle_.l_f;
+  const double l_r = vehicle_.l_r;
+  const double wheelbase = l_f + l_r;
+
+  // --- seed from the linear-tire closed form -------------------------------
+  // Force balance m*a_y = Fy_f + Fy_r with moment balance l_f*Fy_f = l_r*Fy_r
+  // splits the demand across the axles by the static load ratio.
+  const double a_y = v * r;
+  const double fy_f_req = vehicle_.mass * a_y * l_r / wheelbase;
+  const double fy_r_req = vehicle_.mass * a_y * l_f / wheelbase;
+  // d/dalpha of the Magic Formula at alpha = 0 is Fz*B*C*D.
+  const double c_front = fz_f * tire.Bf * tire.Cf * tire.Df;
+  const double c_rear = fz_r * tire.Br * tire.Cr * tire.Dr;
+  const double alpha_f_seed = fy_f_req / std::max(c_front, 1e-6);
+  const double alpha_r_seed = fy_r_req / std::max(c_rear, 1e-6);
+  ss.vy = l_r * r - v * std::tan(std::clamp(alpha_r_seed, -kSlipClamp, kSlipClamp));
+  ss.delta = alpha_f_seed + std::atan2(ss.vy + l_f * r, v);
+  ss.beta = std::atan2(ss.vy, v);
+
+  // The turn is simply not achievable if it needs more grip than the axles
+  // can make - report it rather than let Newton wander over the saturated
+  // (and non-monotonic) part of the Magic Formula.
+  const double fy_f_cap = fz_f * std::abs(tire.Df);
+  const double fy_r_cap = fz_r * std::abs(tire.Dr);
+  if (std::abs(fy_f_req) > fy_f_cap || std::abs(fy_r_req) > fy_r_cap) {
+    ss.converged = false;
+    return ss;
+  }
+
+  // --- Newton on the full nonlinear residual -------------------------------
+  // F1 = vy_dot, F2 = r_dot, both must vanish at a true equilibrium.
+  const auto residual = [&](double vy, double delta, double & f1, double & f2) {
+      const double alpha_f = delta - std::atan2(vy + l_f * r, v);
+      const double alpha_r = -std::atan2(vy - l_r * r, v);
+      const double fy_f = fz_f * pacejka(alpha_f, tire.Bf, tire.Cf, tire.Df, tire.Ef);
+      const double fy_r = fz_r * pacejka(alpha_r, tire.Br, tire.Cr, tire.Dr, tire.Er);
+      const double cd = std::cos(delta);
+      f1 = (fy_r + fy_f * cd) / vehicle_.mass - v * r;
+      f2 = (l_f * fy_f * cd - l_r * fy_r) / vehicle_.Iz;
+    };
+
+  // Residuals are accelerations; scale the tolerance to the demand so the
+  // same absolute number is not absurdly tight at 5 m/s and loose at 30.
+  const double tol = 1e-9 * std::max(1.0, std::abs(a_y));
+  constexpr int kMaxIters = 30;
+  constexpr double kFdEps = 1e-7;
+
+  double vy = ss.vy;
+  double delta = ss.delta;
+  bool converged = false;
+  for (int it = 0; it < kMaxIters; ++it) {
+    double f1, f2;
+    residual(vy, delta, f1, f2);
+    if (std::abs(f1) < tol && std::abs(f2) < tol) {
+      converged = true;
+      break;
+    }
+    double f1_v, f2_v, f1_d, f2_d;
+    residual(vy + kFdEps, delta, f1_v, f2_v);
+    residual(vy, delta + kFdEps, f1_d, f2_d);
+    const double j11 = (f1_v - f1) / kFdEps;
+    const double j12 = (f1_d - f1) / kFdEps;
+    const double j21 = (f2_v - f2) / kFdEps;
+    const double j22 = (f2_d - f2) / kFdEps;
+    const double det = j11 * j22 - j12 * j21;
+    if (!std::isfinite(det) || std::abs(det) < 1e-12) {
+      break;   // singular - keep the best iterate, flagged below
+    }
+    const double d_vy = (-f1 * j22 + f2 * j12) / det;
+    const double d_delta = (-f2 * j11 + f1 * j21) / det;
+    // Damping keeps a bad Jacobian from throwing the iterate into the
+    // saturated region, from which the Magic Formula cannot recover.
+    const double step = std::min(
+      1.0, 0.5 / std::max({1e-9, std::abs(d_vy) / std::max(1.0, std::abs(v)),
+        std::abs(d_delta) / 0.2}));
+    vy += step * d_vy;
+    delta += step * d_delta;
+    if (!std::isfinite(vy) || !std::isfinite(delta)) {
+      break;
+    }
+  }
+
+  if (converged) {
+    ss.vy = vy;
+    ss.delta = delta;
+    ss.beta = std::atan2(vy, v);
+  }
+  ss.converged = converged;
+  return ss;
+}
+
 State VehicleModel::continuousDynamics(const State & x, const Input & u) const
 {
   const double psi = x(2);

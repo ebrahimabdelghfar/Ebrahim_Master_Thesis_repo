@@ -127,6 +127,10 @@ if(BUILD_TESTING)
   ament_add_gtest(test_acados_solver test/test_acados_solver.cpp)
   target_link_libraries(test_acados_solver ${PROJECT_NAME}_core)
   set_target_properties(test_acados_solver PROPERTIES BUILD_RPATH "${THIRDPARTY_LIB_RPATH}")
+
+  ament_add_gtest(test_mpc_controller test/test_mpc_controller.cpp)
+  target_link_libraries(test_mpc_controller ${PROJECT_NAME}_core)
+  set_target_properties(test_mpc_controller PROPERTIES BUILD_RPATH "${THIRDPARTY_LIB_RPATH}")
 endif()
 
 ament_package()

@@ -95,6 +95,35 @@ public:
 
   const VehicleParams & vehicleParams() const { return vehicle_; }
 
+  // Solution of the steady-state cornering equations at speed vx on a path of
+  // curvature kappa: the (vy, delta) pair for which the lateral dynamics are
+  // actually in equilibrium with r = vx*kappa,
+  //     vy_dot = (Fy_r + Fy_f*cos(delta))/m - vx*r          = 0
+  //     r_dot  = (l_f*Fy_f*cos(delta) - l_r*Fy_r)/Iz        = 0
+  // See steadyStateCornering().
+  struct SteadyState
+  {
+    double vy{0.0};        // m/s, body-frame lateral velocity in the turn
+    double delta{0.0};     // rad, steering angle that sustains it
+    double beta{0.0};      // rad, sideslip = atan2(vy, vx)
+    bool converged{true};  // false => the turn exceeds the tire model's grip
+  };
+
+  // A dynamic vehicle CANNOT corner with zero sideslip: holding curvature
+  // kappa at speed vx requires a real vy and a heading offset beta from the
+  // path tangent, both growing with vx^2. Feeding the MPC a reference that
+  // assumes vy = 0 and psi = path tangent therefore asks for something
+  // physically impossible, and the cost then trades path accuracy against
+  // sideslip suppression in a fight it cannot win - the classic symptom is
+  // steering chatter that appears only above some speed. This is the
+  // steady-state target calculation layer of a standard tracking MPC.
+  //
+  // Solves the 2x2 system above for (vy, delta) by Newton iteration on the
+  // full Magic Formula, seeded from the linear-tire closed form. Returns
+  // converged=false (with the linear-tire seed as a best effort) when the
+  // required axle forces exceed what the current tire params can produce.
+  SteadyState steadyStateCornering(double vx, double kappa) const;
+
   // Thread-safe read of the current tire params (returns a copy - `tire_`
   // may be concurrently overwritten by setTireParams() from the
   // mpc/update_params service callback, which runs on a different

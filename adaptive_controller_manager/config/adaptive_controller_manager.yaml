@@ -17,10 +17,10 @@ adaptive_controller_manager:
     mpc_update_params_service: "mpc/update_params"
 
     # ---------------- Safety-gate thresholds ----------------
-    control_rate_hz: 20.0
+    control_rate_hz: 50.0
 
     # Safety 1A: vehicle must be moving above this before arming MPC
-    v_min: 0.5                  # m/s
+    v_min: 1.5                  # m/s
 
     # Safety 1B: track alignment required before arming MPC
     # 0.1 m was an F1TENTH number (0.3 m wheelbase). The vehicle now driven in

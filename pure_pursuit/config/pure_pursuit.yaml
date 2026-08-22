@@ -3,6 +3,15 @@ pure_pursuit:
     lookahead_distance: 5.5
     wheelbase: 1.53271
     
+    # Hardcoded reference speed.
+    # When use_fixed_reference_speed is true the controller ignores the
+    # per-waypoint vx_mps coming from /raceline_waypoints and tracks
+    # fixed_reference_speed [m/s] everywhere instead. Useful for constant-speed
+    # runs (sysid excitation, PID tuning, driving a raceline whose speed
+    # profile is not trusted). Both are runtime-settable via ros2 param set.
+    use_fixed_reference_speed: true
+    fixed_reference_speed: 11.1
+
     # PID parameters for velocity control
     kp_vel: 1.0
     ki_vel: 0.0

@@ -63,7 +63,14 @@ void DebugPublisher::publishPredictedPath(
 
 void DebugPublisher::publishStatus(
   bool solved, double solve_time_ms, double cost, const std::string & message,
-  const rclcpp::Time & /*stamp*/)
+  const rclcpp::Time & stamp)
+{
+  publishStatus(solved, solve_time_ms, cost, message, StatusInfo{}, stamp);
+}
+
+void DebugPublisher::publishStatus(
+  bool solved, double solve_time_ms, double cost, const std::string & message,
+  const StatusInfo & info, const rclcpp::Time & /*stamp*/)
 {
   diagnostic_msgs::msg::DiagnosticStatus status;
   status.name = "mpc_path_tracking";
@@ -86,6 +93,25 @@ void DebugPublisher::publishStatus(
   cost_kv.key = "cost";
   cost_kv.value = std::to_string(cost);
   status.values.push_back(cost_kv);
+
+  // The tire set the solver is ACTUALLY using. mpc/update_params bypasses the
+  // ROS parameters entirely, so without this there is no way to tell from
+  // outside whether sysid has pushed an identification, or what it was.
+  const auto add = [&status](const std::string & key, const std::string & value) {
+      diagnostic_msgs::msg::KeyValue kv;
+      kv.key = key;
+      kv.value = value;
+      status.values.push_back(kv);
+    };
+  add("tire_front_BCDE",
+    std::to_string(info.tire.Bf) + "," + std::to_string(info.tire.Cf) + "," +
+    std::to_string(info.tire.Df) + "," + std::to_string(info.tire.Ef));
+  add("tire_rear_BCDE",
+    std::to_string(info.tire.Br) + "," + std::to_string(info.tire.Cr) + "," +
+    std::to_string(info.tire.Dr) + "," + std::to_string(info.tire.Er));
+  add("infeasible_ref_stages", std::to_string(info.infeasible_ref_stages));
+  add("relinearized", info.relinearized ? "true" : "false");
+  add("x0_prediction_s", std::to_string(info.x0_prediction_s));
 
   status_pub_->publish(status);
 }

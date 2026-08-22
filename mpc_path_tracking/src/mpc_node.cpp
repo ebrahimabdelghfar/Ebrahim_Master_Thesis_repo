@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <string>
 
@@ -136,6 +137,26 @@ private:
     tire.Cr = request->param_values[5];
     tire.Dr = request->param_values[6];
     tire.Er = request->param_values[7];
+    // Reject a set that makes the prediction model open-loop unstable inside
+    // the speed range we are actually going to drive. Above the oversteer
+    // critical speed every horizon stage linearized there diverges, and over
+    // N stages that is rho^N in the condensed QP - the solver can only report
+    // it as a generic failure. Keeping the last physically sane model is
+    // strictly better than accepting one we know cannot be solved.
+    const double v_crit = criticalSpeed(tire);
+    const double v_max = get_parameter("limits.speed_max").as_double();
+    if (v_crit < v_max) {
+      RCLCPP_ERROR(
+        get_logger(),
+        "mpc/update_params REJECTED: identified tire set is oversteering with critical speed "
+        "%.1f m/s, below limits.speed_max=%.1f m/s. The prediction model would be open-loop "
+        "unstable over most of the horizon. Keeping the previous tire params.",
+        v_crit, v_max);
+      logModelStability(tire);
+      response->ack = false;
+      return;
+    }
+
     // controller_ holds its own VehicleModel copy (see MpcController::model_)
     // - that is the instance computeCommand() actually solves against, so
     // it must be updated directly rather than vehicle_model_ (which is only
@@ -144,6 +165,22 @@ private:
     RCLCPP_INFO(get_logger(), "tire params updated via mpc/update_params");
     logModelStability(tire);
     response->ack = true;
+  }
+
+  // Oversteer critical speed of the linear single-track model for `tire`, or
+  // infinity when the axle balance is understeering (stable at every speed).
+  double criticalSpeed(const TireParams & tire) const
+  {
+    const VehicleParams & vp = vehicle_model_->vehicleParams();
+    double fz_f = 0.0, fz_r = 0.0;
+    vehicle_model_->normalLoads(fz_f, fz_r);
+    const double c_front = fz_f * tire.Bf * tire.Cf * tire.Df;
+    const double c_rear = fz_r * tire.Br * tire.Cr * tire.Dr;
+    const double margin = vp.l_f * c_front - vp.l_r * c_rear;
+    if (margin <= 0.0) {
+      return std::numeric_limits<double>::infinity();
+    }
+    return (vp.l_f + vp.l_r) * std::sqrt(c_front * c_rear / (vp.mass * margin));
   }
 
   // The MPC linearizes about the *reference* at every stage, so an
@@ -261,16 +298,21 @@ private:
 
   void controlLoop()
   {
+    // Pick up a runtime change to limits.speed_max without needing the
+    // raceline republished. Cheap scalar compare per cycle; the O(n) re-ingest
+    // only runs on an actual change. Must come BEFORE the odom/waypoint
+    // guards - re-clamping the stored reference does not depend on odometry,
+    // and behind the guard a param change would be silently dropped whenever
+    // odom happened to be absent.
+    if (ref_handler_.hasWaypoints() &&
+      get_parameter("limits.speed_max").as_double() != ref_handler_.speedLimit())
+    {
+      ingestWaypoints();
+    }
+
     if (!has_odom_ || !ref_handler_.hasWaypoints()) {
       applyFallback(!has_odom_ ? "no odometry received yet" : "no raceline received yet");
       return;
-    }
-
-    // Pick up a runtime change to limits.speed_max without needing the
-    // raceline republished. Cheap scalar compare per cycle; the O(n) re-ingest
-    // only runs on an actual change.
-    if (get_parameter("limits.speed_max").as_double() != ref_handler_.speedLimit()) {
-      ingestWaypoints();
     }
 
     constexpr double kStaleOdomTimeoutS = 0.5;
@@ -279,18 +321,35 @@ private:
       return;
     }
 
-    const MpcOutput out = controller_->computeCommand(current_state_, u_prev_, ref_handler_);
+    // Latency compensation. The command about to be computed will not reach
+    // the tyres until the odom sample has aged by (sensing age + this solve +
+    // one command-hold period), and the path-following loop gain grows as
+    // v^2/L while that dead time stays constant - which is why a lag that is
+    // harmless at 11 m/s destabilises the loop at 27 m/s. Roll the state
+    // forward over that window with the last applied input so the MPC plans
+    // from where the car will be, not where it was.
+    const double control_period_s = 1.0 / std::max(param_manager_.controlRateHz(), 1.0);
+    const double odom_age_s = std::clamp((now() - last_odom_stamp_).seconds(), 0.0, 0.2);
+    const double horizon_s = std::clamp(
+      odom_age_s + control_period_s + last_solve_time_ms_ * 1e-3, 0.0, 0.25);
+    const State x0 = horizon_s > 0.0 ?
+      controller_->predictState(current_state_, u_prev_, horizon_s) :
+      current_state_;
+
+    const MpcOutput out = controller_->computeCommand(x0, u_prev_, ref_handler_);
     if (!out.solved) {
       applyFallback("QP solve failed: " + out.status);
       return;
     }
+    last_solve_time_ms_ = out.solve_time_ms;
 
     u_prev_ = out.u0;
-    const double control_period_s = 1.0 / std::max(param_manager_.controlRateHz(), 1.0);
     const double speed_min = get_parameter("limits.speed_min").as_double();
     const double speed_max = get_parameter("limits.speed_max").as_double();
+    // Integrate from the predicted speed, consistent with the state the
+    // command was actually computed for.
     const double speed_cmd = std::clamp(
-      current_state_(3) + out.u0(1) * control_period_s, speed_min, speed_max);
+      x0(3) + out.u0(1) * control_period_s, speed_min, speed_max);
 
     ackermann_msgs::msg::AckermannDriveStamped cmd;
     cmd.header.stamp = now();
@@ -304,7 +363,20 @@ private:
     has_last_command_ = true;
 
     debug_pub_->publishPredictedPath(out.predicted_states, "map", now());
-    debug_pub_->publishStatus(true, out.solve_time_ms, out.cost, "OK", now());
+    DebugPublisher::StatusInfo info;
+    info.tire = controller_->effectiveTireParams();
+    info.infeasible_ref_stages = out.infeasible_ref_stages;
+    info.relinearized = out.relinearized;
+    info.x0_prediction_s = horizon_s;
+    debug_pub_->publishStatus(true, out.solve_time_ms, out.cost, "OK", info, now());
+    if (out.infeasible_ref_stages > 0) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "%d/%d horizon stages have no steady-state solution for the current tire params - the "
+        "raceline asks for more lateral grip there than the model has. Tracking will be "
+        "approximate on those stages.",
+        out.infeasible_ref_stages, param_manager_.mpcConfig().N + 1);
+    }
 
     const track_geometry_utils::TrackError track_error = track_geometry_utils::computeTrackError(
       last_waypoints_msg_, current_state_(0), current_state_(1), current_state_(2));
@@ -336,6 +408,9 @@ private:
 
   bool has_last_command_{false};
   ackermann_msgs::msg::AckermannDriveStamped last_command_;
+  // Last successful solve duration, used to size the latency-compensation
+  // prediction in controlLoop().
+  double last_solve_time_ms_{0.0};
 
   bool standalone_mode_{false};
   bool start_working_{false};

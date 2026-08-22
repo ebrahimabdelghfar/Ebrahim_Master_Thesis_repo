@@ -16,20 +16,35 @@ mpc_path_tracking:
 
     # ---------------- Horizon / timing ----------------
     horizon:
-      N: 100                        # prediction steps
-      dt_min: 0.02                 # s, floor is auto-raised to 1/control_rate_hz at
+      N: 100                       # prediction steps
+      dt_min: 0.02                 # s, auto-raised to 1/control_rate_hz at startup
       dt_max: 0.07                 # s
       dt_adaptive: true            # dt = clamp(horizon_distance_m / (N * max(vx_ref, v_floor)), dt_min, dt_max)
-      horizon_distance_m: 5.5     # target look-ahead distance for the adaptive dt formula
-      control_rate_hz: 20.0        # outer ROS timer rate; decoupled from the internal adaptive dt
+      # NOTE: this knob is currently INERT. 5.5/(N*vx_ref) is ~0.002 s at any
+      # realistic speed, so the clamp always returns dt_min and the horizon is
+      # N*dt_min in time (2.0 s at 50 Hz) - a 54 m look-ahead at 27 m/s, not
+      # 5.5 m. Left as-is rather than "fixed", because the resulting horizon is
+      # the one that was actually tuned and measured; treat N*dt_min as the
+      # real horizon setting.
+      horizon_distance_m: 5.5
+      # 20 Hz was the single biggest cause of the high-speed steering chatter.
+      # The path-following loop gain grows as v^2/L (80 m/s^2 per rad at 11 m/s,
+      # 475 at 27) while the transport delay stays constant, so the same lag
+      # that is harmless at 11 m/s destabilises the loop at 27. Measured on
+      # traj_race_cl.csv at 27 m/s with one tick of transport delay: 20 Hz gave
+      # 267 steering sign reversals in 600 cycles; 50 Hz gave 0, with max
+      # cross-track error 0.07 m. Check solve time before lowering this again -
+      # the budget is 1/control_rate_hz (20 ms here) and measured solves are
+      # 13-17 ms, so there is not much headroom.
+      control_rate_hz: 50.0
 
     # ---------------- Cost matrices ----------------
     # error order: [e_y, e_psi, vx_err, vy, r_err]
     cost:
-      Q: [20.0, 10.0, 20.0, 10.0, 10.0]
-      R: [100.0, 1.0]                # [steering, accel]
-      R_rate: [100.0, 10.0]          # input-rate penalty
-      Qf: [20.0, 10.0, 20.0, 10.0, 10.0] #
+      Q: [20.0, 10.0, 20.0, 0.0, 10.0]
+      R: [10.0, 10.0]                # [steering, accel]
+      R_rate: [10.0, 10.0]          # input-rate penalty
+      Qf: [20.0, 10.0, 20.0, 0.0, 10.0] #
 
     # ---------------- Vehicle geometry / mass ----------------
     # NOTE: On-Track-SysID/models/SIM/SIM_pacejka.txt currently carries a
@@ -71,7 +86,7 @@ mpc_path_tracking:
       steering_angle_max: 0.2793   # rad (16 deg)
       steering_angle_min: -0.2793  # rad
       steering_rate_max: 1.0       # rad/s - PLACEHOLDER, measure
-      speed_max: 11.1111           # m/s (40 km/h plant cap)
+      speed_max: 20.00           # m/s (40 km/h plant cap)
       speed_min: 0.0               # m/s
       accel_max: 14.71             # m/s^2 (mu*g, grip-limited)
       decel_max: 14.71             # m/s^2 (magnitude; accel_min = -decel_max)
@@ -89,15 +104,21 @@ mpc_path_tracking:
       fallback_on_failure: "hold_last"   # "hold_last" | "zero_command" | "brake"
 
       acados:
-        qp_solver: "FULL_CONDENSING_QPOASES"
+        # Partial condensing, not full. Raising control_rate_hz to 50 cut the
+        # budget to 20 ms, and FULL_CONDENSING_QPOASES needed 14.1 ms of it at
+        # N=100 - no headroom. Partial condensing gives byte-identical tracking
+        # (0 steering sign reversals, max cross-track 0.07 m at 27 m/s) in
+        # 1.63 ms, 8.7x faster, and keeps the full 2 s horizon. Measured
+        # alternatives at 27 m/s / 50 Hz: qpOASES N=75 5.29 ms, N=50 1.86 ms
+        # (but 0.12 m error on the shorter horizon); HPIPM N=75 1.31 ms.
+        # Full condensing builds a dense 2*N-variable QP, which is what makes
+        # it scale badly here; HPIPM keeps the block structure.
+        qp_solver: "PARTIAL_CONDENSING_HPIPM"
         cond_N: 5                        # partial-condensing block size (PARTIAL_CONDENSING_HPIPM only)
-        # For qpOASES this is max_nwsr (working-set recalculations), NOT an
-        # SQP/interior-point iteration count. Full condensing with N=100
-        # gives a dense QP with 2*N=200 variables, 200 general (rate) rows and
-        # 400 bounds; right after a PP->MPC switch the accel bound is active
-        # at nearly every stage, so the initial active set alone needs >100
-        # recalculations. The old value of 50 returned RET_MAX_NWSR_REACHED
-        # -> acados MAXITER -> "QP solve failed". 1000 is qpOASES' own default.
+        # HPIPM reads this as its interior-point iteration cap. qpOASES instead
+        # reads it as max_nwsr (working-set recalculations) - if you switch
+        # back, note that the old value of 50 returned RET_MAX_NWSR_REACHED
+        # -> acados MAXITER -> "QP solve failed"; 1000 is qpOASES' own default.
         iter_max: 1000
         tol_stat: 1.0e-4
         tol_eq: 1.0e-4

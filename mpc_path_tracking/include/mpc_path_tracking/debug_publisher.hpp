@@ -26,9 +26,26 @@ public:
   void publishPredictedPath(
     const std::vector<State> & states, const std::string & frame_id, const rclcpp::Time & stamp);
 
+  // Extra per-cycle facts that are otherwise invisible from outside the node.
+  // In particular the EFFECTIVE tire params: mpc/update_params calls
+  // MpcController::setTireParams directly and never writes back to the ROS
+  // parameters, so `ros2 param get .. tire.Df` keeps reporting the yaml value
+  // no matter what sysid pushed. This is the only truthful readout.
+  struct StatusInfo
+  {
+    TireParams tire;
+    int infeasible_ref_stages{0};
+    bool relinearized{false};
+    double x0_prediction_s{0.0};   // how far x0 was rolled forward for latency
+  };
+
   void publishStatus(
     bool solved, double solve_time_ms, double cost, const std::string & message,
     const rclcpp::Time & stamp);
+
+  void publishStatus(
+    bool solved, double solve_time_ms, double cost, const std::string & message,
+    const StatusInfo & info, const rclcpp::Time & stamp);
 
   void publishDebugScalars(double e_y, double e_psi, double cost, double solve_time_ms);
 
