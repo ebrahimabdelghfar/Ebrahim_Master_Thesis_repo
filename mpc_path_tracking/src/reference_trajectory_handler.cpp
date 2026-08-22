@@ -27,6 +27,7 @@ void ReferenceTrajectoryHandler::setWaypoints(const f1tenth_msgs::msg::WaypointA
   waypoints_.reserve(msg.waypoints.size());
   clamped_count_ = 0;
   max_raw_speed_ = 0.0;
+  max_lateral_demand_ = 0.0;
   for (const auto & wp : msg.waypoints) {
     ReferencePoint rp;
     rp.s = wp.s_m;
@@ -48,6 +49,8 @@ void ReferenceTrajectoryHandler::setWaypoints(const f1tenth_msgs::msg::WaypointA
       rp.vx = wp.vx_mps;
     }
     rp.ax = wp.ax_mps2;
+    max_lateral_demand_ =
+      std::max(max_lateral_demand_, rp.vx * rp.vx * std::abs(rp.kappa));
     waypoints_.push_back(rp);
   }
   last_nearest_index_ = 0;

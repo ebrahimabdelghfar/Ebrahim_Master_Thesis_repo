@@ -171,3 +171,32 @@ TEST(ReferenceTrajectoryHandler, SpeedClampShortensHorizonReach)
   EXPECT_NEAR(far.back().s, 230.0, 1.0);
   EXPECT_NEAR(near.back().s, 55.6, 1.0);
 }
+
+// Regression: bug-mpc-adaptive-handover-lowgrip-tires. The peak lateral demand
+// of the (speed-clamped) raceline is what a candidate tire set has to be able
+// to produce; mpc_node uses it to reject an identification whose D coefficients
+// leave the model unable to corner.
+TEST(ReferenceTrajectoryHandler, ReportsPeakLateralDemand)
+{
+  ReferenceTrajectoryHandler handler;
+  handler.setWaypoints(makeCircle(50.0, 200, 20.0));   // a_y = 20^2/50 = 8 m/s^2
+  EXPECT_NEAR(handler.maxLateralDemand(), 8.0, 0.1);
+}
+
+// The demand must be computed AFTER the speed clamp, otherwise a raceline
+// written for a faster car reports a demand the vehicle will never actually
+// generate and every tire set gets rejected.
+TEST(ReferenceTrajectoryHandler, PeakLateralDemandUsesClampedSpeed)
+{
+  ReferenceTrajectoryHandler handler;
+  handler.setSpeedLimit(10.0);
+  handler.setWaypoints(makeCircle(50.0, 200, 20.0));   // clamped to 10 m/s
+  EXPECT_NEAR(handler.maxLateralDemand(), 2.0, 0.1);   // 10^2/50
+}
+
+TEST(ReferenceTrajectoryHandler, PeakLateralDemandZeroOnAStraightLine)
+{
+  ReferenceTrajectoryHandler handler;
+  handler.setWaypoints(makeStraightLine(2.0, 100, 20.0));
+  EXPECT_DOUBLE_EQ(handler.maxLateralDemand(), 0.0);
+}

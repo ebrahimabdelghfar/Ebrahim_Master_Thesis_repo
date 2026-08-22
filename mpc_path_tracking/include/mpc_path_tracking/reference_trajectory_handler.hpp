@@ -51,6 +51,13 @@ public:
   size_t clampedWaypointCount() const { return clamped_count_; }
   double maxRawSpeed() const { return max_raw_speed_; }
 
+  // Peak lateral acceleration the (speed-clamped) raceline demands,
+  // max(vx^2 * |kappa|) [m/s^2]. A vehicle model whose tires cannot produce
+  // this much cannot represent the trajectory it is being asked to track:
+  // most horizon stages then have no steady-state solution and the MPC plans
+  // against a model that believes the corner is impossible.
+  double maxLateralDemand() const { return max_lateral_demand_; }
+
   // Nearest reference point (by Euclidean distance) to (x, y). Uses
   // last_nearest_index_ as a search hint and wraps around for closed
   // (looped) tracks, so cost stays near O(1) per call in steady tracking.
@@ -73,6 +80,7 @@ private:
   double speed_limit_{std::numeric_limits<double>::infinity()};
   size_t clamped_count_{0};
   double max_raw_speed_{0.0};
+  double max_lateral_demand_{0.0};
   mutable size_t last_nearest_index_{0};
   mutable bool has_prior_nearest_{false};
 };

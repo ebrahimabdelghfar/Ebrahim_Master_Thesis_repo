@@ -86,7 +86,7 @@ mpc_path_tracking:
       steering_angle_max: 0.2793   # rad (16 deg)
       steering_angle_min: -0.2793  # rad
       steering_rate_max: 1.0       # rad/s - PLACEHOLDER, measure
-      speed_max: 20.00           # m/s (40 km/h plant cap)
+      speed_max: 20.0           # m/s (40 km/h plant cap)
       speed_min: 0.0               # m/s
       accel_max: 14.71             # m/s^2 (mu*g, grip-limited)
       decel_max: 14.71             # m/s^2 (magnitude; accel_min = -decel_max)
