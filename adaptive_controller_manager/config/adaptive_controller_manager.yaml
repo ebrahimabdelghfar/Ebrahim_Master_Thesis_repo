@@ -37,7 +37,7 @@ adaptive_controller_manager:
     # has a median |heading_error| ~0.09 rad and a p90 of ~0.25 rad under
     # normal driving - 0.1 would essentially never arm. Retuned to 0.3 rad
     # (comfortably above the observed p90) based on that measurement.
-    theta_max: 0.3               # rad
+    theta_max: 0.34               # rad
 
     # Safety 2B: /odom staleness cutoff, blocks switching / triggers fallback
     delta_t_state_max: 0.1       # s
@@ -66,7 +66,10 @@ adaptive_controller_manager:
     # covers the switch ramp, EMERGENCY_HALT, and stale-data fallback, so
     # none of them ever reads as an instant stop.
     max_decel_mps2: 8.26          # m/s^2, matches f1tenth_simulator's max_decel
-    tire_param_min: [4.0, 1.2, 0.2, -3.0, 4.0, 1.2, 0.2, -3.0]
+    # MUST stay in sync with On-Track-SysID's solve_pacejka.PACEJKA_BOUNDS -
+    # the D floor was 0.2 here against 0.4 there, so this gate was the looser
+    # of the two and would have admitted a fit the identifier itself rejects.
+    tire_param_min: [4.0, 1.2, 0.4, -3.0, 4.0, 1.2, 0.4, -3.0]
     tire_param_max: [20.0, 2.2, 2.0, 1.0, 20.0, 2.2, 2.0, 1.0]
 
     # ---------------- Benchmark forwarding (optional) ----------------

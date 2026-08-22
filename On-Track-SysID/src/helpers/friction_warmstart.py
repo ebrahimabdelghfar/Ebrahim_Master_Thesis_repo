@@ -1,9 +1,9 @@
 """
 Non-vision friction warm-start for Pacejka cold-start.
 
-Estimates a single scalar `mu_hat` (instantaneous friction utilization,
-mu_hat = sqrt(a_x^2 + a_y^2) / g) over a low-slip subset of the collected
-on-track data, to replace the static pacejka_params.yaml D default as the
+Estimates a single scalar `mu_hat` (peak friction utilization,
+mu_hat = quantile(sqrt(a_x^2 + a_y^2) / g)) over the collected on-track
+data, used as a FLOOR on the static pacejka_params.yaml D default for the
 node's FIRST-EVER Pacejka identification cycle's initial guess - the
 non-vision analog of arXiv:2603.09399's camera-based friction prior, adapted
 from arXiv:2509.15423's model-free "friction from measured acceleration
@@ -48,13 +48,37 @@ def _low_slip_mask(vx, vy, omega, delta, l_f, l_r, cfg):
 
 
 def _mu_from_accel(a_x, a_y, mask, cfg):
-    n_used = int(np.sum(mask))
+    """Peak utilised friction over the buffer - a LOWER BOUND on available mu.
+
+    sqrt(a_x^2+a_y^2)/g is the friction the car actually used, not the
+    friction it had available; the two coincide only at the limit. The
+    original implementation took the MEDIAN of that ratio over the
+    _low_slip_mask() subset - i.e. the typical utilisation of the samples
+    explicitly selected for being furthest from the limit. Measured on the
+    CARLA asurt_fsai driving traj_race_cl.csv under pure pursuit
+    (2026-08-22): median utilisation 0.044 g at 13 m/s and 0.06 g at 21 m/s,
+    against a measured axle peak of mu = 1.05. That estimator cannot return
+    anything but a near-zero D no matter what the tires can do.
+
+    So: quantile over the WHOLE buffer by default (low_slip_only: false),
+    and nn_train applies the result as a floor on the static prior, never as
+    a replacement that can lower it (see nn_train's warm_start_mu handling).
+    Even so this stays a lower bound - on a raceline that never approaches
+    the limit the peak utilisation (0.63 g measured at 21 m/s) is still well
+    under the real grip, and only limit excitation can close that gap.
+    """
+    if bool(cfg.get('low_slip_only', False)):
+        sel = mask
+    else:
+        sel = np.ones_like(mask, dtype=bool)
+    n_used = int(np.sum(sel))
     min_samples = int(cfg.get('min_samples', 20))
     if n_used < min_samples:
         return None, n_used
     g = 9.81
-    mu_samples = np.sqrt(a_x[mask] ** 2 + a_y[mask] ** 2) / g
-    return float(np.median(mu_samples)), n_used
+    mu_samples = np.sqrt(a_x[sel] ** 2 + a_y[sel] ** 2) / g
+    q = float(cfg.get('quantile', 0.99))
+    return float(np.quantile(mu_samples, q)), n_used
 
 
 def estimate_mu_from_buffer(data, l_f, l_r, dt, cfg):

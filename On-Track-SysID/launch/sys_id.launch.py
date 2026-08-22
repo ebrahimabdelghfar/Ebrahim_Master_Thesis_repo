@@ -78,6 +78,27 @@ def generate_launch_description():
         description='Ackermann command topic name'
     )
     
+    # Measured road-wheel angle. The CARLA bridge echoes it in DEGREES on
+    # /sim/feedback/steering_angle, and it is NOT the commanded angle: the
+    # achieved/commanded ratio measured over 13-21 m/s on 2026-08-22 is 0.76.
+    # Identifying against the command instead put a 25 % bias straight into
+    # alpha_f. Set steering_feedback_topic:='' to fall back to the command.
+    steering_feedback_topic_arg = DeclareLaunchArgument(
+        'steering_feedback_topic',
+        default_value='/sim/feedback/steering_angle',
+        description='std_msgs/Float32 topic carrying the MEASURED road-wheel angle. '
+                    'Empty string identifies against the /drive setpoint instead.'
+    )
+    steering_feedback_units_arg = DeclareLaunchArgument(
+        'steering_feedback_units', default_value='deg',
+        description="Units of steering_feedback_topic: 'rad' or 'deg'"
+    )
+    steering_feedback_scale_arg = DeclareLaunchArgument(
+        'steering_feedback_scale', default_value='1.0',
+        description='Extra multiplier applied after the unit conversion, e.g. a '
+                    'steering-wheel-to-road-wheel ratio'
+    )
+
     save_lut_name_arg = DeclareLaunchArgument(
         'save_LUT_name',
         default_value='NUCx_on_track_pacejka',
@@ -149,6 +170,9 @@ def generate_launch_description():
         parameters=[{
             'odom_topic': LaunchConfiguration('odom_topic'),
             'ackermann_cmd_topic': LaunchConfiguration('ackermann_cmd_topic'),
+            'steering_feedback_topic': LaunchConfiguration('steering_feedback_topic'),
+            'steering_feedback_units': LaunchConfiguration('steering_feedback_units'),
+            'steering_feedback_scale': LaunchConfiguration('steering_feedback_scale'),
             'save_LUT_name': LaunchConfiguration('save_LUT_name'),
             'plot_model': LaunchConfiguration('plot_model'),
             'racecar_version': LaunchConfiguration('racecar_version'),
@@ -176,6 +200,9 @@ def generate_launch_description():
     return LaunchDescription([
         odom_topic_arg,
         ackermann_topic_arg,
+        steering_feedback_topic_arg,
+        steering_feedback_units_arg,
+        steering_feedback_scale_arg,
         save_lut_name_arg,
         plot_model_arg,
         racecar_version_arg,

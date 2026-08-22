@@ -59,6 +59,18 @@ struct SafetyConfig
   // stop. Matches f1tenth_simulator/mpc_path_tracking's existing
   // max_decel/limits.decel_max physical limit.
   double max_decel_mps2{8.26};
+
+  // Minimum spacing between two attempts to forward the SAME tire param
+  // version to mpc/update_params after it was refused. A refused version
+  // used to stay "unforwarded" forever, so tryForwardStoredParams() resent
+  // it on every control tick: at control_rate_hz 50 that is 50 identical
+  // service calls and 50 identical REJECTED errors per second, until the
+  // next identification 30 s later (measured 2026-08-22). A newly
+  // identified version is always forwarded immediately - this only paces
+  // retries of a version the MPC has already refused, which is worth
+  // retrying at all only because the refusal can depend on state that
+  // changes underneath it (a reloaded raceline, a new limits.speed_max).
+  double mpc_forward_retry_period_s{5.0};
 };
 
 // Plausible-range bounds for a submitted tire param set, fixed order

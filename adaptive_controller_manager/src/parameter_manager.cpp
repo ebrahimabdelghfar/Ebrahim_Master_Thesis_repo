@@ -39,6 +39,7 @@ void ParameterManager::declareAll()
   node_->declare_parameter<double>("corner_lookahead_distance", 3.0);
   node_->declare_parameter<double>("kappa_max_for_switch", 0.35);
   node_->declare_parameter<double>("max_decel_mps2", 8.26);
+  node_->declare_parameter<double>("mpc_forward_retry_period_s", 5.0);
 
   // Tire-param plausibility bounds, fixed order [Bf,Cf,Df,Ef,Br,Cr,Dr,Er]
   node_->declare_parameter<std::vector<double>>(
@@ -86,6 +87,8 @@ SafetyConfig ParameterManager::safety() const
   s.corner_lookahead_distance = node_->get_parameter("corner_lookahead_distance").as_double();
   s.kappa_max_for_switch = node_->get_parameter("kappa_max_for_switch").as_double();
   s.max_decel_mps2 = node_->get_parameter("max_decel_mps2").as_double();
+  s.mpc_forward_retry_period_s =
+    node_->get_parameter("mpc_forward_retry_period_s").as_double();
   return s;
 }
 

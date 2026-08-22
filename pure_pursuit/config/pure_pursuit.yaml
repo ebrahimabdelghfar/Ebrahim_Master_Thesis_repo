@@ -10,7 +10,7 @@ pure_pursuit:
     # runs (sysid excitation, PID tuning, driving a raceline whose speed
     # profile is not trusted). Both are runtime-settable via ros2 param set.
     use_fixed_reference_speed: true
-    fixed_reference_speed: 20.0
+    fixed_reference_speed: 13.0
 
     # PID parameters for velocity control
     kp_vel: 1.0

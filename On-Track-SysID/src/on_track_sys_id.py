@@ -10,7 +10,7 @@ import yaml
 import csv
 from nav_msgs.msg import Odometry
 from ackermann_msgs.msg import AckermannDriveStamped
-from std_msgs.msg import Float64MultiArray, String, Bool
+from std_msgs.msg import Float32, Float64MultiArray, String, Bool
 from sensor_msgs.msg import Imu
 from datetime import datetime
 import sys # Ensure sys is imported
@@ -47,6 +47,19 @@ class OnTrackSysId(Node):
         self.declare_parameter('plot_model', False)
         self.declare_parameter('odom_topic', '/odom')
         self.declare_parameter('ackermann_cmd_topic', '/drive')
+        # Measured road-wheel angle. The /drive command is a SETPOINT: on the
+        # CARLA asurt_fsai the achieved angle is 0.76 +/- 0.03 of the
+        # commanded one (measured 2026-08-22 against
+        # /sim/feedback/steering_angles' wheel_FL/FR joints over 13-21 m/s),
+        # which biases alpha_f high by ~25 % and the identified front
+        # cornering stiffness low by the same factor: fitting the same run
+        # with the command gave C_front = 13725 N/rad against CARLA's own
+        # 17198 N/rad, and with the measured angle 18486 N/rad.
+        # Empty string = disabled, use the command (previous behaviour).
+        self.declare_parameter('steering_feedback_topic', '')
+        self.declare_parameter('steering_feedback_units', 'rad')   # rad | deg
+        self.declare_parameter('steering_feedback_scale', 1.0)
+        self.declare_parameter('steering_feedback_timeout_s', 1.0)
         self.declare_parameter('benchmarking_log_interval', 100)
         self.declare_parameter('reidentification_interval_s', 30.0)
         # If enabled, every accepted identification cycle is also forwarded
@@ -63,6 +76,17 @@ class OnTrackSysId(Node):
         odom_topic = self.get_parameter('odom_topic').value
         ackermann_topic = self.get_parameter('ackermann_cmd_topic').value
         self.bench_log_interval = self.get_parameter('benchmarking_log_interval').value
+        self.steering_fb_topic = self.get_parameter('steering_feedback_topic').value
+        units = str(self.get_parameter('steering_feedback_units').value).lower()
+        if units not in ('rad', 'deg'):
+            raise ValueError(f"steering_feedback_units must be 'rad' or 'deg', got {units!r}")
+        self.steering_fb_gain = float(self.get_parameter('steering_feedback_scale').value) * \
+            (np.pi / 180.0 if units == 'deg' else 1.0)
+        self.steering_fb_timeout_s = float(self.get_parameter('steering_feedback_timeout_s').value)
+        self._steering_fb_value = None
+        self._steering_fb_seen = False
+        self._steering_fb_ticks = 0
+        self._steering_fb_warned = False
         self.benchmark_update_params_enable = bool(
             self.get_parameter('benchmark_update_params_enable').value)
         benchmark_update_params_service = self.get_parameter('benchmark_update_params_service').value
@@ -110,6 +134,21 @@ class OnTrackSysId(Node):
             self.ackermann_cb,
             1
         )
+
+        # Measured road-wheel angle, when the platform publishes one. Same
+        # BEST_EFFORT reasoning as qos_sensor above - this is sensor feedback.
+        if self.steering_fb_topic:
+            self.steering_fb_sub = self.create_subscription(
+                Float32, self.steering_fb_topic, self.steering_fb_cb, qos_sensor)
+            self.get_logger().info(
+                f"Using measured steering from {self.steering_fb_topic} "
+                f"(units={units}, scale={self.get_parameter('steering_feedback_scale').value}); "
+                f"{ackermann_topic} is used only as a fallback if it goes stale.")
+        else:
+            self.get_logger().warn(
+                "steering_feedback_topic is empty - identifying against the /drive steering "
+                "SETPOINT. Any actuator gain or lag is then absorbed into the front tire "
+                "coefficients.")
 
         # Publishers for estimated state, sensor state, and error
         self.est_state_pub = self.create_publisher(Float64MultiArray, '/estimated_state', 1)
@@ -284,7 +323,40 @@ class OnTrackSysId(Node):
         self.current_time = rclpy.time.Time.from_msg(msg.header.stamp)
         
     def ackermann_cb(self, msg):
-        self.current_state[3] = msg.drive.steering_angle
+        # Only the fallback when a measured steering angle is configured and
+        # fresh - see steering_fb_cb / _steering_is_fresh.
+        if not self._steering_is_fresh():
+            self.current_state[3] = msg.drive.steering_angle
+
+    def steering_fb_cb(self, msg):
+        self._steering_fb_value = float(msg.data) * self.steering_fb_gain
+        self._steering_fb_ticks = 0
+        self._steering_fb_seen = True
+        self.current_state[3] = self._steering_fb_value
+
+    def _steering_is_fresh(self):
+        """Staleness in LOOP TICKS, not wall-clock seconds.
+
+        A training cycle blocks this node's single-threaded executor for tens
+        of seconds, during which no callback runs at all. Wall-clock ageing
+        reports every stream as dead the moment training returns (measured:
+        30-35 s "dropouts" on a stream whose real worst gap is 185 ms).
+        Counting ticks of this node's own 50 Hz loop makes the check immune to
+        that, because the loop is stalled by exactly the same amount.
+        """
+        if not self.steering_fb_topic or not self._steering_fb_seen:
+            return False
+        max_ticks = max(1, int(self.steering_fb_timeout_s * self.rate))
+        if self._steering_fb_ticks > max_ticks:
+            if not self._steering_fb_warned:
+                self.get_logger().warn(
+                    f"No message on {self.steering_fb_topic} for {self._steering_fb_ticks} loop "
+                    f"ticks (> {self.steering_fb_timeout_s:.1f} s) - falling back to the /drive "
+                    "steering setpoint.")
+                self._steering_fb_warned = True
+            return False
+        self._steering_fb_warned = False
+        return True
 
     def imu_cb(self, msg):
         self._latest_imu_accel[0] = msg.linear_acceleration.x
@@ -382,8 +454,8 @@ class OnTrackSysId(Node):
         Initiates training of the neural network using collected data.
         """
         self.get_logger().info("Training neural network...")
-        nn_train(self.data, self.racecar_version, self.save_LUT_name, self.plot_model,
-                  warm_start_mu=warm_start_mu)
+        return nn_train(self.data, self.racecar_version, self.save_LUT_name, self.plot_model,
+                        warm_start_mu=warm_start_mu)
 
 
     def publish_estimates(self):
@@ -504,7 +576,7 @@ class OnTrackSysId(Node):
             return
 
         warm_start_mu = self.maybe_compute_warm_start_mu()
-        self.run_nn_train(warm_start_mu=warm_start_mu)
+        identified = self.run_nn_train(warm_start_mu=warm_start_mu)
         self._is_first_identification = False
         self.export_data_as_csv()
 
@@ -515,6 +587,20 @@ class OnTrackSysId(Node):
             self.get_logger().info("Parameters reloaded successfully.")
         except Exception as e:
             self.get_logger().error(f"Failed to reload parameters: {e}")
+
+        # get_model_param() re-reads C_P*_model from pacejka_params.yaml, which
+        # is the static prior and NOT what was just identified (nothing writes
+        # that file back). Take the identified set straight from nn_train, so
+        # both the estimator below and the service request carry it.
+        if identified is not None:
+            self.C_Pf_model = [float(v) for v in identified[0]]
+            self.C_Pr_model = [float(v) for v in identified[1]]
+            self.get_logger().info(
+                f"Identified C_Pf={self.C_Pf_model} C_Pr={self.C_Pr_model}")
+        else:
+            self.get_logger().warn(
+                "nn_train returned no coefficients - submitting the static prior instead.")
+
 
         self.last_time = self.current_time
         # Re-arm the rolling-window progress counter/log for the next
@@ -612,6 +698,8 @@ class OnTrackSysId(Node):
         Main loop callback - handles data collection, training, ack-waiting,
         and estimation phases.
         """
+        self._steering_fb_ticks += 1
+
         # Runs in every phase past initial collection so the rolling buffer
         # stays fresh for periodic re-identification (see collect_data).
         collection_filled = self.collect_data()

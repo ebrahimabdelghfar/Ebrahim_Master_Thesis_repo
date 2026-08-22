@@ -433,7 +433,7 @@ def train_residual_nn(X_train_raw, y_train, params: dict, vehicle_model=None, cu
     
     return model
 
-def simulated_data_gen(nn_model, vehicle_model, avg_vel, nn_params):
+def simulated_data_gen(nn_model, vehicle_model, avg_vel, nn_params, delta_max=None):
     C_Pf_model = vehicle_model['C_Pf_model']
     C_Pr_model = vehicle_model['C_Pr_model']
 
@@ -458,7 +458,11 @@ def simulated_data_gen(nn_model, vehicle_model, avg_vel, nn_params):
     v_y = np.zeros(timesteps)
     omega = np.zeros(timesteps)
     v_x = np.ones(timesteps)*avg_vel
-    delta = np.linspace(0.0, 0.4, timesteps)
+    # Caller normally passes rollout_delta_max()'s data-bounded value; the
+    # config ceiling is the fallback for direct callers.
+    if delta_max is None:
+        delta_max = float((vehicle_model.get('pacejka_rollout', {}) or {}).get('sweep_delta_max', 0.4))
+    delta = np.linspace(0.0, delta_max, timesteps)
 
     nn_model.eval()
 
@@ -566,11 +570,13 @@ def get_model_param(racecar_version):
         "pacejka_x_scale": solver_cfg.get('x_scale', 'jac'),
         "pacejka_max_nfev": solver_cfg.get('max_nfev', None),
         "pacejka_num_starts": solver_cfg.get('num_starts', 1),
+        "pacejka_prior_weight": solver_cfg.get('prior_weight', 0.0),
         "pacejka_start_jitter": solver_cfg.get('start_jitter', 0.05),
         "pacejka_seed": solver_cfg.get('seed', None),
         "pacejka_de_popsize": solver_cfg.get('de_popsize', None),
         "pacejka_de_maxiter": solver_cfg.get('de_maxiter', None),
         "friction_warm_start": pacejka_params.get('friction_warm_start', {}),
+        "pacejka_rollout": pacejka_params.get('pacejka_rollout', {}),
         "m": vehicle_params['m'],
         "I_z": vehicle_params['I_z'],
         "l_f": vehicle_params['l_f'],
@@ -602,6 +608,83 @@ def generate_training_set(training_data, model, nn_params=None, segment_len=None
 
     return X_train, y_train
 
+def rollout_speed(training_data, model):
+    """Speed used for simulated_data_gen()'s synthetic steering sweep.
+
+    solve_pacejka() never sees the measured trace - it sees the rollout of
+    (nominal Pacejka + residual NN) that simulated_data_gen() produces while
+    sweeping delta from 0 to sweep_delta_max at this fixed speed. The peak
+    lateral force that rollout can ever produce is therefore capped by the
+    kinematic ceiling of that speed,
+
+        mu_kin = v^2 * delta_max / (g * l_wb),
+
+    because analyse_tires() reconstructs the "measured" force from
+    m * v_x * omega, and in steady state omega = v_x * delta / l_wb. Below
+    mu_kin the tire curve is still on its linear ramp, so only the product
+    B*C*D is identifiable and the solver slides D onto its box edge.
+
+    This used to be hardcoded as np.clip(mean(v_x), 2.0, 4.0) - an F1TENTH
+    leftover. Measured on the CARLA asurt_fsai (l_wb 1.5334 m, sweep to
+    0.4 rad) that ceiling is mu_kin = 0.43 at 4 m/s, and a rollout-and-fit at
+    that speed returns Df = 0.400 / Dr = 0.400 (both exactly the bound) from
+    a D = 1.5 prior as well as from the yaml prior. At the vehicle's real
+    13 m/s the same fit returns Df = 1.555 / Dr = 1.403 off a D = 1.5 prior,
+    no coefficient on a bound. See test/test_pacejka_identifiability.py.
+    """
+    cfg = (model.get('pacejka_rollout', {}) or {})
+    v_meas = float(np.mean(training_data[:, 0]))
+    v_min = float(cfg.get('speed_min', 2.0))
+    v_max = cfg.get('speed_max', None)
+    avg_vel = max(v_meas, v_min)
+    if v_max is not None:
+        avg_vel = min(avg_vel, float(v_max))
+    if avg_vel != v_meas:
+        log_info(f"Pacejka rollout speed clamped {v_meas:.2f} -> {avg_vel:.2f} m/s "
+                 f"(pacejka_rollout.speed_min/speed_max)")
+
+    delta_max = float(cfg.get('sweep_delta_max', 0.4))
+    mu_kin = avg_vel ** 2 * delta_max / (9.81 * model['l_wb'])
+    d_prior = max(model['C_Pf_model'][2], model['C_Pr_model'][2])
+    if mu_kin < d_prior:
+        log_warn(
+            f"Pacejka rollout at {avg_vel:.2f} m/s can only reach mu = {mu_kin:.2f} "
+            f"(kinematic ceiling of v^2*{delta_max}/(g*l_wb)) but the tire prior peaks at "
+            f"D = {d_prior:.2f}. The synthetic sweep never leaves the linear ramp, so D is "
+            "unidentifiable and the fit will slide onto the D bound. Raise "
+            "pacejka_rollout.speed_min or collect data at a higher speed.")
+    return avg_vel
+
+
+def rollout_delta_max(training_data, model):
+    """End of simulated_data_gen()'s steering sweep, bounded by the data.
+
+    The rollout is (nominal Pacejka + residual NN). The NN is only trained on
+    the steering range the car was actually driven through - on a pure-pursuit
+    lap of traj_race_cl.csv that is |delta| <= 0.06 rad - so sweeping it out
+    to the configured 0.4 rad asks it to invent the whole nonlinear part of
+    the tire curve. Measured consequence (2026-08-22): the fit reads the
+    extrapolated force as extra grip, and because each iteration's answer
+    becomes the next one's nominal model, six iterations walked D from 1.01
+    to 1.87 - a claimed 1.7 g on a vehicle that measures 1.0 g.
+
+    So the sweep stops at sweep_delta_extrapolation times the largest steering
+    angle actually seen (99th percentile, to ignore single-sample spikes),
+    capped by sweep_delta_max. Beyond that range D is simply not identifiable
+    from this manoeuvre and the prior term in solve_pacejka holds it, which is
+    the honest answer: only limit excitation can measure peak grip.
+    """
+    cfg = (model.get('pacejka_rollout', {}) or {})
+    hard_max = float(cfg.get('sweep_delta_max', 0.4))
+    factor = float(cfg.get('sweep_delta_extrapolation', 1.5))
+    floor = float(cfg.get('sweep_delta_min', 0.05))
+    delta_obs = float(np.percentile(np.abs(training_data[:, 3]), 99))
+    delta_max = min(hard_max, max(floor, factor * delta_obs))
+    log_info(f"Pacejka rollout sweep: delta 0 -> {delta_max:.3f} rad "
+             f"(p99 |delta| observed {delta_obs:.3f} rad x {factor}, cap {hard_max})")
+    return delta_max
+
+
 def nn_train(training_data, racecar_version, save_LUT_name, plot_model, warm_start_mu=None):
     model = get_model_param(racecar_version)
     nn_params = get_nn_params()
@@ -609,12 +692,22 @@ def nn_train(training_data, racecar_version, save_LUT_name, plot_model, warm_sta
     if warm_start_mu is not None:
         d_lower, d_upper = PACEJKA_BOUNDS[0][2], PACEJKA_BOUNDS[1][2]
         d_val = float(np.clip(warm_start_mu, d_lower, d_upper))
-        log_info(
-            f"Cold-start friction warm-start: overriding D_f/D_r initial guess "
-            f"({model['C_Pf_model'][2]:.4f}/{model['C_Pr_model'][2]:.4f} static default) "
-            f"with mu_hat={warm_start_mu:.4f} (clipped {d_val:.4f})")
-        model['C_Pf_model'][2] = d_val
-        model['C_Pr_model'][2] = d_val
+        # mu_hat is peak UTILISED friction, which is a lower bound on the
+        # available friction (see friction_warmstart._mu_from_accel). Applying
+        # it as a replacement let a gentle lap - 0.04 g median, 0.63 g peak
+        # measured on this vehicle - overwrite a physically sane prior with a
+        # near-zero D. It is a floor, never a ceiling.
+        for key in ('C_Pf_model', 'C_Pr_model'):
+            if d_val > model[key][2]:
+                log_info(
+                    f"Cold-start friction warm-start: raising {key} D initial guess "
+                    f"{model[key][2]:.4f} -> {d_val:.4f} (mu_hat={warm_start_mu:.4f})")
+                model[key][2] = d_val
+            else:
+                log_info(
+                    f"Cold-start friction warm-start: keeping {key} D initial guess "
+                    f"{model[key][2]:.4f} (mu_hat={warm_start_mu:.4f} is only a lower bound "
+                    "and does not exceed it)")
 
     num_of_iterations = nn_params.get('num_of_iterations', 6)
     arch = nn_params.get('nn_architecture', 'baseline')
@@ -635,8 +728,18 @@ def nn_train(training_data, racecar_version, save_LUT_name, plot_model, warm_sta
 
     training_data = process_data(training_data, model)
 
-    avg_vel = np.mean(training_data[:,0])
-    avg_vel = np.clip(avg_vel, 2.0, 4)
+    avg_vel = rollout_speed(training_data, model)
+    sweep_delta_max = rollout_delta_max(training_data, model)
+
+    # The co-identification loop feeds each iteration's answer in as the next
+    # iteration's nominal model, which is what lets the residual NN and the
+    # Pacejka fit converge together. The REGULARISER's target must not move
+    # with it, or the prior term degenerates into "stay near wherever you
+    # drifted to" and the drift compounds: measured on 2026-08-22 a run that
+    # started from D = 1.009/1.002 ended at D = 1.540/1.872 after 6
+    # iterations, i.e. a claimed 1.7 g on a vehicle measured at 1.0 g.
+    model['C_Pf_prior'] = list(model['C_Pf_model'])
+    model['C_Pr_prior'] = list(model['C_Pr_model'])
 
     for i in range(1, num_of_iterations+1):
         if i == num_of_iterations:
@@ -651,7 +754,8 @@ def nn_train(training_data, racecar_version, save_LUT_name, plot_model, warm_sta
         t1 = time.perf_counter()
         log_info(f"Training completed in {t1 - t0:.3f} seconds.")
         
-        v_x, v_y, omega, delta = simulated_data_gen(nn_model, model, avg_vel, nn_params)
+        v_x, v_y, omega, delta = simulated_data_gen(
+            nn_model, model, avg_vel, nn_params, delta_max=sweep_delta_max)
         C_Pf_identified, C_Pr_identified = solve_pacejka(model, v_x, v_y, omega, delta)
 
         # Print the identified Pacejka coefficients clearly using ROS logger
@@ -676,3 +780,12 @@ def nn_train(training_data, racecar_version, save_LUT_name, plot_model, warm_sta
     
     log_info("LUT is being generated...")
     LookupGenerator(racecar_version, save_LUT_name).run_generator()
+
+    # Returned so the caller submits what was IDENTIFIED. get_model_param()
+    # reads C_P*_model back out of params/pacejka_params.yaml, which nothing
+    # ever writes, so a caller that re-reads it after training gets the static
+    # prior - on_track_sys_id did exactly that and pushed the prior to
+    # adaptive_controller_manager on every cycle (measured 2026-08-22: the
+    # service received [7.076, 1.346, 1.009, -2.0] while this function had
+    # just saved [4.341, 2.178, 1.540, -1.657] to SIM_pacejka.txt).
+    return C_Pf_identified, C_Pr_identified

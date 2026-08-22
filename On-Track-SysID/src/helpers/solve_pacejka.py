@@ -61,11 +61,20 @@ def _fit_pacejka_axle(alpha, F_z, F_y, start_params, bounds, solver_cfg):
     ub = np.asarray(bounds[1], dtype=float)
     base = np.asarray(start_params, dtype=float)
 
+    # Tikhonov pull toward the nominal coefficients, for the directions the
+    # manoeuvre does not excite (see pacejka_error). 0 disables it.
+    lam = float(solver_cfg.get('prior_weight', 0.0) or 0.0)
+    prior_params = solver_cfg.get('prior_params', None)
+    prior_base = base if prior_params is None else np.asarray(prior_params, dtype=float)
+    prior = np.clip(prior_base, lb, ub) if lam > 0.0 else None
+    prior_w = _prior_weights(lam, F_y, np.size(alpha), bounds) if lam > 0.0 else None
+    args = (alpha, F_z, F_y, prior, prior_w)
+
     if method == 'differential-evolution':
         res = differential_evolution(
             _pacejka_sse,
             bounds=list(zip(lb, ub)),
-            args=(alpha, F_z, F_y),
+            args=args,
             seed=seed,
             popsize=solver_cfg.get('de_popsize') or 15,
             maxiter=solver_cfg.get('de_maxiter') or 1000,
@@ -90,7 +99,7 @@ def _fit_pacejka_axle(alpha, F_z, F_y, start_params, bounds, solver_cfg):
             res = least_squares(
                 pacejka_error,
                 x0,
-                args=(alpha, F_z, F_y),
+                args=args,
                 bounds=bounds,
                 method=method,
                 loss=loss,
@@ -103,7 +112,7 @@ def _fit_pacejka_axle(alpha, F_z, F_y, start_params, bounds, solver_cfg):
             res = minimize(
                 _pacejka_sse,
                 x0,
-                args=(alpha, F_z, F_y),
+                args=args,
                 method='Nelder-Mead',
                 bounds=list(zip(lb, ub)),
                 options={'maxfev': max_nfev} if max_nfev else {},
@@ -169,10 +178,41 @@ def analyse_tires(model, v_x, v_y, omega, delta):
 
 
 def pacejka_error(params, *args):
-    alpha, F_z, F_y = args
+    """Residual vector (not a summed scalar) for nonlinear least-squares.
+
+    args is (alpha, F_z, F_y) or (alpha, F_z, F_y, prior, prior_weights).
+    The optional prior block appends w_i * (p_i - prior_i) to the residual,
+    i.e. Tikhonov regularisation toward the nominal coefficients / a Gaussian
+    MAP estimate. It exists because not every Magic Formula coefficient is
+    identifiable from every manoeuvre: E (curvature) in particular only shows
+    up in the shape of the curve around its peak, so with data that stops
+    short of the peak the cost surface is flat in E and the solver slides it
+    onto a box edge - one of the three coefficients that were railed in
+    bug-sysid-degenerate-pacejka-fit. Weighting is done by
+    _prior_weights() so the term is scaled to the data residual, not to the
+    raw parameter magnitudes.
+    """
+    alpha, F_z, F_y = args[0], args[1], args[2]
     y = pacejka_formula(params, alpha, F_z)
-    # Return residual vector (not summed scalar) for nonlinear least-squares.
-    return y - F_y
+    r = y - F_y
+    if len(args) >= 5 and args[3] is not None:
+        prior, weights = args[3], args[4]
+        r = np.concatenate([r, weights * (np.asarray(params, dtype=float) - prior)])
+    return r
+
+
+def _prior_weights(lam, F_y, n_samples, bounds):
+    """Per-coefficient weights for the prior block of the residual vector.
+
+    Each coefficient is normalised by its own box width so lam is a single
+    dimensionless knob, and scaled by the data block's RMS residual budget
+    (rms(F_y) * sqrt(n)) so lam has the same meaning regardless of how many
+    samples or how much force the manoeuvre produced.
+    """
+    lb = np.asarray(bounds[0], dtype=float)
+    ub = np.asarray(bounds[1], dtype=float)
+    scale = np.sqrt(max(1, n_samples)) * max(1e-6, float(np.sqrt(np.mean(np.square(F_y)))))
+    return lam * scale / (ub - lb)
 
 
 # [B, C, D, E] bounds shared by both axles. Single-sourced here so any other
@@ -215,6 +255,7 @@ def solve_pacejka(model, v_x, v_y, omega, delta):
         'x_scale': model.get('pacejka_x_scale', 'jac'),
         'max_nfev': model.get('pacejka_max_nfev', None),
         'num_starts': model.get('pacejka_num_starts', 1),
+        'prior_weight': model.get('pacejka_prior_weight', 0.0),
         'start_jitter': model.get('pacejka_start_jitter', 0.05),
         'seed': model.get('pacejka_seed', None),
         'de_popsize': model.get('pacejka_de_popsize', None),
@@ -227,14 +268,18 @@ def solve_pacejka(model, v_x, v_y, omega, delta):
         C_Pr = [round(float(x), 4) for x in model['C_Pr_model']]
         return C_Pf, C_Pr
 
-    # front
+    # front. C_P*_prior, when present, is the regularisation target and stays
+    # fixed across nn_train's co-identification iterations while C_P*_model
+    # (the start point / rollout nominal) keeps updating - see nn_train.
     start_params_front = model['C_Pf_model']
+    solver_cfg['prior_params'] = model.get('C_Pf_prior', None)
     sol_f = _fit_pacejka_axle(alpha_f, F_zf, F_yf, start_params_front, bounds, solver_cfg)
     C_Pf = sol_f.x.tolist()
     C_Pf = [round(x, 4) for x in C_Pf]  # Formatting each element to 4 significant digits
 
     # rear
     start_params_rear = model['C_Pr_model']
+    solver_cfg['prior_params'] = model.get('C_Pr_prior', None)
     sol_r = _fit_pacejka_axle(alpha_r, F_zr, F_yr, start_params_rear, bounds, solver_cfg)
     C_Pr = sol_r.x.tolist()
     C_Pr = [round(x, 4) for x in C_Pr]  # Formatting each element to 4 significant digits
