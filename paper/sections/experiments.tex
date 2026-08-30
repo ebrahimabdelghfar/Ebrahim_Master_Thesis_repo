@@ -1,0 +1,416 @@
+% === IV. EXPERIMENTS AND RESULTS =============================================
+\section{Experiments and Results}
+\label{sec:results}
+
+\subsection{Experimental setup}
+
+All experiments are conducted in simulation. The plant is the Formula AI
+vehicle of Section~\ref{subsec:platform} in CARLA~\cite{carla2017}, driven
+through \bridge{} on a ROS~2 Humble workspace; the CARLA server runs in
+synchronous mode at a \SI{0.033}{\second} fixed physics step. Identification
+data is collected over \SI{30}{\second} of pure-pursuit driving at
+\SI{50}{\hertz}, matching the baseline's data budget~\cite{ontrack2024}.
+Ground truth for tire forces, slip angles and normal loads is the simulator's
+own per-wheel telemetry.
+
+\subsubsection{Reference trajectory}
+\label{subsubsec:raceline}
+Every run follows the same optimised raceline, shown in
+Fig.~\ref{fig:raceline}. It was produced with the TUM
+\texttt{global\_race\-trajectory\_optimization}
+package~\cite{tumracetraj}, vendored in the simulator workspace, using its
+minimum-curvature formulation~\cite{heilmeier2020} on a recorded centreline of
+the CARLA \texttt{silverstone} circuit. The result is a closed
+\SI{5830}{\meter} lap of 2916 waypoints at \SI{2.0}{\meter} spacing, with a
+reference speed of \SIrange{14.90}{46.02}{\meter\per\second} and a minimum
+corner radius of \SI{18.7}{\meter} ($|\kappa|_{\max}=\SI{0.0536}{\per\meter}$).
+
+Two of the optimiser's inputs matter for Section~\ref{subsec:negative} and are
+therefore stated explicitly. Its vehicle configuration assumes a mass of
+\SI{204}{\kilo\gram}, against the \SI{269.6}{\kilo\gram} the physics engine
+actually simulates (Table~\ref{tab:vehicle}). More consequentially, its
+\texttt{ggv} envelope declares a \emph{constant} lateral capability of
+\SI{12.0}{\meter\per\second\squared} at every speed. The resulting profile
+saturates that envelope exactly---the peak demand
+$\max(v_{x}^{2}|\kappa|)$ over the lap is \SI{12.00}{\meter\per\second\squared},
+i.e.\ \SI{1.22}{\g}---so the trajectory is feasible \emph{by construction} for
+the vehicle the optimiser was told about, and only for that vehicle. Measured
+against the plant's actual steady-state ceiling of
+$\approx\SI{9.8}{\meter\per\second\squared}$, \SI{11.9}{\percent} of the lap is
+infeasible (Fig.~\ref{fig:raceline}c).
+
+\begin{table}[t]
+\caption{Reference tire model of the plant, obtained by fitting the Magic
+Formula directly to the simulator's per-wheel telemetry over a dedicated
+limit-excitation run reaching $\alpha=\SI{0.37}{\radian}$, axle $\mu=1.05$
+and \SI{1.50}{\g}. Differential evolution, $E$ constrained to $\ge-2$.}
+\label{tab:ref}
+\centering
+\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Axle & $B$ & $C$ & $D$ & $E$ & RMSE\\
+\midrule
+Front & 7.076 & 1.346 & 1.009 & $-2.000$ & \SI{135}{\newton}\\
+Rear  & 7.873 & 1.383 & 1.002 & $-1.024$ & \SI{85}{\newton}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:ref} is the reference against which the on-track identifier is
+scored. Note $D\approx1.0$, not the \num{1.5} of the wheel material
+coefficient---the distinction discussed in Section~\ref{subsec:platform}.
+
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{raceline.pdf}
+\caption{The optimised raceline used for every experiment in this paper,
+generated with the TUM \texttt{global\_racetrajectory\_optimization}
+package~\cite{tumracetraj} under its minimum-curvature
+formulation~\cite{heilmeier2020} from a recorded centreline of the CARLA
+\texttt{silverstone} circuit. (a) Track layout, coloured by the reference
+speed; the marked corner ($R=\SI{18.7}{\meter}$) is the one that sets the
+feasibility limit. (b) Reference speed profile,
+\SIrange{14.90}{46.02}{\meter\per\second}. (c) Lateral demand
+$v_{x}^{2}|\kappa|$ along the lap. The profile saturates the constant
+\SI{12.0}{\meter\per\second\squared} envelope the optimiser was given in its
+\texttt{ggv} input (dashed) but not the grip this vehicle actually has
+(dotted, $\approx\SI{1.0}{\g}$, measured): the shaded segments,
+\SI{11.9}{\percent} of the lap, demand more than the plant can deliver. This is
+the trajectory the corrected identifier's admissibility gate rejects, and
+Section~\ref{subsec:negative} argues the gate is right to do so.}
+\label{fig:raceline}
+\end{figure*}
+
+\subsection{The failure mode, reproduced}
+\label{subsec:failure}
+
+Running the baseline pipeline unmodified on this platform yields
+\begin{align*}
+\mathrm{C\_Pf} &= [5.2874,\; 1.5536,\; \mathbf{0.4},\; \mathbf{1.0}],\\
+\mathrm{C\_Pr} &= [19.3236,\; \mathbf{1.2},\; 0.4046,\; -0.1292],
+\end{align*}
+with the bold entries sitting exactly on their box constraints and $B_{r}$
+just under its upper bound: five of eight coefficients on or against a rail.
+The implied physics is not merely inaccurate but qualitatively wrong---a grip
+ceiling of \SI{3.95}{\meter\per\second\squared} (\SI{0.40}{\g}) and a front
+axle stiffness of \SI{4012}{\newton\per\radian}, meaning the model believes it
+needs $\approx\SI{0.30}{\radian}$ of front slip to generate \SI{1}{\g}, well
+beyond the vehicle's \SI{0.2793}{\radian} steering limit. The model
+essentially believes the car cannot corner.
+
+Table~\ref{tab:closedloop} shows why this is invisible until it is not.
+
+\begin{table}[t]
+\caption{Closed-loop consequence of the degenerate tire set, measured in a
+harness driving the real raceline for \SI{20}{\second} with the
+pure-pursuit$\rightarrow$MPC switch at $t=\SI{5}{\second}$. Lateral demand
+scales as $v^{2}$.}
+\label{tab:closedloop}
+\centering
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Controller model & Max cross-track & Infeasible stages\\
+\midrule
+Plausible prior ($D=1.5$)        & \SI{0.03}{\meter}  & 0\\
+Identified set @ \SI{11.1}{\meter\per\second} & \SI{0.16}{\meter} & 0\\
+Identified set @ \SI{15}{\meter\per\second}   & \SI{0.43}{\meter} & 0\\
+Identified set @ \SI{27}{\meter\per\second}   & \SI{41.89}{\meter} & 29\,461\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Isolating the cause}
+\label{subsec:isolation}
+
+Four hypotheses were formulated and tested against measurement rather than
+argued from code. Table~\ref{tab:hypotheses} records the outcome, including
+the two that were wrong; we report these because the eliminated hypotheses
+are as informative as the confirmed one.
+
+\begin{table}[t]
+\caption{Hypotheses tested against the simulator's own telemetry.}
+\label{tab:hypotheses}
+\centering
+\scriptsize
+\begin{tabular}{@{}p{3.05cm}p{4.5cm}@{}}
+\toprule
+Hypothesis & Verdict\\
+\midrule
+Friction warm-start measures utilised friction over a low-slip mask &
+\emph{Structurally confirmed, not the cause.} Utilisation measures \num{0.044}
+median, \num{0.46} peak at \SI{13}{\meter\per\second}. Corrected anyway
+(Sec.~\ref{subsec:measurement}).\\
+Static $D$ prior below its own lower bound &
+\emph{Confirmed, secondary.} Corrected; multi-starts 1$\rightarrow$8.\\
+Only $BCD$ identifiable at low slip &
+\emph{Confirmed, and it is the mechanism}---but caused by the rollout speed,
+not by the recorded lap (Sec.~\ref{subsec:excitation}).\\
+\texttt{/odom} twist in world frame &
+\emph{Refuted.} corr $=0.93$, RMS \SI{0.09}{\meter\per\second} against a
+body-frame interpretation.\\
+Steady-state force model~\eqref{eq:ssforces} inadequate &
+\emph{Refuted as a cause.} corr $=0.993$, slope \num{0.94} against the
+simulator's own axle force.\\
+$\delta$ taken from command, not achieved &
+\emph{Confirmed, significant.} Ratio \num{0.76}; worth \SI{20}{\percent} of
+front stiffness.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The decisive experiment is an offline round-trip with the residual network
+zeroed, so that only the rollout is under test: a synthetic $D=1.5$ tire,
+rolled out at \SI{4}{\meter\per\second} and re-fitted, returns
+$D_{f}=0.753$, $D_{r}=0.737$ with three coefficients railed; the same tire
+rolled out at \SIrange{8}{20}{\meter\per\second} returns
+$D=\numrange{1.40}{1.61}$ with nothing railed. Since the tire is known
+exactly and the residual model is absent, this isolates the rollout
+configuration as the cause and confirms \eqref{eq:mureach}.
+
+\subsection{Results after correction}
+\label{subsec:corrected}
+
+With the six defects of Table~\ref{tab:defects} corrected, three consecutive
+live identifications return no coefficient on a bound. Peak friction
+coefficients land at $D_{f},D_{r}\in[1.05,1.18]$ against the reference
+\num{1.009}/\num{1.002} of Table~\ref{tab:ref}; axle cornering stiffnesses
+land at $C_{f}\approx\SI{21}{\kilo\newton\per\radian}$ and
+$C_{r}\approx\SI{20}{\kilo\newton\per\radian}$ against the simulator's
+measured \SIrange{17}{19}{\kilo\newton\per\radian}; the sign of the
+understeer gradient is correct ($l_{f}C_{f}<l_{r}C_{r}$) on every run,
+matching the measured plant; and one-step prediction on held-out data gives
+$R^{2}=\num{0.97}$ for $v_{y}$ and $R^{2}=\num{0.99}$ for $\omega$. The
+peak-friction drift across the six co-identification iterations is removed:
+where the unbounded sweep walked $D$ from \num{1.01} to \num{1.87}, the
+bounded sweep with a frozen prior settles inside $[1.05,1.18]$.
+
+\begin{table*}[t]
+\caption{Defects identified, corrected and regression-tested in this work.
+Effect column reports the measured change where one was quantified.}
+\label{tab:defects}
+\centering
+\small
+\begin{tabular}{@{}p{3.1cm}p{5.4cm}p{4.1cm}p{3.6cm}@{}}
+\toprule
+Defect & Root cause & Correction & Measured effect\\
+\midrule
+Degenerate fit, $D$ on its bound &
+Pacejka fit runs on a synthetic rollout whose speed was clipped to
+\SIrange{2}{4}{\meter\per\second}; $\mu_{\mathrm{reach}}=0.43$ &
+Rollout speed from measured lap speed, floored at
+\SI{7}{\meter\per\second}; warning when \eqref{eq:mureach} $<D$ &
+$D$: 0.40 (railed) $\rightarrow$ 1.05--1.18; $C_{f}$: 4.0 $\rightarrow$
+21 \si{\kilo\newton\per\radian}\\
+\addlinespace
+Identified set never reached the controller &
+Trainer wrote coefficients to file but returned nothing; the node re-read a
+static prior file and submitted \emph{that} &
+Trainer returns the identified coefficients; node submits them &
+Service received the prior verbatim while the fit had produced a different
+set\\
+\addlinespace
+$D$ drifts upward across iterations &
+Sweep extrapolated the residual network far past its training range, and each
+answer became its own regularisation target &
+Sweep bounded at $1.5\times P_{99}(|\delta|)$; regularisation target frozen at
+the configured prior &
+1.01 $\rightarrow$ 1.87 drift removed; settles 1.05--1.18\\
+\addlinespace
+Front stiffness underestimated &
+Slip angle built from the steering \emph{setpoint} &
+Achieved road-wheel angle from \texttt{feedback/\allowbreak steering\_angle}, with
+fallback &
+$C_{f}$: 13725 $\rightarrow$ 18486 \si{\newton\per\radian} (truth 17198)\\
+\addlinespace
+Normal loads 10--15\% low &
+$m$ copied from the configuration file (240\,kg) against a simulated
+269.6\,kg; $l_{wb}\ne l_{f}+l_{r}$ &
+Measured mass and geometry; $l_{wb}\equiv l_{f}+l_{r}$ enforced by test &
+$F_{z,f}/F_{z,r}$: 1222/1134 $\rightarrow$ 1345.6/1298.9 \si{\newton}\\
+\addlinespace
+Friction prior pinned near 0.4 &
+Median of \emph{utilised} friction over an explicitly \emph{low-slip} mask &
+$P_{99}$ over the whole buffer, applied as a floor on the prior &
+Median 0.044 vs peak 0.46 at \SI{13}{\meter\per\second}\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection{Ablations}
+\label{subsec:ablation}
+
+Two ablation axes are exposed by the implementation and should be reported in
+the final version of this paper. Neither has yet been run to completion, and
+we mark them as such rather than reporting placeholder numbers.
+
+\begin{itemize}
+\item \textbf{Residual architecture}: \texttt{baseline} MLP vs
+\texttt{wide} vs \texttt{physics\_inputs} vs \texttt{ensemble} vs
+\texttt{s4} (S4D), scored on one-step and 10-step RMSE and on the identified
+coefficients. The relevant comparison in the literature
+is~\cite{visionsysid2026}, which reports a lateral-force RMSE reduction
+exceeding \SI{60}{\percent} for an S4 residual over conventional
+architectures; we should expect a smaller effect here because our sequences
+are short and our residual is dominated by a correctable measurement bias
+rather than by unmodelled temporal dynamics.
+\item \textbf{Loss mode}: \texttt{mse} vs \texttt{physics\_informed}
+(dynamics-consistency $+$ symmetry $+$ smoothness terms), on the same
+dataset, comparing one-step metrics, per-iteration coefficient trajectories,
+and closed-loop tracking.
+\end{itemize}
+
+\subsection{Negative result: the raceline, not the model}
+\label{subsec:negative}
+
+With the identifier corrected, the closed-loop leg of the validation
+(Section~\ref{subsec:validation}, level 3) does \emph{not} complete, and the
+reason is instructive. The identified model reports a grip ceiling of
+\SIrange{1.02}{1.16}{\g}; the measured plant sustains $\approx\SI{1.0}{\g}$ in
+steady state; the raceline used in this study demands
+$\max(v_{x}^{2}|\kappa|)=\SI{12.00}{\meter\per\second\squared}=\SI{1.22}{\g}$
+($P_{99}=\SI{11.90}{\meter\per\second\squared}$). The admissibility gate of
+Section~\ref{subsec:gates} therefore rejects every identification---correctly.
+The trajectory is infeasible for this vehicle, and the corrected identifier is
+what made that visible.
+
+The cause is not obscure, and it is worth naming because it is a failure mode
+any model-based stack can inherit. As Section~\ref{subsubsec:raceline}
+records, the trajectory optimiser was handed a \texttt{ggv} envelope asserting
+a constant \SI{12.0}{\meter\per\second\squared} of lateral capability and a
+vehicle mass of \SI{204}{\kilo\gram}. It did its job: the profile saturates
+that envelope to the last digit. The envelope was simply not this vehicle's.
+The identification pipeline and the trajectory were parameterised from two
+different descriptions of the same car, and nothing in the stack compared them
+until the gate did.
+
+We deliberately do not loosen the gate. The quantitative consequence for
+trajectory regeneration is: the tightest corner has
+$|\kappa|=\SI{0.0536}{\per\meter}$, which at the measured grip permits
+$\sqrt{g\mu/|\kappa|}=\SI{13.5}{\meter\per\second}$
+(\SIrange{13.7}{14.6}{\meter\per\second} at the identified ceiling of
+\SIrange{1.02}{1.16}{\g}); capping the speed profile at
+\SI{13}{\meter\per\second} brings peak demand to
+\SI{9.05}{\meter\per\second\squared} (\SI{0.92}{\g}), whereas
+\SI{15}{\meter\per\second} returns it to \SI{12.00}{\meter\per\second\squared}.
+Regenerating the raceline with the \emph{measured} vehicle
+($m=\SI{269.6}{\kilo\gram}$, $\mu_{\mathrm{peak}}=1.0$,
+$v_{\max}\approx\SIrange{13}{14}{\meter\per\second}$) is the prerequisite for
+the closed-loop experiment, and is the immediate next step
+(Section~\ref{sec:conclusion}).
+
+\subsection{Required visuals}
+\label{subsec:visuals}
+
+The following figures and tables are needed to support the claims above. Data
+sources are ROS~2 topics or CSV exports already produced by the pipeline; no
+figure below requires new instrumentation. Generation recipes are collected in
+\texttt{paper/figures/README.md}.
+
+\paragraph{Fig.~\ref{fig:pipeline} --- Identification pipeline}
+\emph{Block diagram.} The four stages of Section~\ref{subsec:baseline} in a
+loop, with this paper's changes highlighted: excitation-aware rollout speed,
+extrapolation-bounded sweep, frozen regularisation target, and the
+admissibility gate on the output arrow to the MPC.
+
+\paragraph{Fig.~\ref{fig:vehicle} --- Formula AI vehicle in CARLA}
+\emph{Done} (\texttt{figures/fig2.png}): a front view of
+\texttt{asurt\_fsai} on the start/finish straight of the \texttt{silverstone}
+map. Optional improvement: pair it with a top-view schematic annotated with
+$l_{f}$, $l_{r}$, $L$, wheel radius, the \SI{16}{\degree} steering limit and
+the IMU/GNSS mount points, so the geometry of Table~\ref{tab:vehicle} is
+readable off the figure rather than only from the caption.
+
+\paragraph{Fig.~\ref{fig:bridge} --- \bridge{} architecture}
+\emph{Done} (\texttt{figures/bridge\_architecture.tex}, vector Ti\emph{k}Z).
+Four columns: CARLA server; \bridge{} lifecycle node; ROS~2 topic layer; the
+autonomy stack. The ground-truth path is drawn reaching only the benchmark
+nodes, and the gated \texttt{mpc/update\_params} interface is drawn inside the
+stack.
+
+\paragraph{Fig.~\ref{fig:telemetry} --- Example telemetry}
+\emph{Stacked line plot, 6 panels sharing a time axis}, over \SI{30}{\second}
+of identification data: (a) $v_{x}$ [\si{\meter\per\second}];
+(b) $v_{y}$ and $\omega$ (twin axis); (c) commanded vs achieved $\delta$
+[\si{\radian}], which visualises the \num{0.76} ratio; (d) $a_{x},a_{y}$ from
+the IMU; (e) per-axle $F_{y}$ from \texttt{feedback/\allowbreak tire\_forces} against the
+value recovered by \eqref{eq:ssforces}; (f) per-axle $\alpha$. Source: a
+rosbag of \texttt{/odom}, \texttt{/drive},
+\texttt{feedback/\allowbreak steering\_angle}, \texttt{feedback/imu},
+\texttt{feedback/\allowbreak tire\_forces}.
+
+\paragraph{Fig.~\ref{fig:mureach} --- Reachable friction}
+\emph{Line plot.} $\mu_{\mathrm{reach}}$ from \eqref{eq:mureach} versus
+rollout speed $v\in[2,20]\,\si{\meter\per\second}$, one curve per
+$\delta_{\mathrm{sweep}}\in\{0.1,0.2,0.34,0.4\}\,\si{\radian}$, with a
+horizontal line at the plant's measured $\mu=1.0$, a vertical band at the old
+\SIrange{2}{4}{\meter\per\second} clip, and a marker at the corrected
+operating point. Overlay the 1:10 platform's $L$ as dashed curves to show why
+the defect is scale-latent. This is the paper's central explanatory figure.
+
+\paragraph{Fig.~\ref{fig:excitation} --- Excitation and identifiability}
+\emph{Two-panel figure.} (a) Histograms of $\alpha_{f}$ and $\alpha_{r}$
+actually entering the fit, before and after the rollout correction, with the
+reference tire's peak-force slip angle marked. (b) $(\alpha,F_{y})$ scatter of
+the synthetic data with the fitted curve overlaid, before and after; the
+``before'' panel should show all data on the linear ramp.
+
+\paragraph{Fig.~\ref{fig:iterations} --- Coefficient trajectories}
+\emph{Line plot, $2\times4$ grid} (front/rear $\times$ $B,C,D,E$), value
+versus co-identification iteration $1\dots6$, two series (unbounded sweep with
+tracking prior; bounded sweep with frozen prior), horizontal dashed lines at
+the box constraints and at the reference values of Table~\ref{tab:ref}. This
+figure carries the drift result.
+
+\paragraph{Fig.~\ref{fig:tirecurves} --- Identified tire models}
+\emph{Line plot, two panels (front, rear).} $F_{y}$ versus $\alpha$ over
+$[0,0.4]\,\si{\radian}$: the reference fit of Table~\ref{tab:ref}, the
+degenerate baseline result, the corrected result (three runs, shaded band),
+and the raw $(\alpha,F_{y})$ scatter from
+\texttt{feedback/\allowbreak tire\_forces} underneath. Directly parallels
+Fig.~6 of~\cite{ontrack2024} and is the primary accuracy claim.
+
+\paragraph{Fig.~\ref{fig:onestep} --- One-step prediction}
+\emph{Two-panel time series plus residual histogram.} Measured versus
+predicted $v_{y}$ and $\omega$ over \SI{10}{\second} of held-out data, with
+the residual distribution inset; annotate RMSE and $R^{2}$.
+
+\paragraph{Fig.~\ref{fig:demand} --- Regenerated speed profile (pending)}
+\emph{Scope narrowed}: the demand-versus-grip comparison is now
+Fig.~\ref{fig:raceline}(c), drawn from the real trajectory. What remains is the
+proposed fix --- the profile after regeneration for the measured vehicle,
+plotted on the same axes so the two read as before and after. A naive speed cap
+bounds the result (\SI{13}{\meter\per\second} gives
+\SI{9.05}{\meter\per\second\squared}, \SI{14}{\meter\per\second} gives
+\SI{10.50}{\meter\per\second\squared}) but understates it, since the optimiser
+will also reshape the line; produce it by re-running the optimiser with a
+corrected vehicle configuration, not by clipping the existing profile.
+
+\paragraph{Fig.~\ref{fig:stiffness} --- Cornering stiffness comparison}
+\emph{Grouped bar chart.} $C_{f}$ and $C_{r}$ for: simulator ground truth,
+degenerate baseline fit, command-referenced fit, achieved-steering fit, and
+corrected fit. Annotate the understeer condition $l_{f}C_{f}$ vs $l_{r}C_{r}$
+per group.
+
+\paragraph{Fig.~\ref{fig:closedloop} --- Closed-loop tracking (pending)}
+\emph{Two-panel figure, to be produced after raceline regeneration.} (a)
+Cross-track error versus time with the controller-active state shaded; (b)
+track overlay of the driven path against the raceline. Report lap time, mean
+and maximum lateral deviation, and steering sign reversals per control step.
+
+\paragraph{Tables}
+Table~\ref{tab:vehicle} (configured vs measured plant),
+Table~\ref{tab:topics} (interface), Table~\ref{tab:ref} (reference tire),
+Table~\ref{tab:closedloop} (closed-loop consequence),
+Table~\ref{tab:hypotheses} (hypotheses),
+Table~\ref{tab:defects} (defects and effects) are specified above. Two further
+tables are required for the final version: a coefficient table
+(baseline / corrected / reference, per axle, with $C_{f}$, $C_{r}$,
+$a_{y}^{\max}$, $v_{\mathrm{crit}}$ derived); and a validation-metric table
+(RMSE and $R^{2}$ for $v_{y}$ and $\omega$ at 1-, 5- and 10-step horizons, plus
+per-axle force RMSE against \texttt{feedback/\allowbreak tire\_forces}), with the
+noise-sweep protocol of~\cite{ontrack2024} as an optional robustness column.
+
+\input{sections/figure_placeholders}

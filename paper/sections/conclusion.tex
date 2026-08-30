@@ -1,0 +1,77 @@
+% === VI. CONCLUSION ==========================================================
+\section{Conclusion and Future Work}
+\label{sec:conclusion}
+
+We transplanted a learning-based on-track Pacejka identification
+pipeline~\cite{ontrack2024} from a 1:10 scaled platform onto a full-scale
+Formula Student vehicle simulated in CARLA, and found that it fails in a
+specific, diagnosable and correctable way. The failure is not a solver
+problem, a bounds problem or a tuning problem: it is an excitation problem
+created by the pipeline's own virtual-data step, whose reachable friction
+$\mu_{\mathrm{reach}}=v^{2}\delta_{\mathrm{sweep}}/(gL)$ depends on the rollout
+configuration and not on the tire. A rollout speed appropriate at 1:10 caps
+$\mu_{\mathrm{reach}}$ at \num{0.43} at full scale, below the plant's peak, so
+the peak factor $D$ is not identifiable from the synthetic data and the
+bounded optimiser resolves the ambiguity on a box edge.
+
+Correcting this---together with an extrapolation bound on the steering sweep,
+a frozen regularisation target, identification against the achieved rather
+than commanded road-wheel angle, measured mass and geometry, and a
+peak-rather-than-median friction floor---produces identifications with no
+railed coefficient, peak friction coefficients of \numrange{1.05}{1.18}
+against a measured \numrange{1.00}{1.05}, axle cornering stiffnesses within
+\SIrange{10}{20}{\percent} of the simulator's own, correct understeer sign,
+and one-step $R^{2}$ of \num{0.97}/\num{0.99}. We further argue that
+per-coefficient box constraints are not a sufficient admissibility criterion
+for handing a model to a model-based controller, and place gates on derived
+physical quantities---grip ceiling against trajectory demand, understeer sign
+and critical speed, and linearisation stiffness---at the interface instead.
+
+The corrected identifier's first useful act was to reject the reference
+trajectory: the raceline in hand demands \SI{1.22}{\g} from a vehicle that
+sustains \SI{1.0}{\g}. We report this rather than relaxing the gate.
+
+\subsection{Future work}
+
+\paragraph{Immediate, to close this paper}
+\begin{enumerate}
+\item Regenerate the raceline for the \emph{measured} vehicle
+($m=\SI{269.6}{\kilo\gram}$, $\mu_{\mathrm{peak}}=1.0$,
+$v_{\max}\approx\SIrange{13}{14}{\meter\per\second}$) and run the closed-loop
+validation of Fig.~\ref{fig:closedloop}: lap time, mean and maximum lateral
+deviation, and steering sign reversals per control step, against a
+hand-tuned prior model as control.
+\item Run the noise sweep of~\cite{ontrack2024} on this platform, using the
+bridge's odometry noise model, with an NLS identification of the same data as
+the comparison arm, so that the robustness claim is directly comparable.
+\item Complete the residual-architecture and loss-mode ablations of
+Section~\ref{subsec:ablation}, and a factorial ablation over the six
+corrections of Table~\ref{tab:defects}.
+\item Measure $I_{z}$ rather than assuming it
+(Section~\ref{subsec:assumptions}).
+\end{enumerate}
+
+\paragraph{Beyond}
+\begin{enumerate}
+\item \textbf{Surface-change adaptation.} The bridge can change tire friction
+at runtime without respawning, which makes a step-change-in-grip experiment
+cheap: change $\mu$ mid-run and measure the identifier's convergence time and
+the controller's transient. This is the scenario on-track identification
+exists for, and it is difficult to stage on hardware.
+\item \textbf{Excitation-aware data collection.} Equation~\eqref{eq:mureach}
+inverts into a requirement on the manoeuvre. A controller that deliberately
+inserts bounded slalom or ramp-steer excitation when the identifier reports
+insufficient slip-angle coverage would close the loop between what the
+identifier needs and what the vehicle does---moving from passive on-track
+identification toward active, safety-bounded on-track experiment design.
+\item \textbf{Uncertainty-aware output.} The gates of
+Section~\ref{subsec:gates} are currently binary. Reporting a posterior over
+the coefficients---the Bayesian variational identification path already
+implemented alongside the deterministic solvers---would let the controller
+weight the model by its confidence rather than accept or reject it.
+\item \textbf{Hardware replication.} The decisive test of every claim in
+Section~\ref{sec:disc} is a physical Formula Student vehicle. The
+identification code is unchanged between simulation and hardware; what
+changes is the availability of ground truth, which is exactly what makes the
+simulation study a necessary precursor rather than a substitute.
+\end{enumerate}

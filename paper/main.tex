@@ -1,0 +1,98 @@
+%==============================================================================
+% On-Track-SysID for a full-scale Formula Student vehicle in CARLA
+%
+% Template: IEEEtran (journal), same class/bst as paper/My_master_thesis/.
+% Build:  pdflatex main && bibtex main && pdflatex main && pdflatex main
+%==============================================================================
+
+\documentclass[journal]{IEEEtran}
+
+\usepackage{xcolor,soul,framed}
+\colorlet{shadecolor}{yellow}
+
+\usepackage[pdftex]{graphicx}
+\graphicspath{{figures/}{pdf/}{photo/}}
+\DeclareGraphicsExtensions{.pdf,.jpeg,.jpg,.png}
+
+\usepackage[cmex10]{amsmath}
+\usepackage{amssymb}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{rotating}
+\usepackage{eqparbox}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
+% --- units -------------------------------------------------------------------
+% Prefer siunitx (Debian/Ubuntu: it ships in texlive-science, NOT in
+% texlive-latex-extra). If it is absent, fall back to units_fallback.tex, which
+% implements exactly the macros used here. The branches must not be arguments
+% to \IfFileExists -- a '#' inside such an argument is illegal -- hence the flag.
+\newif\ifhavesiunitx
+\IfFileExists{siunitx.sty}{\havesiunitxtrue}{\havesiunitxfalse}
+\ifhavesiunitx
+  \usepackage{siunitx}
+  \sisetup{detect-all, per-mode=symbol}
+  \DeclareSIUnit{\g}{\textit{g}}% g-force is not a predefined siunitx unit
+\else
+  \input{units_fallback}
+\fi
+
+\hyphenation{op-tical net-works semi-conduc-tor Pa-cej-ka iden-ti-fi-ca-tion}
+
+% --- placeholder artwork (remove once every figure is real) -------------------
+\newcommand{\placeholderbox}[2]{%
+  \fbox{\parbox[c][#2][c]{0.95\columnwidth}{\centering\footnotesize\itshape #1}}}
+\newcommand{\placeholderboxwide}[2]{%
+  \fbox{\parbox[c][#2][c]{0.97\textwidth}{\centering\footnotesize\itshape #1}}}
+
+% --- convenience macros -------------------------------------------------------
+\newcommand{\vecx}{\mathbf{x}}
+\newcommand{\vecu}{\mathbf{u}}
+\newcommand{\phip}{\Phi_{p}}
+\newcommand{\Fyf}{F_{y,f}}
+\newcommand{\Fyr}{F_{y,r}}
+\newcommand{\bridge}{\textsc{Carla\_ASU\_Bridge}}
+\newcommand{\sysid}{\textsc{On-Track-SysID}}
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+
+%==============================================================================
+\begin{document}
+
+\title{On-Track System Identification at Full Scale:\\
+Correcting and Extending a Learning-Based Pacejka\\
+Identification Pipeline for a Formula Student Vehicle in CARLA}
+
+\author{Ebrahim~Abdelghfar~Ebrahim%
+\thanks{Manuscript prepared August 2026. The author is with the Autotronics Research Lab (ARL). Correspondence: \texttt{ebrahimabdelghfar550@gmail.com}.}%
+\thanks{All experiments reported in this paper are performed in simulation, using the CARLA simulator and the \bridge{} ROS~2 interface described in Section~\ref{sec:method}.}}
+
+\markboth{Preprint --- Draft for internal review}%
+{Abdelghfar: On-Track System Identification at Full Scale in CARLA}
+
+\maketitle
+
+\input{sections/abstract}
+
+\input{sections/intro}
+\input{sections/related_work}
+\input{sections/method}
+\input{sections/experiments}
+\input{sections/discussion}
+\input{sections/conclusion}
+
+\appendices
+\input{sections/appendix}
+
+\section*{Acknowledgment}
+The \sysid{} pipeline studied here originates from the ForzaETH Race Stack and
+the work of Dikici \emph{et al.}~\cite{ontrack2024}, released under an
+open-source licence; this paper reports a port, a correction, and an extension
+of that work rather than a reimplementation from scratch.
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

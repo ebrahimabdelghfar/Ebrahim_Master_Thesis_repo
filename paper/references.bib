@@ -1,0 +1,351 @@
+%==============================================================================
+% references.bib
+%
+% Every entry below corresponds to a real, verifiable publication or software
+% release. Where a work exists both as a preprint and as a journal article,
+% both identifiers are recorded in the entry.
+%==============================================================================
+
+% --- The baseline this paper extends -----------------------------------------
+@article{ontrack2024,
+  author    = {Dikici, Onur and Ghignone, Edoardo and Hu, Cheng and
+               Baumann, Nicolas and Xie, Lei and Carron, Andrea and
+               Magno, Michele and Corno, Matteo},
+  title     = {Learning-Based On-Track System Identification for Scaled
+               Autonomous Racing in Under a Minute},
+  journal   = {IEEE Robotics and Automation Letters},
+  year      = {2025},
+  volume    = {10},
+  number    = {2},
+  doi       = {10.1109/LRA.2025.3527336},
+  note      = {Preprint: arXiv:2411.17508. Code:
+               \url{https://github.com/ForzaETH/On-Track-SysID}}
+}
+
+% --- Concurrent extension of the same pipeline -------------------------------
+@misc{visionsysid2026,
+  author        = {Wu, Zhiping and Hu, Cheng and Wang, Yiqin and Xie, Lei and
+                   Su, Hongye},
+  title         = {Vision-Augmented On-Track System Identification for
+                   Autonomous Racing via Attention-Based Priors and Iterative
+                   Neural Correction},
+  year          = {2026},
+  eprint        = {2603.09399},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.RO},
+  url           = {https://arxiv.org/abs/2603.09399}
+}
+
+% --- Tire modeling -----------------------------------------------------------
+@techreport{pacejka1987sae,
+  author      = {Bakker, Egbert and Nyborg, Lars and Pacejka, Hans B.},
+  title       = {Tyre Modelling for Use in Vehicle Dynamics Studies},
+  institution = {SAE International},
+  type        = {SAE Technical Paper},
+  number      = {870421},
+  year        = {1987},
+  doi         = {10.4271/870421}
+}
+
+@article{pacejka1992magic,
+  author  = {Pacejka, Hans B. and Bakker, Egbert},
+  title   = {The Magic Formula Tyre Model},
+  journal = {Vehicle System Dynamics},
+  year    = {1992},
+  volume  = {21},
+  number  = {sup001},
+  pages   = {1--18},
+  doi     = {10.1080/00423119208969994}
+}
+
+@book{pacejka2012book,
+  author    = {Pacejka, Hans B.},
+  title     = {Tire and Vehicle Dynamics},
+  edition   = {3rd},
+  publisher = {Butterworth-Heinemann},
+  address   = {Oxford, UK},
+  year      = {2012}
+}
+
+@book{rajamani2012,
+  author    = {Rajamani, Rajesh},
+  title     = {Vehicle Dynamics and Control},
+  edition   = {2nd},
+  publisher = {Springer},
+  address   = {New York, NY, USA},
+  year      = {2012},
+  doi       = {10.1007/978-1-4614-1433-9}
+}
+
+@book{ljung1999sysid,
+  author    = {Ljung, Lennart},
+  title     = {System Identification: Theory for the User},
+  edition   = {2nd},
+  publisher = {Prentice Hall},
+  address   = {Upper Saddle River, NJ, USA},
+  year      = {1999}
+}
+
+% --- Data-driven vehicle dynamics and learning-based control -----------------
+@article{deepdynamics2024,
+  author  = {Chrosniak, John and Ning, Jingyun and Behl, Madhur},
+  title   = {Deep Dynamics: Vehicle Dynamics Modeling With a
+             Physics-Constrained Neural Network for Autonomous Racing},
+  journal = {IEEE Robotics and Automation Letters},
+  year    = {2024},
+  volume  = {9},
+  number  = {6},
+  pages   = {5292--5297},
+  doi     = {10.1109/LRA.2024.3388847},
+  note    = {Preprint: arXiv:2312.04374}
+}
+
+@article{kabzan2019lbmpc,
+  author  = {Kabzan, Juraj and Hewing, Lukas and Liniger, Alexander and
+             Zeilinger, Melanie N.},
+  title   = {Learning-Based Model Predictive Control for Autonomous Racing},
+  journal = {IEEE Robotics and Automation Letters},
+  year    = {2019},
+  volume  = {4},
+  number  = {4},
+  pages   = {3363--3370}
+}
+
+@inproceedings{hewing2018cautious,
+  author    = {Hewing, Lukas and Liniger, Alexander and Zeilinger, Melanie N.},
+  title     = {Cautious {NMPC} with {Gaussian} Process Dynamics for
+               Autonomous Miniature Race Cars},
+  booktitle = {Proc. European Control Conference (ECC)},
+  year      = {2018}
+}
+
+@article{hewing2020cautious,
+  author  = {Hewing, Lukas and Kabzan, Juraj and Zeilinger, Melanie N.},
+  title   = {Cautious Model Predictive Control Using {Gaussian} Process
+             Regression},
+  journal = {IEEE Transactions on Control Systems Technology},
+  year    = {2020}
+}
+
+@article{liniger2015,
+  author  = {Liniger, Alexander and Domahidi, Alexander and Morari, Manfred},
+  title   = {Optimization-Based Autonomous Racing of 1:43 Scale {RC} Cars},
+  journal = {Optimal Control Applications and Methods},
+  year    = {2015},
+  volume  = {36},
+  number  = {5},
+  pages   = {628--647},
+  doi     = {10.1002/oca.2123}
+}
+
+% --- Friction estimation ------------------------------------------------------
+@misc{slipfriction2025,
+  author        = {Oeltjen, Christopher and Sobolewski, Carson and
+                   Faghfoorian, Saleh and Domokos, Lorant and
+                   Vidal, Giancarlo and Yerramsetty, Sriram and
+                   Ruchkin, Ivan},
+  title         = {Online Slip Detection and Friction Coefficient Estimation
+                   for Autonomous Racing},
+  year          = {2025},
+  eprint        = {2509.15423},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.RO},
+  url           = {https://arxiv.org/abs/2509.15423}
+}
+
+% --- Sequence models used for the temporal residual ---------------------------
+@inproceedings{gu2022s4,
+  author    = {Gu, Albert and Goel, Karan and R{\'e}, Christopher},
+  title     = {Efficiently Modeling Long Sequences with Structured State
+               Spaces},
+  booktitle = {Proc. International Conference on Learning Representations
+               (ICLR)},
+  year      = {2022},
+  note      = {Preprint: arXiv:2111.00396}
+}
+
+@inproceedings{gu2022s4d,
+  author    = {Gu, Albert and Goel, Karan and Gupta, Ankit and
+               R{\'e}, Christopher},
+  title     = {On the Parameterization and Initialization of Diagonal State
+               Space Models},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2022},
+  note      = {Preprint: arXiv:2206.11893}
+}
+
+@article{raissi2019pinn,
+  author  = {Raissi, Maziar and Perdikaris, Paris and Karniadakis, George E.},
+  title   = {Physics-Informed Neural Networks: A Deep Learning Framework for
+             Solving Forward and Inverse Problems Involving Nonlinear Partial
+             Differential Equations},
+  journal = {Journal of Computational Physics},
+  year    = {2019},
+  volume  = {378},
+  pages   = {686--707},
+  doi     = {10.1016/j.jcp.2018.10.045}
+}
+
+% --- Simulation platforms and validation -------------------------------------
+@inproceedings{carla2017,
+  author    = {Dosovitskiy, Alexey and Ros, German and Codevilla, Felipe and
+               L{\'o}pez, Antonio and Koltun, Vladlen},
+  title     = {{CARLA}: An Open Urban Driving Simulator},
+  booktitle = {Proc. 1st Annual Conference on Robot Learning (CoRL)},
+  series    = {Proceedings of Machine Learning Research},
+  volume    = {78},
+  pages     = {1--16},
+  year      = {2017},
+  publisher = {PMLR},
+  url       = {https://proceedings.mlr.press/v78/dosovitskiy17a.html}
+}
+
+@misc{rcarla2025,
+  author        = {Brunner, Maurice and Ghignone, Edoardo and
+                   Baumann, Nicolas and Magno, Michele},
+  title         = {{R-CARLA}: High-Fidelity Sensor Simulations with
+                   Interchangeable Dynamics for Autonomous Racing},
+  year          = {2025},
+  eprint        = {2506.09629},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.RO},
+  url           = {https://arxiv.org/abs/2506.09629}
+}
+
+@misc{simfidelity2026,
+  author        = {Sagmeister, Simon and Kounatidis, Panagiotis and
+                   Goblirsch, Sven and Lienkamp, Markus},
+  title         = {Analyzing the Impact of Simulation Fidelity on the
+                   Evaluation of Autonomous Driving Motion Control},
+  year          = {2026},
+  eprint        = {2602.07984},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.RO},
+  url           = {https://arxiv.org/abs/2602.07984}
+}
+
+@misc{carlaros2025,
+  author        = {Abdo, Joseph and Shibu, Aditya and Saeed, Moaiz and
+                   Aga, Abdul Maajid and Sivaprazad, Apsara and
+                   Al-Musleh, Mohamed},
+  title         = {Simulating an Autonomous System in {CARLA} using {ROS 2}},
+  year          = {2025},
+  eprint        = {2511.11310},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.RO},
+  url           = {https://arxiv.org/abs/2511.11310}
+}
+
+% --- Racing platforms and full stacks ----------------------------------------
+@inproceedings{f1tenth2020,
+  author    = {O'Kelly, Matthew and Zheng, Hongrui and Karthik, Dhruv and
+               Mangharam, Rahul},
+  title     = {{F1TENTH}: An Open-Source Evaluation Environment for
+               Continuous Control and Reinforcement Learning},
+  booktitle = {Proc. NeurIPS 2019 Competition and Demonstration Track},
+  series    = {Proceedings of Machine Learning Research},
+  volume    = {123},
+  pages     = {77--89},
+  year      = {2020},
+  publisher = {PMLR},
+  url       = {https://proceedings.mlr.press/v123/o-kelly20a.html}
+}
+
+@article{forzaeth2024,
+  author  = {Baumann, Nicolas and Ghignone, Edoardo and K{\"u}hne, Jonas and
+             Bastuck, Niklas and Becker, Jonathan and Imholz, Nadine and
+             Kr{\"a}nzlin, Tobias and Lim, Tian Yi and L{\"o}tscher, Michael
+             and Schwarzenbach, Luca and Tognoni, Luca and Vogt, Christian
+             and Carron, Andrea and Magno, Michele},
+  title   = {{ForzaETH} Race Stack---Scaled Autonomous Head-to-Head Racing on
+             Fully Commercial Off-the-Shelf Hardware},
+  journal = {Journal of Field Robotics},
+  year    = {2024},
+  doi     = {10.1002/rob.22429},
+  note    = {Preprint: arXiv:2403.11784}
+}
+
+@article{amz2020,
+  author  = {Kabzan, Juraj and Valls, Miguel I. and Reijgwart, Victor J. F.
+             and Hendrikx, Hubertus F. C. and Ehmke, Claas and
+             Prajapat, Manish and B{\"u}hler, Andreas and Gosala, Nikhil and
+             Gupta, Mehak and Sivanesan, Ramya and Dhall, Ankit and
+             Chisari, Eugenio and Karnchanachari, Napat and Brits, Sonja and
+             Dangel, Manuel and Sa, Inkyu and Dub{\'e}, Renaud and
+             Gawel, Abel and Pfeiffer, Mark and Liniger, Alexander and
+             Lygeros, John and Siegwart, Roland},
+  title   = {{AMZ} Driverless: The Full Autonomous Racing System},
+  journal = {Journal of Field Robotics},
+  year    = {2020},
+  volume  = {37},
+  number  = {7},
+  pages   = {1267--1294},
+  doi     = {10.1002/rob.21977}
+}
+
+% --- Trajectory generation and optimization solvers ---------------------------
+@article{heilmeier2020,
+  author  = {Heilmeier, Alexander and Wischnewski, Alexander and
+             Hermansdorfer, Leonhard and Betz, Johannes and
+             Lienkamp, Markus and Lohmann, Boris},
+  title   = {Minimum Curvature Trajectory Planning and Control for an
+             Autonomous Race Car},
+  journal = {Vehicle System Dynamics},
+  year    = {2020},
+  volume  = {58},
+  number  = {10},
+  pages   = {1497--1527},
+  doi     = {10.1080/00423114.2019.1631455}
+}
+
+@article{acados2022,
+  author  = {Verschueren, Robin and Frison, Gianluca and Kouzoupis, Dimitris
+             and Frey, Jonathan and van Duijkeren, Niels and
+             Zanelli, Andrea and Novoselnik, Branimir and Albin, Thivaharan
+             and Quirynen, Rien and Diehl, Moritz},
+  title   = {acados---A Modular Open-Source Framework for Fast Embedded
+             Optimal Control},
+  journal = {Mathematical Programming Computation},
+  year    = {2022},
+  doi     = {10.1007/s12532-021-00208-8},
+  note    = {Preprint: arXiv:1910.13753}
+}
+
+@article{hpipm2020,
+  author  = {Frison, Gianluca and Diehl, Moritz},
+  title   = {{HPIPM}: A High-Performance Quadratic Programming Framework for
+             Model Predictive Control},
+  journal = {IFAC-PapersOnLine (Proc. 21st IFAC World Congress)},
+  year    = {2020}
+}
+
+@article{qpoases2014,
+  author  = {Ferreau, Hans Joachim and Kirches, Christian and
+             Potschka, Andreas and Bock, Hans Georg and Diehl, Moritz},
+  title   = {{qpOASES}: A Parametric Active-Set Algorithm for Quadratic
+             Programming},
+  journal = {Mathematical Programming Computation},
+  year    = {2014}
+}
+
+% --- Software ----------------------------------------------------------------
+@misc{carlaasubridge,
+  author       = {Abdelghfar, Ebrahim},
+  title        = {Formula {AI} Simulator: A {CARLA}-Based Simulation Bridge
+                  for Autonomous Formula Student Vehicles},
+  year         = {2026},
+  howpublished = {Software, GPL-3.0},
+  note         = {\url{https://github.com/ebrahimabdelghfar/Carla_ASU_Bridge}}
+}
+
+@misc{tumracetraj,
+  author       = {{Institute of Automotive Technology, Technical University
+                   of Munich}},
+  title        = {{global\_racetrajectory\_optimization}},
+  year         = {2019--2022},
+  howpublished = {Software, Institute of Automotive Technology, Technical
+                  University of Munich},
+  note         = {\url{https://github.com/TUMFTM/global_racetrajectory_optimization};
+                  vendored in this project under
+                  \texttt{src/ros\_apps/global\_racetrajectory\_optimization}}
+}

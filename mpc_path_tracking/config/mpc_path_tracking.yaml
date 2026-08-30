@@ -42,7 +42,7 @@ mpc_path_tracking:
     # error order: [e_y, e_psi, vx_err, vy, r_err]
     cost:
       Q: [20.0, 10.0, 20.0, 0.0, 10.0]
-      R: [10.0, 10.0]                # [steering, accel]
+      R: [10.0, 1.0]                # [steering, accel]
       R_rate: [10.0, 10.0]          # input-rate penalty
       Qf: [20.0, 10.0, 20.0, 0.0, 10.0] #
 
@@ -86,7 +86,7 @@ mpc_path_tracking:
       steering_angle_max: 0.345   # rad (16 deg)
       steering_angle_min: -0.345  # rad
       steering_rate_max: 1.0       # rad/s - PLACEHOLDER, measure
-      speed_max: 16.67             # m/s (60 km/h plant cap)
+      speed_max: 27.67             # m/s (100 km/h plant cap)
       speed_min: 0.0               # m/s
       accel_max: 14.71             # m/s^2 (mu*g, grip-limited)
       decel_max: 14.71             # m/s^2 (magnitude; accel_min = -decel_max)

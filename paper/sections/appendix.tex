@@ -1,0 +1,98 @@
+% === APPENDIX ================================================================
+\section{Assumptions and Reproducibility Notes}
+\label{subsec:assumptions}
+
+The following are assumptions or design choices rather than measured facts.
+They are listed explicitly so that a reader can judge how far each result
+depends on them, and so that each can be discharged by a specific
+measurement.
+
+\subsection*{A1. Yaw inertia $I_{z}$}
+$I_{z}=\SI{51.1}{\kilo\gram\meter\squared}$ is carried in the model file and
+is \emph{not} measured. It enters \eqref{eq:omdot} directly and therefore
+scales the yaw-rate residual the network is trained on, and it enters the
+stiffness-adaptive sub-stepping of Section~\ref{subsec:gates} through
+$l_{f}^{2}C_{f}+l_{r}^{2}C_{r}$ over $I_{z}$. \emph{How to discharge:} apply a
+known yaw moment (a step steer at constant speed with the resulting axle
+forces read from \texttt{feedback/\allowbreak tire\_forces}) and fit $I_{z}$ from the
+measured $\dot\omega$; or read the value the physics engine is using directly
+from the actor's inertia tensor.
+
+\subsection*{A2. Centre-of-gravity split}
+$l_{f}=\SI{0.738142}{\meter}$, $l_{r}=\SI{0.795362}{\meter}$ are taken from
+the controller configuration and confirmed by the vehicle owner. The measured
+static load split (51.2/48.8 front/rear) implies a marginally different split
+than the geometry does (51.9/48.1) --- a \SI{1.4}{\percent} disagreement. We
+have not resolved it, and it is below the level at which any conclusion in
+this paper would change.
+
+\subsection*{A3. CG height and load transfer}
+$h_{\mathrm{cg}}=\SI{0.3}{\meter}$ is carried in the model file and unused:
+the single-track model of Section~\ref{subsec:model} neglects load transfer,
+following the baseline. Normal loads are static. On a full-scale vehicle at
+\SI{1}{\g} this is a stronger approximation than at 1:10, and it is a
+candidate explanation for part of the residual the network absorbs.
+
+\subsection*{A4. Steering-angle sign and units}
+\texttt{feedback/\allowbreak steering\_angle} is published in degrees and is treated as
+the front road-wheel angle, positive left, matching the ROS body frame. It was
+verified to agree with the front-left wheel joint state to within
+\SI{0.5}{\percent}. Left and right road wheels are not distinguished; the
+single-track $\delta$ is taken as this single reported value.
+
+\subsection*{A5. Steady-state force recovery}
+Equation~\eqref{eq:ssforces} is not a force measurement --- it is fully
+determined by $v_{x}\omega$ --- so it misattributes transients. It is applied
+only to the \emph{synthetic}, quasi-steady rollout, where the steady-state
+assumption is constructed rather than hoped for. Its adequacy was nonetheless
+checked on measured data against the simulator's own axle force
+(correlation \num{0.993}, slope \num{0.94}); we treat that as validating the
+relation, not as validating a steady-state assumption on recorded laps.
+
+\subsection*{A6. The residual network is not the plant}
+The corrected model $\hat\vecx_{k+1}+e_{k}$ is queried by the rollout at
+inputs the network has only partially seen. The extrapolation bound of
+Section~\ref{subsec:iterative} limits but does not eliminate this: the sweep
+still reaches $1.5\times$ the observed 99th percentile of $|\delta|$. The
+choice of $1.5$ is empirical, selected because it was sufficient to reach the
+tire's peak at the corrected rollout speed while removing the observed drift;
+it is not derived.
+
+\subsection*{A7. Simulator determinism and timing}
+CARLA runs in synchronous mode with a \SI{0.033}{\second} physics step, but
+sim time advances faster than wall time (observed $\approx1.9\times$ on our
+hardware). All identification data is stamped from the simulation clock. We
+assume the physics step is uniform and that dead-reckoned odometry samples
+(disabled here via \texttt{follow\_server\_rate}) do not enter the
+identification buffer.
+
+\subsection*{A8. Software configuration of record}
+Identification and control workspace: ROS~2 Humble, Python 3.10 (required ---
+ROS~2 Humble ships CPython~3.10 ABI extensions only), PyTorch with CUDA on an
+RTX~2080-class GPU. The bridge is built and sourced as a separate overlay on
+top of that workspace, so that its message packages
+(\texttt{sim\_manager\_\allowbreak msgs}) resolve for the ground-truth topics;
+CARLA server 0.9.16 / Unreal Engine 4.26; \texttt{acados} 0.5.5 with
+partial-condensing HPIPM. Identification runs at \SI{50}{\hertz} with a
+\SI{30}{\second} buffer, six co-identification iterations, 200 training
+epochs, full-batch Adam at $5\times10^{-4}$.
+
+\subsection*{A9. Regression tests}
+Eight tests pin the identifiability signature (no fitted coefficient on a
+bound; $l_{wb}\equiv l_{f}+l_{r}$; the rollout speed derivation) and run under
+\texttt{colcon test}, so that the degenerate-fit signature cannot return
+silently. This is a reproducibility mechanism rather than a scientific
+result, but it is the mechanism that would catch a regression of the paper's
+central finding.
+
+\section{Reference Implementation}
+
+The identification package, the ROS~2 bridge and the controller stack used in
+this paper are available as
+\texttt{On-Track-SysID} (extended from~\cite{ontrack2024}),
+\bridge{}~\cite{carlaasubridge}, and the accompanying MPC and benchmarking
+packages. The benchmarking packages compute one-step and multi-step
+prediction metrics online (RMSE, MAE, NRMSE, MaxAE, bias, standard deviation
+and $R^{2}$ by Welford's algorithm), compare estimated against ground-truth
+per-wheel lateral forces, and record controller-switching behaviour, and were
+built for this study.

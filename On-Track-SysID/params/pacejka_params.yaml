@@ -60,7 +60,7 @@ pacejka_solver:
   #                                 this repo's own pacejka_identification/
   #                                 coefficient_identifier.py already applies via its
   #                                 genetic-algorithm identifier.
-  method: trf 
+  method: differential-evolution
   loss: soft_l1               # trf/dogbox/lm only - ignored by nelder-mead/differential-evolution
   f_scale: null                # trf/dogbox/lm only
   x_scale: jac                  # trf/dogbox/lm only
@@ -107,6 +107,6 @@ friction_warm_start:
   low_slip_only: false
   low_slip_alpha_f_max: 0.15   # rad — only used when low_slip_only: true
   low_slip_alpha_r_max: 0.08   # rad — only used when low_slip_only: true
-  vx_min: 1.5                  # m/s — margin above collect_data()'s own vx>1 gate
+  vx_min: 2.5                  # m/s — margin above collect_data()'s own vx>1 gate
   omega_max: 5.0                # rad/s — mirrors analyse_tires()'s abs(omega)<=5 filter
   min_samples: 20                # below this, skip override, fall back to static D default

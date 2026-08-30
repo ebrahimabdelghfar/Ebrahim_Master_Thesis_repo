@@ -200,3 +200,27 @@ TEST(ReferenceTrajectoryHandler, PeakLateralDemandZeroOnAStraightLine)
   handler.setWaypoints(makeStraightLine(2.0, 100, 20.0));
   EXPECT_DOUBLE_EQ(handler.maxLateralDemand(), 0.0);
 }
+
+// The horizon must start beside the vehicle, not at the nearest waypoint:
+// snapping to a 2 m grid put stage 0 up to 2 m behind the car and made the
+// first stages target track already passed.
+TEST(ReferenceTrajectoryHandler, HorizonStartsAtProjectionNotAtNearestWaypoint)
+{
+  ReferenceTrajectoryHandler handler;
+  handler.setWaypoints(makeStraightLine(2.0, 100, 10.0));
+
+  // Vehicle three quarters of the way along the segment [10 m, 12 m].
+  const auto horizon = handler.buildHorizon(11.5, 0.3, 0.0, 5, 0.05);
+  ASSERT_EQ(horizon.size(), 6u);
+  EXPECT_NEAR(horizon.front().s, 11.5, 1e-6);
+  EXPECT_NEAR(horizon.front().x, 11.5, 1e-6);
+}
+
+TEST(ReferenceTrajectoryHandler, ProjectionIsContinuousAcrossAWaypoint)
+{
+  ReferenceTrajectoryHandler handler;
+  handler.setWaypoints(makeStraightLine(2.0, 100, 10.0));
+
+  EXPECT_NEAR(handler.projectedArcLength(11.99, 0.0), 11.99, 1e-6);
+  EXPECT_NEAR(handler.projectedArcLength(12.01, 0.0), 12.01, 1e-6);
+}

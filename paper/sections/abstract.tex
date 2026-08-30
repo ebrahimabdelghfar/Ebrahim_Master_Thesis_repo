@@ -1,0 +1,48 @@
+% === ABSTRACT & KEYWORDS =====================================================
+\begin{abstract}
+Learning-based on-track system identification promises tire models obtained
+from ordinary racing laps rather than from dedicated steady-state manoeuvres.
+The reference method of Dikici \emph{et al.}~\cite{ontrack2024} achieves this
+on a 1:10 scaled platform by training a small residual neural network on
+measured data, rolling the corrected model out through a synthetic steering
+sweep, and fitting Pacejka coefficients to that synthetic sweep, iteratively.
+We report what happens when that pipeline is transplanted onto a full-scale
+Formula Student vehicle, an order of magnitude heavier and four times faster,
+using a CARLA-based simulation platform in which per-wheel slip angle, normal
+load and lateral force are directly observable. The transplant fails in a
+specific and instructive way: the identifier converges on a tire whose peak
+grip is \SI{0.40}{\g}, five of eight coefficients pinned on their box
+constraints, for a vehicle that measures \SIrange{1.00}{1.05}{\g}. We show
+that the failure is not a solver, bounds, or tuning problem but an
+\emph{excitation} problem introduced by the virtual-data step itself: the
+reachable friction of the synthetic rollout is
+$\mu_{\mathrm{reach}}=v^{2}\delta_{\max}/(gL)$, and a rollout speed inherited
+from the scaled platform caps it at $0.43$ regardless of the real tire. We
+contribute (i) this identifiability analysis and an excitation-aware rollout
+that removes the pathology; (ii) an extrapolation bound on the synthetic
+steering sweep and a frozen-prior Tikhonov term that together stop the peak
+friction coefficient from drifting across co-identification iterations; (iii)
+three measurement-side corrections (achieved rather than commanded road-wheel
+angle, measured mass and geometry, and a peak-rather-than-median friction
+warm-start applied as a floor); and (iv) admissibility gates on derived
+physical quantities---axle cornering stiffness, critical speed, and grip
+ceiling against the raceline's lateral demand---placed at the
+model-to-controller boundary. After correction, three consecutive live
+identifications return no coefficient on a bound, peak friction coefficients
+of \numrange{1.05}{1.18}, axle cornering stiffnesses of \SI{21}{\kilo\newton\per\radian}
+front and \SI{20}{\kilo\newton\per\radian} rear against a simulator ground
+truth of \SIrange{17}{19}{\kilo\newton\per\radian}, and one-step prediction
+$R^{2}$ of \num{0.97} for lateral velocity and \num{0.99} for yaw rate. We
+also report a negative result the corrected identifier makes visible: the
+optimised raceline used in this study demands \SI{1.22}{\g} and is therefore
+infeasible for this vehicle, and the admissibility gate correctly and
+persistently rejects deployment.
+\end{abstract}
+
+\begin{IEEEkeywords}
+System identification, tire modeling, Pacejka Magic Formula, vehicle dynamics,
+autonomous racing, model predictive control, CARLA, ROS~2, simulation-based
+validation, identifiability.
+\end{IEEEkeywords}
+
+\IEEEpeerreviewmaketitle

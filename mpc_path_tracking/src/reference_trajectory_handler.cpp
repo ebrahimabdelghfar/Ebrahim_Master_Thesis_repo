@@ -111,6 +111,47 @@ ReferencePoint ReferenceTrajectoryHandler::nearestPoint(double x, double y) cons
   return waypoints_[best_index];
 }
 
+double ReferenceTrajectoryHandler::projectedArcLength(double x, double y) const
+{
+  const size_t n = waypoints_.size();
+  if (n == 0) {
+    return 0.0;
+  }
+  nearestPoint(x, y);
+  const size_t i = last_nearest_index_;
+  if (n < 2) {
+    return waypoints_[i].s;
+  }
+
+  // The projection lies on one of the two segments meeting at the nearest
+  // waypoint; test both and keep the closer foot point.
+  double best_s = waypoints_[i].s;
+  double best_dist_sq = std::numeric_limits<double>::infinity();
+  for (int side = -1; side <= 0; ++side) {
+    const size_t a = (i + n + side) % n;
+    const size_t b = (a + 1) % n;
+    const double ax = waypoints_[a].x;
+    const double ay = waypoints_[a].y;
+    const double dx = waypoints_[b].x - ax;
+    const double dy = waypoints_[b].y - ay;
+    const double len_sq = dx * dx + dy * dy;
+    if (len_sq < 1e-12) {
+      continue;
+    }
+    const double t = std::clamp(((x - ax) * dx + (y - ay) * dy) / len_sq, 0.0, 1.0);
+    const double fx = ax + t * dx;
+    const double fy = ay + t * dy;
+    const double dist_sq = (x - fx) * (x - fx) + (y - fy) * (y - fy);
+    if (dist_sq < best_dist_sq) {
+      best_dist_sq = dist_sq;
+      const double s_a = waypoints_[a].s;
+      const double s_b = (b == 0) ? track_length_ : waypoints_[b].s;
+      best_s = s_a + t * (s_b - s_a);
+    }
+  }
+  return best_s;
+}
+
 ReferencePoint ReferenceTrajectoryHandler::interpolateAtArcLength(double s) const
 {
   double s_wrapped = std::fmod(s, track_length_);
@@ -160,8 +201,11 @@ std::vector<ReferencePoint> ReferenceTrajectoryHandler::buildHorizon(
     return horizon;
   }
 
-  const ReferencePoint start = nearestPoint(x, y);
-  double s = start.s;
+  // Start at the projection of the vehicle onto the polyline, not at the
+  // nearest waypoint: snapping put stage 0 up to one waypoint spacing behind
+  // the car, so the first stages of the horizon targeted track the car had
+  // already passed.
+  double s = projectedArcLength(x, y);
   double prev_psi = psi_hint;
 
   for (int k = 0; k <= horizon_steps; ++k) {

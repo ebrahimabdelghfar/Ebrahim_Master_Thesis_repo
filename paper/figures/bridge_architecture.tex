@@ -1,0 +1,188 @@
+% =============================================================================
+% Fig. 3 -- Carla_ASU_Bridge architecture.
+%
+% Vector TikZ, drawn at the paper's own font sizes. Included by
+% sections/method.tex inside a figure* (full text width).
+%
+% Reading order, left to right: CARLA server -> bridge lifecycle node ->
+% ROS 2 topic layer -> autonomy stack.
+%   * orange  = the ground-truth path (feedback/tire_forces). It leaves the
+%               simulator and reaches only the scoring/validation nodes; it is
+%               deliberately NOT wired into the identification loop.
+%   * blue    = mpc/update_params, the gated model interface. Drawn inside the
+%               autonomy stack because it is a service between two of this
+%               workspace's nodes, not part of the bridge's topic layer.
+%
+% Nodes are stacked with relative positioning (below=... of ...) so that a
+% change of wording cannot make two boxes overlap.
+% =============================================================================
+
+\begin{tikzpicture}[
+  font=\scriptsize,
+  >={Stealth[length=1.7mm,width=1.5mm]},
+  % --- block styles ---
+  colhead/.style  = {font=\scriptsize\bfseries, align=center},
+  blk/.style      = {draw, rounded corners=1pt, align=left, inner sep=2.4pt,
+                     text width=#1, fill=white, line width=0.35pt},
+  srv/.style      = {blk=26mm, fill=black!5},
+  brg/.style      = {blk=33mm, fill=black!3},
+  top/.style      = {blk=36mm, font=\scriptsize\ttfamily, fill=white},
+  gt/.style       = {top, fill=orange!20, draw=orange!80!black, line width=0.7pt},
+  cons/.style     = {blk=31mm, fill=black!3},
+  note/.style     = {font=\tiny, align=left, inner sep=1.5pt, text width=36mm},
+  % --- edge styles ---
+  flow/.style     = {->, line width=0.5pt, black!65},
+  gtflow/.style   = {->, line width=0.9pt, orange!80!black},
+  gateflow/.style = {->, line width=0.9pt, blue!60!black},
+  lbl/.style      = {font=\tiny, inner sep=1.2pt, fill=white, midway}
+]
+
+\def\gap{3.2mm}   % vertical gap between stacked boxes
+
+% ============================ 1. CARLA server ============================
+\node[srv, anchor=north west] (ego) at (0,0)
+  {\textbf{Ego vehicle}\\[1pt]
+   {\ttfamily vehicle.vehicle.}\\{\ttfamily asurt\_fsai}\\[1pt]
+   PhysX wheeled-vehicle solver,\\per-wheel tire friction};
+\node[srv, below=\gap of ego]  (sens)
+  {\textbf{Sensor actors}\\[1pt] IMU, GNSS, cameras, LiDAR};
+\node[srv, below=\gap of sens] (tick)
+  {\textbf{World tick}\\[1pt] synchronous, $\Delta t=0.033$\,s};
+\node[srv, below=\gap of tick] (wt)
+  {\textbf{Wheel telemetry}\\[1pt]
+   per-wheel slip angle,\\normal load, lateral force};
+
+\begin{scope}[on background layer]
+  \node[draw, dashed, rounded corners=2pt, inner sep=3.6pt, fill=black!2,
+        fit=(ego)(sens)(tick)(wt)] (carla) {};
+\end{scope}
+\node[colhead, above=1.4mm of carla.north]
+  {CARLA server\\{\scriptsize\mdseries UE 4.26 / PhysX}};
+
+% ======================== 2. Carla_ASU_Bridge node ========================
+\node[brg, anchor=north west] (ctrl) at (5.75,0)
+  {\textbf{Control application}\\[1pt]
+   forwards speed and steering to\\CARLA's \emph{native} Ackermann
+   controller (server-side PID)};
+\node[brg, below=\gap of ctrl] (sth)
+  {\textbf{Per-sensor threads}\\[1pt]
+   one publish thread each;\\optional dedicated clients};
+\node[brg, below=\gap of sth] (tth)
+  {\textbf{Telemetry thread}\\[1pt]
+   10\,Hz on its own thread --- each\\tick costs blocking CARLA RPCs};
+\node[brg, below=\gap of tth] (clk)
+  {\textbf{\ttfamily sensor\_clock}\\[1pt]
+   every stamp drawn from the\\simulation epoch, not wall time};
+
+\begin{scope}[on background layer]
+  \node[draw, dashed, rounded corners=2pt, inner sep=3.6pt, fill=black!1,
+        fit=(ctrl)(sth)(tth)(clk)] (bridge) {};
+\end{scope}
+\node[colhead, above=1.4mm of bridge.north]
+  {\textsc{Carla\_ASU\_Bridge}\\{\scriptsize\mdseries ROS 2 lifecycle node (C\texttt{++})}};
+
+% ============================ 3. ROS 2 topics ============================
+\node[top, anchor=north west] (tsub) at (11.1,0)
+  {/drive\\control/tire\_friction\\control/drag\_coefficient};
+\node[note, below=1.2mm of tsub] (nsub)
+  {\emph{subscribed} --- commands and\\runtime physics overrides};
+
+\node[top, below=2.6mm of nsub] (tstate)
+  {/odom\\feedback/steering\_angle\\feedback/imu\\feedback/speed};
+\node[note, below=1.2mm of tstate] (nstate)
+  {\emph{published} --- the signals the\\identification actually consumes};
+
+\node[gt, below=2.6mm of nstate] (tgt)
+  {feedback/tire\_forces};
+\node[note, below=1.2mm of tgt] (ngt)
+  {\textbf{ground truth} --- per-wheel slip\\
+   angle, normal load and lateral\\
+   force, straight from PhysX; no\\
+   analytic tire model in between};
+
+\begin{scope}[on background layer]
+  \node[draw, dashed, rounded corners=2pt, inner sep=3.6pt, fill=black!1,
+        fit=(tsub)(nsub)(tstate)(nstate)(tgt)(ngt)] (topics) {};
+\end{scope}
+\node[colhead, above=1.4mm of topics.north]
+  {ROS 2 topic layer\\{\scriptsize\mdseries all stamped from \texttt{/clock}}};
+
+% =========================== 4. Autonomy stack ===========================
+\node[cons, anchor=north west] (pp) at (16.6,0)
+  {\textbf{\ttfamily pure\_pursuit}\\[1pt]
+   model-free bootstrap; needs\\only the wheelbase};
+\node[cons, below=\gap of pp] (sid)
+  {\textbf{\ttfamily On-Track-SysID}\\[1pt]
+   residual NN $\rightarrow$ virtual sweep\\$\rightarrow$ Pacejka fit};
+\node[cons, below=11mm of sid] (mpc)
+  {\textbf{\ttfamily mpc\_path\_tracking}\\[1pt]
+   \texttt{acados} NMPC; holds the\\admissibility gates};
+\node[cons, below=\gap of mpc] (mgr)
+  {\textbf{\ttfamily adaptive\_}\\\textbf{\ttfamily controller\_manager}\\[1pt]
+   PP\,$\rightarrow$\,MPC arbitration};
+\node[cons, below=\gap of mgr] (bch)
+  {\textbf{Benchmark nodes}\\[1pt]
+   1/5/10-step prediction metrics,\\$F_y$ against ground truth};
+
+\begin{scope}[on background layer]
+  \node[draw, dashed, rounded corners=2pt, inner sep=3.6pt, fill=black!2,
+        fit=(pp)(sid)(mpc)(mgr)(bch)] (stack) {};
+\end{scope}
+\node[colhead, above=1.4mm of stack.north]
+  {Autonomy stack\\{\scriptsize\mdseries this workspace}};
+
+% ================================ arrows =================================
+% CARLA <-> bridge, over the C++ client library.
+% The two column groups have different heights, so carla.east and bridge.west
+% do NOT share a y. Pin both endpoints to one row (the "Sensor actors" row)
+% with the |- / -| intersection syntax so the arrow is exactly horizontal.
+\draw[flow, <->, line width=0.7pt]
+      (carla.east |- sens) -- (bridge.west |- sens)
+      node[lbl, above, pos=0.5, yshift=0.3mm]{\ttfamily libcarla\_client}
+      node[lbl, below, pos=0.5, yshift=-0.3mm]{RPC + streams};
+
+% CONVENTION: every inter-column arrow begins and ends on a dashed GROUP
+% boundary, never on an inner box -- an arrow that pierces the dashed frame
+% reads as if it bypassed the column. The row it belongs to is carried by the
+% y coordinate (|- <box>), so the arrow still lines up with its own topic.
+
+% bridge -> published topics
+\draw[flow] (bridge.east |- tstate) -- (topics.west |- tstate)
+      node[lbl, above, pos=0.5]{publish};
+\draw[gtflow] (bridge.east |- tgt) -- (topics.west |- tgt);
+
+% commands travel right to left, back into the bridge
+\draw[flow] (topics.west |- tsub) -- (bridge.east |- tsub)
+      node[lbl, above, pos=0.5]{apply};
+
+% topics -> autonomy stack, and the /drive return path
+\draw[flow] (topics.east |- tstate) -- (stack.west |- tstate)
+      node[lbl, above, pos=0.5]{state feedback};
+\draw[flow] (stack.west |- tsub) -- (topics.east |- tsub)
+      node[lbl, above, pos=0.5]{\ttfamily /drive};
+
+% ground truth reaches ONLY the scoring nodes: out of the topic column at the
+% tire_forces row, down the gutter, into the stack at the benchmark row.
+\coordinate (gtout)  at (topics.east |- tgt);
+\coordinate (gtbend) at ($(gtout)+(0.6,0)$);
+\draw[gtflow] (gtout) -- (gtbend) |- (stack.west |- bch);
+\node[font=\tiny, orange!80!black, rotate=90, anchor=south, inner sep=1.4pt]
+      at ($(gtbend)!0.5!(gtbend |- bch)$) {validation only};
+
+% the gated model interface, inside the stack
+\draw[gateflow] (sid.south) -- (mpc.north)
+      node[lbl, pos=0.5, align=center]
+      {\ttfamily mpc/update\_params\\\rmfamily\emph{gated}};
+
+% ================================= legend ================================
+% Sits under columns 1--2, which are the shorter pair.
+\node[anchor=north west, font=\tiny, align=left, draw, rounded corners=1.5pt,
+      inner sep=4pt, fill=white, text width=88mm]
+      at ($(carla.south west)+(0,-0.5)$)
+  {\tikz[baseline=-0.5ex]\draw[gtflow](0,0)--(0.5,0);\ \textbf{ground-truth path.}
+   Used only to \emph{score} the identifier; never inside the identification loop.\\[1.5pt]
+   \tikz[baseline=-0.5ex]\draw[gateflow](0,0)--(0.5,0);\ \textbf{gated interface.}
+   An identified tire set is accepted only if its grip ceiling, understeer sign and
+   critical speed clear the controller's requirements (Sec.~\ref{subsec:gates}).\\[1.5pt]
+   \tikz[baseline=-0.5ex]\draw[flow](0,0)--(0.5,0);\ ROS 2 topic traffic.};
+\end{tikzpicture}

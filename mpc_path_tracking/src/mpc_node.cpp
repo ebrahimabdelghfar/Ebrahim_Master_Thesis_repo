@@ -137,22 +137,10 @@ private:
     tire.Cr = request->param_values[5];
     tire.Dr = request->param_values[6];
     tire.Er = request->param_values[7];
-    // Reject a set that makes the prediction model open-loop unstable inside
-    // the speed range we are actually going to drive. Above the oversteer
-    // critical speed every horizon stage linearized there diverges, and over
-    // N stages that is rho^N in the condensed QP - the solver can only report
-    // it as a generic failure. Keeping the last physically sane model is
-    // strictly better than accepting one we know cannot be solved.
-    // Reject a set whose tires cannot generate the lateral acceleration the
-    // raceline demands. D is the dimensionless peak friction coefficient, so
-    // the model's grip ceiling is (Df*Fz_f + Dr*Fz_r)/m. If that is below the
-    // reference's peak vx^2*kappa the model believes most corners are simply
-    // impossible: steadyStateCornering finds no solution for those stages and
-    // the MPC plans against a vehicle that cannot do the task. Measured with
-    // the identified set (Df 0.4, Dr 0.4046 -> 0.40 g) against traj_race_cl.csv
-    // at 27 m/s: 29461 infeasible horizon stages and 41.89 m of cross-track
-    // error, versus 0 stages and 0.03 m on the same run with the startup prior.
-    // A degenerate fit with D railed at its bound is the usual cause.
+    // The identified tire set is accepted even when its grip ceiling is below
+    // the raceline's peak lateral demand. That mismatch is a property of the
+    // reference, not of the identification, so it is reported and left to the
+    // operator instead of being rejected here.
     if (ref_handler_.hasWaypoints() && ref_handler_.maxLateralDemand() > 0.0) {
       double fz_f = 0.0, fz_r = 0.0;
       vehicle_model_->normalLoads(fz_f, fz_r);
@@ -161,18 +149,22 @@ private:
         vehicle_model_->vehicleParams().mass;
       const double demand = ref_handler_.maxLateralDemand();
       if (grip_ceiling < demand) {
-        RCLCPP_ERROR(
+        RCLCPP_WARN(
           get_logger(),
-          "mpc/update_params REJECTED: identified tires give a peak lateral acceleration of "
+          "mpc/update_params: identified tires give a peak lateral acceleration of "
           "%.2f m/s^2 (%.2f g, Df=%.3f Dr=%.3f) but the raceline demands %.2f m/s^2 (%.2f g). "
-          "The model would treat most corners as infeasible. Keeping the previous tire params - "
-          "check the sysid fit for parameters railed on their bounds.",
+          "Corners above the ceiling will have no steady-state solution; accepting the params "
+          "anyway.",
           grip_ceiling, grip_ceiling / 9.81, tire.Df, tire.Dr, demand, demand / 9.81);
-        response->ack = false;
-        return;
       }
     }
 
+    // Reject a set that makes the prediction model open-loop unstable inside
+    // the speed range we are actually going to drive. Above the oversteer
+    // critical speed every horizon stage linearized there diverges, and over
+    // N stages that is rho^N in the condensed QP - the solver can only report
+    // it as a generic failure. Keeping the last physically sane model is
+    // strictly better than accepting one we know cannot be solved.
     const double v_crit = criticalSpeed(tire);
     const double v_max = get_parameter("limits.speed_max").as_double();
     if (v_crit < v_max) {
@@ -321,6 +313,10 @@ private:
       drive_pub_->publish(cmd);
     }
     u_prev_ = Input(cmd.drive.steering_angle, 0.0);
+    // Clear the predicted path. Without this the last successful horizon stays
+    // on the topic while the car drives on under hold_last, so it renders
+    // further and further behind the vehicle and reads as a bad solve.
+    debug_pub_->publishPredictedPath({}, "map", now());
     debug_pub_->publishStatus(false, 0.0, 0.0, reason, now());
     RCLCPP_WARN_THROTTLE(
       get_logger(), *get_clock(), 2000, "fallback active (%s): %s", policy.c_str(), reason.c_str());

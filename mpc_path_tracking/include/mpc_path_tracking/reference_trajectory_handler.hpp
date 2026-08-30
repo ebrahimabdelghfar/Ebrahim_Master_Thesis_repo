@@ -72,6 +72,12 @@ public:
   std::vector<ReferencePoint> buildHorizon(
     double x, double y, double psi_hint, int horizon_steps, double dt) const;
 
+  // Arc length of the perpendicular projection of (x, y) onto the raceline
+  // polyline. Unlike nearestPoint() this is continuous in (x, y) rather than
+  // snapped to a waypoint, so the horizon does not start up to one waypoint
+  // spacing (2 m on traj_race_cl.csv) behind the vehicle.
+  double projectedArcLength(double x, double y) const;
+
 private:
   ReferencePoint interpolateAtArcLength(double s) const;
 
