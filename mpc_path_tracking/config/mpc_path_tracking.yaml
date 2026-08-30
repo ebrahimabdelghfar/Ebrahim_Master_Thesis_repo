@@ -16,7 +16,7 @@ mpc_path_tracking:
 
     # ---------------- Horizon / timing ----------------
     horizon:
-      N: 100                       # prediction steps
+      N: 20                       # prediction steps
       dt_min: 0.02                 # s, auto-raised to 1/control_rate_hz at startup
       dt_max: 0.07                 # s
       dt_adaptive: false            # dt = clamp(horizon_distance_m / (N * max(vx_ref, v_floor)), dt_min, dt_max)
@@ -26,7 +26,7 @@ mpc_path_tracking:
       # 5.5 m. Left as-is rather than "fixed", because the resulting horizon is
       # the one that was actually tuned and measured; treat N*dt_min as the
       # real horizon setting.
-      horizon_distance_m: 8.5
+      horizon_distance_m: 5.5
       # 20 Hz was the single biggest cause of the high-speed steering chatter.
       # The path-following loop gain grows as v^2/L (80 m/s^2 per rad at 11 m/s,
       # 475 at 27) while the transport delay stays constant, so the same lag
@@ -40,11 +40,26 @@ mpc_path_tracking:
 
     # ---------------- Cost matrices ----------------
     # error order: [e_y, e_psi, vx_err, vy, r_err]
+    # Q[r_err] is the corner-entry stability knob, not a tracking nicety. At 10
+    # the closed loop overshoots the reference yaw rate by ~1.8x on turn-in, so
+    # a corner the reference planned at 7.0 m/s^2 is actually taken at 13-14,
+    # i.e. above the plant's ~9.8 m/s^2 (mu 1.0) ceiling: the axle saturates,
+    # sideslip builds and the yaw mode diverges into a spin. Measured over 250 s
+    # on traj_race_cl.csv (plant mu 1.0, lateral_accel_max 7.0), peak achieved
+    # lateral acceleration and spin events (|beta| > 20 deg):
+    #   Q[r_err]  10 -> 45.1 m/s^2, 31 spins, max|e_y| 28.0 m
+    #             30 -> 11.7,        0 spins, max|e_y|  1.36 m
+    #             50 -> 10.6,        0 spins, max|e_y|  1.35 m
+    #            100 ->  9.55,       0 spins, max|e_y|  1.40 m
+    #            200 ->  8.96,       0 spins, max|e_y|  1.48 m
+    # Lap pace is unchanged above 30 (6352-6353 m per 250 s either way) - the
+    # overshoot was costing time, not buying it. 100 leaves the most grip
+    # margin before cross-track error starts creeping up.
     cost:
-      Q: [5.0, 10.0, 20.0, 0.0, 10.0]
+      Q: [10.0, 5.0, 100.0, 0.0, 100.0]
       R: [10.0, 1.0]                # [steering, accel]
-      R_rate: [1000.0, 10.0]          # input-rate penalty
-      Qf: [20.0, 10.0, 20.0, 0.0, 10.0] #
+      R_rate: [1000.0, 1.0]          # input-rate penalty
+      Qf: [10.0, 5.0, 100.0, 0.0, 100.0] #
 
     # ---------------- Vehicle geometry / mass ----------------
     # NOTE: On-Track-SysID/models/SIM/SIM_pacejka.txt currently carries a
@@ -83,13 +98,13 @@ mpc_path_tracking:
 
     # ---------------- Actuator limits / rate limits ----------------
     limits:
-      steering_angle_max: 0.345   # rad (16 deg)
-      steering_angle_min: -0.345  # rad
+      steering_angle_max: 0.2793   # rad (16 deg)
+      steering_angle_min: -0.2793  # rad
       steering_rate_max: 1.0       # rad/s - PLACEHOLDER, measure
-      speed_max: 27.67             # m/s (100 km/h plant cap)
+      speed_max: 31.0             # m/s (100 km/h plant cap)
       speed_min: 0.0               # m/s
-      accel_max: 5.71             # m/s^2 (mu*g, grip-limited)
-      decel_max: 3.71             # m/s^2 (magnitude; accel_min = -decel_max)
+      accel_max: 3.71             # m/s^2 (mu*g, grip-limited)
+      decel_max: 5.71             # m/s^2 (magnitude; accel_min = -decel_max)
       jerk_max: 1000.0             # m/s^3, effectively unconstrained until tuned
       # Peak lateral acceleration the REFERENCE may demand. speed_max alone
       # cannot make a raceline drivable: traj_race_cl.csv sits below 27.67 m/s
@@ -100,14 +115,23 @@ mpc_path_tracking:
       # vx to sqrt(lateral_accel_max/|kappa|) at ingest and re-smooths the
       # profile against decel_max/accel_max, so the reference itself brakes
       # into the turn.
-      # Measured offline (traj_race_cl.csv, controller model == plant, peak
-      # axle mu 1.0 => a 9.81 m/s^2 ceiling), max cross-track error against
-      # the reference's peak demand: 7.84 m/s^2 -> 0.29 m, 8.48 -> 24.0 m,
-      # 9.88 -> 34.0 m. It is a cliff: a Pacejka axle only reaches peak mu at
-      # its peak slip angle, so the closed loop needs the margin. Budget about
-      # 0.7 x the model's grip ceiling ((Df*Fz_f + Dr*Fz_r)/m, reported by
-      # /mpc/status). 7.0 = 0.71 g against the measured 1.0 g ceiling.
-      lateral_accel_max: 7.0       # m/s^2
+      # It is a cliff: a Pacejka axle only reaches peak mu at its peak slip
+      # angle, and the closed loop overshoots the reference's steady demand on
+      # turn-in, so the margin has to cover both. Budget against the PLANT's
+      # grip ceiling (peak axle mu 1.0 => 9.81 m/s^2), not the controller
+      # model's ((Df*Fz_f + Dr*Fz_r)/m = 14.7 m/s^2 at Df = 1.5, which is what
+      # /mpc/status reports) - the model is the optimistic one.
+      # Measured offline over 250 s on traj_race_cl.csv at plant mu 1.0, with
+      # Q[r_err] = 100 (see the cost block: at the old Q[r_err] = 10 the cliff
+      # sat between 6.5 and 7.0 and this value was on the wrong side of it):
+      #   a_lat  6.5 -> max|e_y| 1.14 m, peak achieved 8.76 m/s^2, 0 spins
+      #          7.0 -> 1.40 m, 9.55 m/s^2, 0 spins  (97 % of the ceiling)
+      #          8.0 -> 3.10 m, 13.1 m/s^2, 0 spins
+      #          8.5 -> 22.3 m, 28 spins
+      # 6.5 also survives a plant that has lost grip to mu 0.9 (1.78 m, peak
+      # 9.01, 0 spins) where 7.0 is already marginal (2.67 m, peak 13.2). The
+      # pace it costs is 0.9 %: 6295 m per 250 s against 6353 at 7.0.
+      lateral_accel_max: 6.5       # m/s^2
       # First-order lag of the speed loop downstream of this node. The speed
       # command leads the plan by (control period + tau) to invert it. Offline
       # closed-loop: 0.07 m residual at tau 0.05 s, 3.5 m at 0.3 s, so set this
