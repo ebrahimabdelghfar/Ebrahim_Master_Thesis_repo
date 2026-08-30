@@ -16,7 +16,7 @@ mpc_path_tracking:
 
     # ---------------- Horizon / timing ----------------
     horizon:
-      N: 60                       # prediction steps
+      N: 100                       # prediction steps
       dt_min: 0.02                 # s, auto-raised to 1/control_rate_hz at startup
       dt_max: 0.07                 # s
       dt_adaptive: false            # dt = clamp(horizon_distance_m / (N * max(vx_ref, v_floor)), dt_min, dt_max)
@@ -26,7 +26,7 @@ mpc_path_tracking:
       # 5.5 m. Left as-is rather than "fixed", because the resulting horizon is
       # the one that was actually tuned and measured; treat N*dt_min as the
       # real horizon setting.
-      horizon_distance_m: 6.5
+      horizon_distance_m: 8.5
       # 20 Hz was the single biggest cause of the high-speed steering chatter.
       # The path-following loop gain grows as v^2/L (80 m/s^2 per rad at 11 m/s,
       # 475 at 27) while the transport delay stays constant, so the same lag
@@ -36,14 +36,14 @@ mpc_path_tracking:
       # cross-track error 0.07 m. Check solve time before lowering this again -
       # the budget is 1/control_rate_hz (20 ms here) and measured solves are
       # 13-17 ms, so there is not much headroom.
-      control_rate_hz: 25.0
+      control_rate_hz: 20.0
 
     # ---------------- Cost matrices ----------------
     # error order: [e_y, e_psi, vx_err, vy, r_err]
     cost:
-      Q: [20.0, 10.0, 20.0, 0.0, 10.0]
+      Q: [5.0, 10.0, 20.0, 0.0, 10.0]
       R: [10.0, 1.0]                # [steering, accel]
-      R_rate: [100.0, 10.0]          # input-rate penalty
+      R_rate: [1000.0, 10.0]          # input-rate penalty
       Qf: [20.0, 10.0, 20.0, 0.0, 10.0] #
 
     # ---------------- Vehicle geometry / mass ----------------
