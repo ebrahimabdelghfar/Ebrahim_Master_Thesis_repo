@@ -58,6 +58,40 @@ def log_warn(msg):
     logger.warning(msg)
     print(f"[WARN] {msg}")
 
+PACEJKA_COEFF_NAMES = ('B', 'C', 'D', 'E')
+
+
+def warn_railed_fit(axle, coeffs, rtol=1e-3):
+    """Warn when an identified axle sits on the edge of PACEJKA_BOUNDS.
+
+    A coefficient that stops exactly on its box constraint was not identified
+    by the data - the optimiser simply ran out of room, and the value carries
+    no information beyond the bound itself. Two of these on one axle is enough
+    to invent an axle stiffness that the car does not have: the 2026-08-30 fit
+    returned front [19.18, 2.2, 2.0, -3.0] (C, D and E all railed, B at 96 % of
+    its bound), which is C_front = 103 kN/rad against C_rear = 17 kN/rad - an
+    oversteering model whose critical speed is 16.4 m/s, below the MPC's own
+    speed_max. mpc_node rejects it, so the adaptive stack keeps falling back to
+    the startup prior with nothing saying why.
+    """
+    lb, ub = PACEJKA_BOUNDS
+    railed = []
+    for name, value, low, high in zip(PACEJKA_COEFF_NAMES, coeffs, lb, ub):
+        span = max(high - low, 1e-9)
+        if abs(value - low) <= rtol * span:
+            railed.append(f"{name}={value:.4g} (lower bound {low})")
+        elif abs(value - high) <= rtol * span:
+            railed.append(f"{name}={value:.4g} (upper bound {high})")
+    if railed:
+        log_warn(
+            f"{axle} Pacejka fit is DEGENERATE: {len(railed)}/4 coefficients stopped on "
+            f"their bounds - {', '.join(railed)}. These are not identified values, they are "
+            "the box constraint. The excitation does not determine this axle; widen the "
+            "steering/speed sweep or re-collect data before trusting the result."
+        )
+    return railed
+
+
 def resolve_device(params: dict) -> torch.device:
     """nn_params.yaml's `device` key: auto | cpu | cuda. `auto` (default) picks
     cuda if torch.cuda.is_available(), else cpu. `cuda` requested with no GPU
@@ -763,6 +797,8 @@ def nn_train(training_data, racecar_version, save_LUT_name, plot_model, warm_sta
         log_info(f"C_Pf_identified: {C_Pf_identified}")
         log_info(f"C_Pr_identified: {C_Pr_identified}")
         log_info(f"==========================================")
+        warn_railed_fit('front', C_Pf_identified)
+        warn_railed_fit('rear', C_Pr_identified)
         
         if plot_model:
             saved_path = plot_results(

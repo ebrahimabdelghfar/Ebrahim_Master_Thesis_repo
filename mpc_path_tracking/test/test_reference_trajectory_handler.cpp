@@ -224,3 +224,108 @@ TEST(ReferenceTrajectoryHandler, ProjectionIsContinuousAcrossAWaypoint)
   EXPECT_NEAR(handler.projectedArcLength(11.99, 0.0), 11.99, 1e-6);
   EXPECT_NEAR(handler.projectedArcLength(12.01, 0.0), 12.01, 1e-6);
 }
+
+// The speed cap alone cannot make a raceline drivable: a corner can sit well
+// under speed_max and still demand more lateral grip than the tires have.
+// Nothing downstream re-derives the corner speed, so before this clamp the
+// car simply arrived at the corner at the CSV's speed and ran wide.
+TEST(ReferenceTrajectoryHandler, CurvatureLimitCapsCornerSpeed)
+{
+  ReferenceTrajectoryHandler handler;
+  handler.setSpeedLimit(50.0);            // deliberately not the binding limit
+  handler.setLateralAccelLimit(8.0);
+  handler.setWaypoints(makeCircle(50.0, 200, 30.0));   // 30^2/50 = 18 m/s^2
+
+  // sqrt(8 * 50) = 20 m/s
+  EXPECT_NEAR(handler.maxLateralDemand(), 8.0, 1e-6);
+  EXPECT_EQ(handler.clampedWaypointCount(), 0u);
+  EXPECT_EQ(handler.curvatureClampedCount(), 200u);
+  EXPECT_NEAR(handler.maxRawLateralDemand(), 18.0, 1e-6);
+}
+
+TEST(ReferenceTrajectoryHandler, CurvatureLimitLeavesAFeasibleProfileAlone)
+{
+  ReferenceTrajectoryHandler handler;
+  handler.setLateralAccelLimit(8.0);
+  handler.setWaypoints(makeCircle(50.0, 200, 10.0));   // 10^2/50 = 2 m/s^2
+
+  EXPECT_EQ(handler.curvatureClampedCount(), 0u);
+  EXPECT_NEAR(handler.maxLateralDemand(), 2.0, 1e-6);
+}
+
+TEST(ReferenceTrajectoryHandler, NoLateralLimitByDefault)
+{
+  ReferenceTrajectoryHandler handler;
+  handler.setWaypoints(makeCircle(50.0, 200, 30.0));
+  EXPECT_EQ(handler.curvatureClampedCount(), 0u);
+  EXPECT_NEAR(handler.maxLateralDemand(), 18.0, 1e-6);
+}
+
+// A corner speed the car cannot brake down to in the distance available is
+// still an infeasible reference, so the curvature clamp is followed by a
+// backward pass at decel_max. On a straight line ending in a slow zone every
+// waypoint before it must respect v^2 = v_corner^2 + 2*a*ds.
+TEST(ReferenceTrajectoryHandler, DecelLimitRampsIntoASlowSection)
+{
+  f1tenth_msgs::msg::WaypointArray msg = makeStraightLine(1.0, 100, 30.0);
+  // One tight corner at index 50: kappa 0.08 with a_lat 8 gives 10 m/s.
+  msg.waypoints[50].kappa_radpm = 0.08;
+
+  ReferenceTrajectoryHandler handler;
+  handler.setLateralAccelLimit(8.0);
+  handler.setLongitudinalLimits(5.0, 100.0);   // decel 5 m/s^2, accel unbinding
+  handler.setWaypoints(msg);
+
+  const auto corner = handler.nearestPoint(50.0, 0.0);
+  EXPECT_NEAR(corner.vx, 10.0, 1e-6);
+  // 10 m before it: sqrt(10^2 + 2*5*10) = 14.14 m/s.
+  const auto approach = handler.nearestPoint(40.0, 0.0);
+  EXPECT_NEAR(approach.vx, std::sqrt(100.0 + 100.0), 1e-3);
+}
+
+TEST(ReferenceTrajectoryHandler, AccelLimitRampsOutOfASlowSection)
+{
+  f1tenth_msgs::msg::WaypointArray msg = makeStraightLine(1.0, 100, 30.0);
+  msg.waypoints[50].kappa_radpm = 0.08;
+
+  ReferenceTrajectoryHandler handler;
+  handler.setLateralAccelLimit(8.0);
+  handler.setLongitudinalLimits(100.0, 3.0);   // decel unbinding, accel 3 m/s^2
+  handler.setWaypoints(msg);
+
+  // 10 m after the corner: sqrt(10^2 + 2*3*10) = 12.65 m/s.
+  const auto corner_exit = handler.nearestPoint(60.0, 0.0);
+  EXPECT_NEAR(corner_exit.vx, std::sqrt(100.0 + 60.0), 1e-3);
+}
+
+// buildHorizon used to walk arc length at vx_ref, which assumes the car is
+// already doing the reference speed. When it is not - a lagging speed loop, a
+// corner exit, any transient - stage k lands where the car cannot be at k*dt,
+// so the whole error frame belongs to the wrong piece of track and the
+// solution curves off the line. Walk from the vehicle's own speed instead.
+TEST(ReferenceTrajectoryHandler, HorizonWalksFromTheVehicleSpeedNotTheReference)
+{
+  ReferenceTrajectoryHandler handler;
+  handler.setWaypoints(makeStraightLine(1.0, 400, 30.0));
+
+  // Car at 10 m/s against a 30 m/s reference, 1 s of horizon, 5 m/s^2 to
+  // close the gap: reachable span is well under the reference's 30 m.
+  const auto ramped = handler.buildHorizon(0.0, 0.0, 0.0, 50, 0.02, 10.0, 5.0, 5.0);
+  ASSERT_EQ(ramped.size(), 51u);
+  EXPECT_GT(ramped.back().s, 10.0);    // it does accelerate
+  EXPECT_LT(ramped.back().s, 20.0);    // but nowhere near the reference's 30 m
+
+  // v0 < 0 keeps the old behaviour.
+  const auto legacy = handler.buildHorizon(0.0, 0.0, 0.0, 50, 0.02);
+  EXPECT_NEAR(legacy.back().s, 30.0, 0.5);
+}
+
+TEST(ReferenceTrajectoryHandler, HorizonRampMatchesReferenceWhenSpeedAlreadyMatches)
+{
+  ReferenceTrajectoryHandler handler;
+  handler.setWaypoints(makeStraightLine(1.0, 400, 20.0));
+
+  const auto ramped = handler.buildHorizon(0.0, 0.0, 0.0, 50, 0.02, 20.0, 5.0, 5.0);
+  const auto legacy = handler.buildHorizon(0.0, 0.0, 0.0, 50, 0.02);
+  EXPECT_NEAR(ramped.back().s, legacy.back().s, 1e-6);
+}

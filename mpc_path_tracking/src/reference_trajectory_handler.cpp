@@ -26,7 +26,9 @@ void ReferenceTrajectoryHandler::setWaypoints(const f1tenth_msgs::msg::WaypointA
   waypoints_.clear();
   waypoints_.reserve(msg.waypoints.size());
   clamped_count_ = 0;
+  curvature_clamped_count_ = 0;
   max_raw_speed_ = 0.0;
+  max_raw_lateral_demand_ = 0.0;
   max_lateral_demand_ = 0.0;
   for (const auto & wp : msg.waypoints) {
     ReferencePoint rp;
@@ -42,15 +44,30 @@ void ReferenceTrajectoryHandler::setWaypoints(const f1tenth_msgs::msg::WaypointA
     // stage k further down the track than the car can possibly be at k*dt.
     // See setSpeedLimit().
     max_raw_speed_ = std::max(max_raw_speed_, wp.vx_mps);
+    max_raw_lateral_demand_ =
+      std::max(max_raw_lateral_demand_, wp.vx_mps * wp.vx_mps * std::abs(rp.kappa));
     if (wp.vx_mps > speed_limit_) {
       rp.vx = speed_limit_;
       ++clamped_count_;
     } else {
       rp.vx = wp.vx_mps;
     }
+    // The speed cap says how fast the car may go; the curvature limit says how
+    // fast it may go HERE. Without the second one a corner keeps whatever
+    // speed the raceline's own generator picked for a grippier car, and the
+    // reference never asks the vehicle to brake for the turn. See
+    // setLateralAccelLimit().
+    if (lateral_accel_limit_ > 0.0 && std::isfinite(lateral_accel_limit_)) {
+      const double kappa_abs = std::abs(rp.kappa);
+      if (kappa_abs > 1e-6) {
+        const double v_curve = std::sqrt(lateral_accel_limit_ / kappa_abs);
+        if (v_curve < rp.vx) {
+          rp.vx = v_curve;
+          ++curvature_clamped_count_;
+        }
+      }
+    }
     rp.ax = wp.ax_mps2;
-    max_lateral_demand_ =
-      std::max(max_lateral_demand_, rp.vx * rp.vx * std::abs(rp.kappa));
     waypoints_.push_back(rp);
   }
   last_nearest_index_ = 0;
@@ -63,6 +80,52 @@ void ReferenceTrajectoryHandler::setWaypoints(const f1tenth_msgs::msg::WaypointA
     track_length_ = last.s + closing_gap;
   } else {
     track_length_ = 0.0;
+  }
+
+  applyLongitudinalLimits();
+
+  for (const auto & rp : waypoints_) {
+    max_lateral_demand_ =
+      std::max(max_lateral_demand_, rp.vx * rp.vx * std::abs(rp.kappa));
+  }
+}
+
+void ReferenceTrajectoryHandler::applyLongitudinalLimits()
+{
+  const size_t n = waypoints_.size();
+  if (n < 2 || track_length_ <= 0.0) {
+    return;
+  }
+
+  // Segment lengths, wrapping the closing segment back to waypoint 0.
+  std::vector<double> ds(n);
+  for (size_t i = 0; i < n; ++i) {
+    const size_t j = (i + 1) % n;
+    ds[i] = (j == 0) ? (track_length_ - waypoints_[i].s)
+      : (waypoints_[j].s - waypoints_[i].s);
+    ds[i] = std::max(ds[i], 1e-6);
+  }
+
+  // Two sweeps each way: on a closed track one sweep cannot propagate a
+  // constraint that wraps past the start index, so the second one closes it.
+  for (int sweep = 0; sweep < 2; ++sweep) {
+    if (decel_limit_ > 0.0) {
+      for (size_t k = 0; k < n; ++k) {
+        const size_t i = n - 1 - k;
+        const size_t j = (i + 1) % n;
+        const double reachable =
+          std::sqrt(waypoints_[j].vx * waypoints_[j].vx + 2.0 * decel_limit_ * ds[i]);
+        waypoints_[i].vx = std::min(waypoints_[i].vx, reachable);
+      }
+    }
+    if (accel_limit_ > 0.0) {
+      for (size_t i = 0; i < n; ++i) {
+        const size_t h = (i + n - 1) % n;
+        const double reachable =
+          std::sqrt(waypoints_[h].vx * waypoints_[h].vx + 2.0 * accel_limit_ * ds[h]);
+        waypoints_[i].vx = std::min(waypoints_[i].vx, reachable);
+      }
+    }
   }
 }
 
@@ -193,7 +256,8 @@ ReferencePoint ReferenceTrajectoryHandler::interpolateAtArcLength(double s) cons
 }
 
 std::vector<ReferencePoint> ReferenceTrajectoryHandler::buildHorizon(
-  double x, double y, double psi_hint, int horizon_steps, double dt) const
+  double x, double y, double psi_hint, int horizon_steps, double dt,
+  double v0, double accel_max, double decel_max) const
 {
   std::vector<ReferencePoint> horizon;
   horizon.reserve(horizon_steps + 1);
@@ -207,13 +271,32 @@ std::vector<ReferencePoint> ReferenceTrajectoryHandler::buildHorizon(
   // already passed.
   double s = projectedArcLength(x, y);
   double prev_psi = psi_hint;
+  const bool ramp = v0 >= 0.0 && (accel_max > 0.0 || decel_max > 0.0);
+  double v_walk = ramp ? v0 : 0.0;
 
   for (int k = 0; k <= horizon_steps; ++k) {
     ReferencePoint rp = interpolateAtArcLength(s);
     rp.psi = unwrapToNear(rp.psi, prev_psi);
     prev_psi = rp.psi;
-    horizon.push_back(rp);
-    s += std::max(rp.vx, 0.1) * dt;
+    if (ramp) {
+      // Stage k's POSITION, SPEED TARGET and yaw-rate target must all describe
+      // the same moment. Placing the stage at the reachable speed while still
+      // targeting the raceline's vx leaves the MPC chasing a speed (and a
+      // r_ref = vx_ref*kappa) that belongs to a car travelling much faster
+      // than this one, and the plan leaves the line to satisfy it. Target the
+      // reachable speed instead; it converges to vx_ref as soon as the car can
+      // actually be there.
+      const double vx_ref = rp.vx;
+      rp.vx = v_walk;
+      horizon.push_back(rp);
+      const double dv = vx_ref - v_walk;
+      const double limit = (dv >= 0.0 ? accel_max : decel_max) * dt;
+      v_walk += std::clamp(dv, -limit, limit);
+      s += std::max(v_walk, 0.1) * dt;
+    } else {
+      horizon.push_back(rp);
+      s += std::max(rp.vx, 0.1) * dt;
+    }
   }
   return horizon;
 }

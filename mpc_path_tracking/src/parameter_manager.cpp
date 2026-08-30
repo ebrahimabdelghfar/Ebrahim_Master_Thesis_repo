@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <functional>
+#include <limits>
 #include <stdexcept>
 
 namespace mpc_path_tracking
@@ -69,6 +70,17 @@ void ParameterManager::declareAll()
   node_->declare_parameter<double>("limits.accel_max", 7.51);
   node_->declare_parameter<double>("limits.decel_max", 8.26);
   node_->declare_parameter<double>("limits.jerk_max", 1000.0);
+  // Peak lateral acceleration the reference speed profile may demand. Infinity
+  // keeps the previous behaviour (speed_max is the only clamp).
+  node_->declare_parameter<double>(
+    "limits.lateral_accel_max", std::numeric_limits<double>::infinity());
+  // First-order lag of the speed loop downstream of this node (drivetrain +
+  // whatever tracks the speed command). 0.0 keeps the previous behaviour.
+  node_->declare_parameter<double>("limits.drivetrain_tau_s", 0.0);
+  // The speed loop's time constant is a plant property the node can measure, so it
+  // identifies it online and writes it back into limits.drivetrain_tau_s. Turn this
+  // off to keep whatever the yaml sets and only get a warning.
+  node_->declare_parameter<bool>("limits.drivetrain_tau_auto", true);
 
   // Solver settings
   node_->declare_parameter<std::string>("solver.backend", "osqp");
@@ -76,6 +88,11 @@ void ParameterManager::declareAll()
   node_->declare_parameter<double>("solver.eps_abs", 1.0e-4);
   node_->declare_parameter<double>("solver.eps_rel", 1.0e-4);
   node_->declare_parameter<bool>("solver.warm_start", true);
+  // Solve only when /odom has actually advanced. The CARLA bridge publishes at
+  // the server rate (30 Hz here) while control_rate_hz is 50, and re-solving a
+  // sample already solved for makes the model steer against its own
+  // extrapolation - measured 848 steering sign reversals over 90 s versus 2.
+  node_->declare_parameter<bool>("solver.solve_on_new_odom", true);
   node_->declare_parameter<bool>("solver.polish", true);
   node_->declare_parameter<double>("solver.time_limit_ms", 15.0);
   node_->declare_parameter<std::string>("solver.fallback_on_failure", "hold_last");
@@ -204,9 +221,13 @@ void ParameterManager::printAll() const
   RCLCPP_INFO(log, "  accel_max                 : %.2f m/s²", node_->get_parameter("limits.accel_max").as_double());
   RCLCPP_INFO(log, "  decel_max                 : %.2f m/s²", node_->get_parameter("limits.decel_max").as_double());
   RCLCPP_INFO(log, "  jerk_max                  : %.2f m/s³", node_->get_parameter("limits.jerk_max").as_double());
+  RCLCPP_INFO(log, "  lateral_accel_max         : %.2f m/s²", node_->get_parameter("limits.lateral_accel_max").as_double());
+  RCLCPP_INFO(log, "  drivetrain_tau_s          : %.3f s", node_->get_parameter("limits.drivetrain_tau_s").as_double());
+  RCLCPP_INFO(log, "  drivetrain_tau_auto       : %s", node_->get_parameter("limits.drivetrain_tau_auto").as_bool() ? "true (identified online)" : "false");
 
   // --- Solver ---
   RCLCPP_INFO(log, "──── Solver Settings ────");
+  RCLCPP_INFO(log, "  solve_on_new_odom         : %s", node_->get_parameter("solver.solve_on_new_odom").as_bool() ? "true (skip cycles with no new odom)" : "false");
   RCLCPP_INFO(log, "  backend                   : %s", node_->get_parameter("solver.backend").as_string().c_str());
   RCLCPP_INFO(log, "  max_iter                  : %ld", node_->get_parameter("solver.max_iter").as_int());
   RCLCPP_INFO(log, "  eps_abs                   : %.1e", node_->get_parameter("solver.eps_abs").as_double());
@@ -377,6 +398,11 @@ double ParameterManager::controlRateHz() const
 bool ParameterManager::dtAdaptive() const
 {
   return node_->get_parameter("horizon.dt_adaptive").as_bool();
+}
+
+bool ParameterManager::solveOnNewOdomOnly() const
+{
+  return node_->get_parameter("solver.solve_on_new_odom").as_bool();
 }
 
 bool ParameterManager::standaloneMode() const

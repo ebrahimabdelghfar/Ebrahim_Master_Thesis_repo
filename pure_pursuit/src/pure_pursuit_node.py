@@ -41,6 +41,11 @@ class PurePursuitNode(Node):
         
         # Declare parameters
         self.declare_parameter('lookahead_distance', 1.5)
+        self.declare_parameter('adaptive_lookahead', True)
+        self.declare_parameter('lookahead_gain', 0.35)
+        self.declare_parameter('lookahead_min', 2.5)
+        self.declare_parameter('lookahead_max', 12.0)
+        self.declare_parameter('lookahead_curvature_gain', 5.0)
         self.declare_parameter('wheelbase', 0.3302)
         self.declare_parameter('use_fixed_reference_speed', False)
         self.declare_parameter('fixed_reference_speed', 3.0)
@@ -59,6 +64,12 @@ class PurePursuitNode(Node):
 
         # Get parameters
         self.LOOKAHEAD = self.get_parameter('lookahead_distance').value
+        self.adaptive_lookahead = self.get_parameter('adaptive_lookahead').value
+        self.lookahead_gain = self.get_parameter('lookahead_gain').value
+        self.lookahead_min = self.get_parameter('lookahead_min').value
+        self.lookahead_max = self.get_parameter('lookahead_max').value
+        self.lookahead_curvature_gain = self.get_parameter(
+            'lookahead_curvature_gain').value
         self.WB = self.get_parameter('wheelbase').value
         self.use_fixed_reference_speed = self.get_parameter(
             'use_fixed_reference_speed').value
@@ -78,6 +89,10 @@ class PurePursuitNode(Node):
         self.stale_data_timeout_s = self.get_parameter('stale_data_timeout_s').value
 
         self.waypoints = np.array([])
+        # Per-waypoint |curvature| [1/m] and distance to the next waypoint [m],
+        # both rebuilt in waypoint_callback and consumed by the lookahead rule.
+        self.curvatures = np.array([])
+        self.seg_len = np.array([])
         self.integral_error = 0.0
         # True once managed startup is authorized by adaptive_controller_manager;
         # ignored entirely when standalone_mode is True.
@@ -141,6 +156,7 @@ class PurePursuitNode(Node):
         self.target_vel_pub = self.create_publisher(Float64, 'debug/target_velocity', 1)
         self.current_vel_pub = self.create_publisher(Float64, 'debug/current_velocity', 1)
         self.control_effort_pub = self.create_publisher(Float64, 'debug/control_effort', 1)
+        self.lookahead_pub = self.create_publisher(Float64, 'debug/lookahead_distance', 1)
         
         # Add parameter callback for online tuning
         self.add_on_set_parameters_callback(self.parameter_callback)
@@ -153,6 +169,17 @@ class PurePursuitNode(Node):
             self.fixed_reference_speed = 0.0
 
         self.get_logger().info('Pure Pursuit Node initialized')
+        if self.adaptive_lookahead:
+            self.get_logger().info(
+                'Lookahead: ADAPTIVE, '
+                f'{self.lookahead_gain:.2f}*v clamped to '
+                f'[{self.lookahead_min:.2f}, {self.lookahead_max:.2f}] m, '
+                f'curvature gain {self.lookahead_curvature_gain:.2f}'
+            )
+        else:
+            self.get_logger().info(
+                f'Lookahead: FIXED at {self.LOOKAHEAD:.2f} m'
+            )
         if self.use_fixed_reference_speed:
             self.get_logger().info(
                 'Speed reference: FIXED at '
@@ -199,6 +226,26 @@ class PurePursuitNode(Node):
             elif param.name == 'lookahead_distance':
                 self.LOOKAHEAD = param.value
                 self.get_logger().info(f'Updated lookahead_distance to {self.LOOKAHEAD}')
+            elif param.name == 'adaptive_lookahead':
+                self.adaptive_lookahead = param.value
+                self.get_logger().info(
+                    f'Updated adaptive_lookahead to {self.adaptive_lookahead}')
+            elif param.name in ('lookahead_gain', 'lookahead_min',
+                                'lookahead_max', 'lookahead_curvature_gain'):
+                if param.value < 0.0:
+                    return SetParametersResult(
+                        successful=False,
+                        reason=f'{param.name} must be >= 0.0'
+                    )
+                if param.name == 'lookahead_gain':
+                    self.lookahead_gain = param.value
+                elif param.name == 'lookahead_min':
+                    self.lookahead_min = param.value
+                elif param.name == 'lookahead_max':
+                    self.lookahead_max = param.value
+                else:
+                    self.lookahead_curvature_gain = param.value
+                self.get_logger().info(f'Updated {param.name} to {param.value}')
         return SetParametersResult(successful=True)
 
     def enable_callback(self, msg):
@@ -217,7 +264,32 @@ class PurePursuitNode(Node):
             waypoints_list.append([wp.x_m, wp.y_m, wp.vx_mps, wp.ax_mps2])
             
         self.waypoints = np.array(waypoints_list)
+        xy = self.waypoints[:, :2]
+        self.seg_len = la.norm(np.roll(xy, -1, axis=0) - xy, axis=1)
+        self.curvatures = self.compute_curvature(xy)
         self.get_logger().info(f'Received {len(self.waypoints)} waypoints')
+
+    @staticmethod
+    def compute_curvature(xy):
+        """
+        |curvature| at each waypoint from the circle through its two
+        neighbours (Menger curvature). The raceline is treated as a closed
+        loop, matching the wrap-around used by the lookahead search.
+        """
+        if len(xy) < 3:
+            return np.zeros(len(xy))
+        p_prev = np.roll(xy, 1, axis=0)
+        p_next = np.roll(xy, -1, axis=0)
+        a = la.norm(xy - p_prev, axis=1)
+        b = la.norm(p_next - xy, axis=1)
+        c = la.norm(p_next - p_prev, axis=1)
+        cross = ((xy[:, 0] - p_prev[:, 0]) * (p_next[:, 1] - p_prev[:, 1]) -
+                 (xy[:, 1] - p_prev[:, 1]) * (p_next[:, 0] - p_prev[:, 0]))
+        denom = a * b * c
+        kappa = np.zeros(len(xy))
+        ok = denom > 1e-9
+        kappa[ok] = 2.0 * np.abs(cross[ok]) / denom[ok]
+        return kappa
 
     def pose_callback(self, data):
         """
@@ -245,14 +317,6 @@ class PurePursuitNode(Node):
         distance = math.sqrt((x1 - self.xc) ** 2 + (y1 - self.yc) ** 2)
         return distance
 
-    def find_distance_index_based(self, idx):
-        if idx >= len(self.waypoints):
-            idx = len(self.waypoints) - 1
-        x1 = float(self.waypoints[idx][0])
-        y1 = float(self.waypoints[idx][1])
-        distance = math.sqrt((x1 - self.xc) ** 2 + (y1 - self.yc) ** 2)
-        return distance
-
     def find_nearest_waypoint(self):
         """
         Get closest idx to the vehicle
@@ -262,21 +326,70 @@ class PurePursuitNode(Node):
         nearest_idx = np.argmin(np.sum((curr_xy - waypoints_xy)**2, axis=1))
         return nearest_idx
 
-    def idx_close_to_lookahead(self, idx):
+    def max_curvature_ahead(self, idx, distance):
         """
-        Get closest index to lookahead that is greater than the lookahead
-        Wraps around to the beginning of waypoints when reaching the end
+        Largest |curvature| among the waypoints within `distance` metres of
+        arc length ahead of `idx`.
         """
-        max_iterations = len(self.waypoints)  # Prevent infinite loop
-        iterations = 0
-        while self.find_distance_index_based(idx) < self.LOOKAHEAD:
-            idx += 1
-            if idx >= len(self.waypoints):
-                idx = 0  # Wrap around to the beginning
-            iterations += 1
-            if iterations >= max_iterations:
-                break  # Safety check to prevent infinite loop
-        return idx if idx > 0 else len(self.waypoints) - 1
+        n = len(self.curvatures)
+        kappa_max = 0.0
+        s = 0.0
+        i = idx
+        for _ in range(n):
+            kappa_max = max(kappa_max, float(self.curvatures[i]))
+            s += float(self.seg_len[i])
+            if s >= distance:
+                break
+            i = (i + 1) % n
+        return kappa_max
+
+    def compute_lookahead(self, nearest_idx):
+        """
+        Adaptive lookahead: proportional to speed so the geometry stays stable
+        at high speed, then shortened where the track ahead is tight so the
+        target point does not cut across the corner.
+        """
+        if not self.adaptive_lookahead:
+            return self.LOOKAHEAD
+
+        ld = self.lookahead_gain * max(0.0, self.vel)
+        if self.lookahead_curvature_gain > 0.0 and self.curvatures.size:
+            # Evaluated over the uncorrected ld, so the window itself does not
+            # depend on the correction it feeds.
+            kappa = self.max_curvature_ahead(
+                nearest_idx, max(ld, self.lookahead_min))
+            ld /= 1.0 + self.lookahead_curvature_gain * kappa
+        return float(np.clip(ld, self.lookahead_min, self.lookahead_max))
+
+    def find_target_point(self, nearest_idx, lookahead):
+        """
+        Walk forward from the nearest waypoint to the segment that crosses the
+        lookahead circle and interpolate the crossing. Returns the target point
+        and the index of the waypoint at the far end of that segment, which
+        carries the speed reference.
+        """
+        xy = self.waypoints[:, :2]
+        n = len(xy)
+        pos = np.array([self.xc, self.yc])
+        i = nearest_idx
+        d_i = float(la.norm(xy[i] - pos))
+
+        # Car is farther off the path than the lookahead radius: no crossing
+        # exists, so steer at the closest point to rejoin the line.
+        if d_i >= lookahead:
+            return xy[i], i
+
+        for _ in range(n):
+            j = (i + 1) % n
+            d_j = float(la.norm(xy[j] - pos))
+            if d_j >= lookahead:
+                t = (lookahead - d_i) / (d_j - d_i)
+                return xy[i] + t * (xy[j] - xy[i]), j
+            i, d_i = j, d_j
+
+        # Whole path lies inside the lookahead circle (path shorter than the
+        # lookahead); aim at the last point reached.
+        return xy[i], i
 
     def plot_arrow(self, x, y, yaw, length=1.0, width=0.5, fc="r", ec="k"):
         """
@@ -313,9 +426,11 @@ class PurePursuitNode(Node):
         cy = self.waypoints[:, 1]
 
         nearest_idx = self.find_nearest_waypoint()
-        idx_near_lookahead = self.idx_close_to_lookahead(nearest_idx)
-        target_x = float(self.waypoints[idx_near_lookahead][0])
-        target_y = float(self.waypoints[idx_near_lookahead][1])
+        lookahead_dist = self.compute_lookahead(nearest_idx)
+        target, idx_near_lookahead = self.find_target_point(
+            nearest_idx, lookahead_dist)
+        target_x = float(target[0])
+        target_y = float(target[1])
         
         # Speed reference: either the raceline's own profile or a single
         # hardcoded value for the whole lap (use_fixed_reference_speed).
@@ -365,6 +480,10 @@ class PurePursuitNode(Node):
         msg_control_effort.data = float(pid_output)
         self.control_effort_pub.publish(msg_control_effort)
 
+        msg_lookahead = Float64()
+        msg_lookahead.data = float(lookahead_dist)
+        self.lookahead_pub.publish(msg_lookahead)
+
         """
         PURE PURSUIT CONTROLLER
         """
@@ -373,7 +492,9 @@ class PurePursuitNode(Node):
         y_delta = target_y - self.yc
         alpha = np.arctan2(y_delta, x_delta) - self.yaw
 
-        # Set the lookahead distance depending on the speed
+        # True distance to the target point: equals lookahead_dist once the
+        # circle crossing is found, but stays correct in the degenerate cases
+        # where find_target_point falls back to a waypoint.
         lookahead = self.find_distance(target_x, target_y)
         steering_angle = np.arctan2((2 * self.WB * np.sin(alpha)), lookahead)
         

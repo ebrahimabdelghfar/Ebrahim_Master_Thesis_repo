@@ -68,6 +68,7 @@ public:
   DebugConfig debugConfig() const;
   double controlRateHz() const;
   bool dtAdaptive() const;
+  bool solveOnNewOdomOnly() const;
   bool standaloneMode() const;
 
 private:

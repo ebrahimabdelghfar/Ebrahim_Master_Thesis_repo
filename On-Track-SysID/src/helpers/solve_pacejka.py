@@ -19,14 +19,14 @@ def _robust_f_scale(F_y, cfg_f_scale):
     return max(1e-3, 1.4826 * mad)
 
 
-def _pacejka_sse(params, alpha, F_z, F_y):
+def _pacejka_sse(params, *args):
     """Plain sum-of-squared-residuals objective for derivative-free/global solvers.
 
     Nelder-Mead and differential-evolution optimize a scalar, not a residual
     vector, so they can't use least_squares' soft_l1/f_scale robust loss -
     they always see the raw SSE.
     """
-    r = pacejka_error(params, alpha, F_z, F_y)
+    r = pacejka_error(params, *args)
     return float(np.dot(r, r))
 
 

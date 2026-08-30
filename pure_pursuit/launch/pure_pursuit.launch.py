@@ -29,6 +29,39 @@ def generate_launch_description():
         description='Lookahead distance for pure pursuit'
     )
 
+    adaptive_lookahead_arg = DeclareLaunchArgument(
+        'adaptive_lookahead',
+        default_value=str(params.get('adaptive_lookahead', True)),
+        description='True: lookahead = lookahead_gain * speed, shortened in '
+                    'corners and clamped to [lookahead_min, lookahead_max]. '
+                    'False: fixed lookahead_distance.'
+    )
+
+    lookahead_gain_arg = DeclareLaunchArgument(
+        'lookahead_gain',
+        default_value=str(params.get('lookahead_gain', 0.35)),
+        description='Lookahead distance per m/s of speed [s]'
+    )
+
+    lookahead_min_arg = DeclareLaunchArgument(
+        'lookahead_min',
+        default_value=str(params.get('lookahead_min', 2.5)),
+        description='Lower clamp on the adaptive lookahead [m]'
+    )
+
+    lookahead_max_arg = DeclareLaunchArgument(
+        'lookahead_max',
+        default_value=str(params.get('lookahead_max', 12.0)),
+        description='Upper clamp on the adaptive lookahead [m]'
+    )
+
+    lookahead_curvature_gain_arg = DeclareLaunchArgument(
+        'lookahead_curvature_gain',
+        default_value=str(params.get('lookahead_curvature_gain', 5.0)),
+        description='Shortens the lookahead in corners by dividing it by '
+                    '1 + gain * |kappa| ahead. 0.0 disables it.'
+    )
+
     velocity_arg = DeclareLaunchArgument(
         'desired_velocity',
         default_value='3.0',
@@ -100,6 +133,12 @@ def generate_launch_description():
             LaunchConfiguration('config_file'),
             {
                 'lookahead_distance': LaunchConfiguration('lookahead_distance'),
+                'adaptive_lookahead': LaunchConfiguration('adaptive_lookahead'),
+                'lookahead_gain': LaunchConfiguration('lookahead_gain'),
+                'lookahead_min': LaunchConfiguration('lookahead_min'),
+                'lookahead_max': LaunchConfiguration('lookahead_max'),
+                'lookahead_curvature_gain': LaunchConfiguration(
+                    'lookahead_curvature_gain'),
                 'use_fixed_reference_speed': LaunchConfiguration(
                     'use_fixed_reference_speed'),
                 'fixed_reference_speed': LaunchConfiguration(
@@ -118,6 +157,11 @@ def generate_launch_description():
         config_file_arg,
         waypoint_file_arg,
         lookahead_arg,
+        adaptive_lookahead_arg,
+        lookahead_gain_arg,
+        lookahead_min_arg,
+        lookahead_max_arg,
+        lookahead_curvature_gain_arg,
         velocity_arg,
         use_fixed_reference_speed_arg,
         fixed_reference_speed_arg,

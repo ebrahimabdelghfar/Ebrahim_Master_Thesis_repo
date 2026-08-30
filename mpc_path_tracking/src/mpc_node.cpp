@@ -272,10 +272,34 @@ private:
     // adaptive dt mutually consistent - see
     // ReferenceTrajectoryHandler::setSpeedLimit.
     ref_handler_.setSpeedLimit(get_parameter("limits.speed_max").as_double());
+    // A speed cap alone leaves every corner at whatever speed the raceline's
+    // generator chose for its own (grippier) vehicle, so the reference never
+    // asks this car to brake for the turn - see
+    // ReferenceTrajectoryHandler::setLateralAccelLimit.
+    ref_handler_.setLateralAccelLimit(get_parameter("limits.lateral_accel_max").as_double());
+    ref_handler_.setLongitudinalLimits(
+      get_parameter("limits.decel_max").as_double(),
+      get_parameter("limits.accel_max").as_double());
     ref_handler_.setWaypoints(last_waypoints_msg_);
     RCLCPP_INFO(
-      get_logger(), "loaded %zu raceline waypoints at speed cap %.2f m/s",
-      ref_handler_.waypointCount(), ref_handler_.speedLimit());
+      get_logger(),
+      "loaded %zu raceline waypoints at speed cap %.2f m/s, lateral cap %.2f m/s^2 (%.2f g); "
+      "reference now peaks at %.2f m/s^2 (%.2f g)",
+      ref_handler_.waypointCount(), ref_handler_.speedLimit(),
+      ref_handler_.lateralAccelLimit(), ref_handler_.lateralAccelLimit() / 9.81,
+      ref_handler_.maxLateralDemand(), ref_handler_.maxLateralDemand() / 9.81);
+    if (ref_handler_.curvatureClampedCount() > 0) {
+      RCLCPP_WARN(
+        get_logger(),
+        "raceline demands up to %.2f m/s^2 (%.2f g) of lateral acceleration, above "
+        "limits.lateral_accel_max=%.2f m/s^2 (%.2f g) at %zu/%zu waypoints - corner speeds "
+        "cut to sqrt(a_lat_max/kappa) and the profile re-smoothed against decel_max/accel_max. "
+        "The car will now brake for those corners, but it is driving a slower line than the "
+        "raceline describes; regenerate the raceline for this vehicle's real grip.",
+        ref_handler_.maxRawLateralDemand(), ref_handler_.maxRawLateralDemand() / 9.81,
+        ref_handler_.lateralAccelLimit(), ref_handler_.lateralAccelLimit() / 9.81,
+        ref_handler_.curvatureClampedCount(), ref_handler_.waypointCount());
+    }
     if (ref_handler_.clampedWaypointCount() > 0) {
       RCLCPP_WARN(
         get_logger(),
@@ -288,6 +312,102 @@ private:
         ref_handler_.waypointCount(), ref_handler_.maxRawSpeed(),
         ref_handler_.maxRawSpeed() / std::max(ref_handler_.speedLimit(), 1e-9),
         ref_handler_.speedLimit());
+    }
+  }
+
+  // limits.drivetrain_tau_s is a property of whatever tracks our speed command
+  // downstream, and getting it wrong is silent: the command leads the plan by
+  // (control_period + tau), so a first-order speed loop of time constant
+  // tau_plant delivers only (control_period + tau)/tau_plant of the planned
+  // acceleration. At tau = 0 against a 0.3 s plant that is 6.7 %, which reads
+  // as "the car does not brake for corners".
+  //
+  // Treating the measured response as that same first-order lag,
+  // tau_plant = (v_cmd - v)/vdot. With limits.drivetrain_tau_auto (default
+  // true) the estimate is written straight back into limits.drivetrain_tau_s
+  // once it has settled, so the compensation is self-tuning: the parameter is
+  // a plant property the node can measure, and leaving it at a hand-entered
+  // 0.0 is the worst case in every direction (offline: too low costs 3.42 m/s
+  // of corner overspeed, too high by 3x costs 1.13).
+  //
+  // `driving` MUST be false whenever speed_cmd is not actually published -
+  // in managed mode before the handover another controller is driving, and
+  // the speed response then has nothing to do with our command.
+  void estimateDrivetrainTau(
+    double speed_meas, double speed_cmd, double configured_tau, double control_period_s,
+    bool driving)
+  {
+    if (!driving) {
+      has_prev_speed_sample_ = false;
+      return;
+    }
+    if (has_prev_speed_sample_ && control_period_s > 0.0) {
+      const double drive = prev_speed_cmd_ - prev_speed_meas_;
+      const double vdot = (speed_meas - prev_speed_meas_) / control_period_s;
+      // Only informative while the loop is actually being driven and is
+      // responding in the commanded direction.
+      if (std::abs(drive) > 0.5 && drive * vdot > 0.0 && std::abs(vdot) > 1e-3) {
+        const double tau_sample = std::clamp(drive / vdot, 0.0, kDrivetrainTauMax);
+        if (std::isfinite(tau_sample) && tau_sample > 0.0) {
+          tau_estimate_ = (tau_samples_ > 0)
+            ? 0.98 * tau_estimate_ + 0.02 * tau_sample : tau_sample;
+          ++tau_samples_;
+          applyDrivetrainTau(configured_tau, control_period_s);
+        }
+      }
+    }
+    prev_speed_cmd_ = speed_cmd;
+    prev_speed_meas_ = speed_meas;
+    has_prev_speed_sample_ = true;
+  }
+
+  // Writes the settled estimate back into limits.drivetrain_tau_s, or reports
+  // it when limits.drivetrain_tau_auto is off. Held until the EMA has enough
+  // samples to be a time constant rather than one noisy difference, and
+  // rewritten only on a change worth acting on so the parameter does not
+  // dither under the speed command it is itself shaping.
+  void applyDrivetrainTau(double configured_tau, double control_period_s)
+  {
+    if (tau_samples_ < kDrivetrainTauMinSamples) {
+      return;
+    }
+    if (!get_parameter("limits.drivetrain_tau_auto").as_bool()) {
+      if (std::abs(tau_estimate_ - configured_tau) > 0.05) {
+        RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 10000,
+          "drivetrain speed loop looks like a first-order lag of tau=%.2f s but "
+          "limits.drivetrain_tau_s is %.2f s - the plant is receiving about %.0f%% of "
+          "the planned acceleration. Set limits.drivetrain_tau_s to %.2f, or turn on "
+          "limits.drivetrain_tau_auto.",
+          tau_estimate_, configured_tau,
+          100.0 * (control_period_s + configured_tau) / std::max(tau_estimate_, 1e-6),
+          tau_estimate_);
+      }
+      return;
+    }
+    if (std::abs(tau_estimate_ - configured_tau) <= kDrivetrainTauDeadband) {
+      return;
+    }
+    set_parameter(rclcpp::Parameter("limits.drivetrain_tau_s", tau_estimate_));
+    RCLCPP_INFO(
+      get_logger(),
+      "limits.drivetrain_tau_s %.2f -> %.2f s from %d measured samples of the speed loop "
+      "(was delivering about %.0f%% of the planned acceleration)",
+      configured_tau, tau_estimate_, tau_samples_,
+      100.0 * (control_period_s + configured_tau) / std::max(tau_estimate_, 1e-6));
+  }
+
+  // Same command, fresh stamp: the plan is still the one computed for the
+  // most recent state, and downstream consumers time out on the header.
+  void republishLastCommand()
+  {
+    if (!has_last_command_) {
+      return;
+    }
+    ackermann_msgs::msg::AckermannDriveStamped cmd = last_command_;
+    cmd.header.stamp = now();
+    if (standalone_mode_ || start_working_) {
+      drive_pub_->publish(cmd);
     }
   }
 
@@ -354,6 +474,29 @@ private:
     // harmless at 11 m/s destabilises the loop at 27 m/s. Roll the state
     // forward over that window with the last applied input so the MPC plans
     // from where the car will be, not where it was.
+    // Re-solving for an odom sample already solved for produces a DIFFERENT
+    // command every cycle - horizon_s grows with the sample's age, so the
+    // state is extrapolated further and the QP answers a question built from
+    // no new information. The model then steers against its own extrapolation
+    // until the next real sample snaps the state back, which is a self-excited
+    // ripple at the beat between the two rates.
+    //
+    // It bites here because the CARLA bridge publishes /odom at the SERVER
+    // rate (odometry.follow_server_rate, so 1/sim.fixed_delta_seconds = 30 Hz)
+    // while control_rate_hz is 50. Measured over 90 s on traj_race_cl.csv,
+    // odom 30 Hz against control 50 Hz: 848 steering sign reversals, RMS
+    // steering rate 0.349 rad/s and the rate limit binding on 15 cycles at
+    // N=50 - and 1987 reversals with the limit binding 1248 times at N=100.
+    // Holding the last command until new information arrives: 2 and 6
+    // reversals, RMS 0.043 rad/s, no saturation, tracking unchanged.
+    if (param_manager_.solveOnNewOdomOnly() && has_solved_once_ &&
+      last_odom_stamp_ == last_solved_odom_stamp_)
+    {
+      republishLastCommand();
+      return;
+    }
+    last_solved_odom_stamp_ = last_odom_stamp_;
+
     const double control_period_s = 1.0 / std::max(param_manager_.controlRateHz(), 1.0);
     const double odom_age_s = std::clamp((now() - last_odom_stamp_).seconds(), 0.0, 0.2);
     const double horizon_s = std::clamp(
@@ -369,13 +512,33 @@ private:
     }
     last_solve_time_ms_ = out.solve_time_ms;
 
+    // Rate saturation on the first steering step means steering_rate_max is
+    // the binding constraint, not the tracking cost - worth knowing while it
+    // is still an unmeasured placeholder.
+    const double steer_rate_max = get_parameter("limits.steering_rate_max").as_double();
+    const double steer_step = std::abs(out.u0(0) - u_prev_(0));
+    if (out.dt_used > 0.0 && steer_step >= 0.99 * steer_rate_max * out.dt_used) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 2000,
+        "steering rate saturated: %.4f rad in %.3f s = %.2f rad/s at the "
+        "limits.steering_rate_max cap of %.2f rad/s",
+        steer_step, out.dt_used, steer_step / out.dt_used, steer_rate_max);
+    }
+
     u_prev_ = out.u0;
     const double speed_min = get_parameter("limits.speed_min").as_double();
     const double speed_max = get_parameter("limits.speed_max").as_double();
     // Integrate from the predicted speed, consistent with the state the
-    // command was actually computed for.
+    // command was actually computed for. The extra tau term inverts the
+    // first-order lag of whatever tracks this speed command downstream: to
+    // make the plant follow the planned speed, ask for where the plan will be
+    // one lag constant later. tau = 0 reduces to one control period of accel.
+    const double drivetrain_tau_s = get_parameter("limits.drivetrain_tau_s").as_double();
     const double speed_cmd = std::clamp(
-      x0(3) + out.u0(1) * control_period_s, speed_min, speed_max);
+      x0(3) + out.u0(1) * (control_period_s + drivetrain_tau_s), speed_min, speed_max);
+    estimateDrivetrainTau(
+      current_state_(3), speed_cmd, drivetrain_tau_s, control_period_s,
+      standalone_mode_ || start_working_);
 
     ackermann_msgs::msg::AckermannDriveStamped cmd;
     cmd.header.stamp = now();
@@ -387,6 +550,7 @@ private:
     }
     last_command_ = cmd;
     has_last_command_ = true;
+    has_solved_once_ = true;
 
     debug_pub_->publishPredictedPath(out.predicted_states, "map", now());
     DebugPublisher::StatusInfo info;
@@ -416,6 +580,17 @@ private:
   std::unique_ptr<VehicleModel> vehicle_model_;
   std::unique_ptr<MpcController> controller_;
   ReferenceTrajectoryHandler ref_handler_;
+  double prev_speed_cmd_{0.0};
+  double prev_speed_meas_{0.0};
+  double tau_estimate_{0.0};
+  int tau_samples_{0};
+  bool has_prev_speed_sample_{false};
+  // Enough samples for the EMA to be a time constant rather than one noisy
+  // difference; a deadband so the parameter does not dither under the command
+  // it is itself shaping; a ceiling so a near-zero vdot cannot produce one.
+  static constexpr int kDrivetrainTauMinSamples = 50;
+  static constexpr double kDrivetrainTauDeadband = 0.02;
+  static constexpr double kDrivetrainTauMax = 5.0;
   std::unique_ptr<DebugPublisher> debug_pub_;
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
@@ -428,6 +603,8 @@ private:
 
   bool has_odom_{false};
   rclcpp::Time last_odom_stamp_;
+  rclcpp::Time last_solved_odom_stamp_;
+  bool has_solved_once_{false};
   State current_state_{State::Zero()};
   Input u_prev_{Input::Zero()};
   f1tenth_msgs::msg::WaypointArray last_waypoints_msg_;

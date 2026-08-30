@@ -133,7 +133,13 @@ MpcOutput MpcController::computeCommand(
 
   const ReferencePoint nearest = ref_handler.nearestPoint(x0(0), x0(1));
   const double dt = computeAdaptiveDt(nearest);
-  const auto horizon = ref_handler.buildHorizon(x0(0), x0(1), x0(2), config_.N, dt);
+  // Walk the horizon from the car's ACTUAL speed, ramped toward the reference
+  // at the input limits - see ReferenceTrajectoryHandler::buildHorizon. Using
+  // vx_ref directly places the window where the car cannot be whenever the
+  // speed loop is lagging the profile.
+  const auto horizon = ref_handler.buildHorizon(
+    x0(0), x0(1), x0(2), config_.N, dt, x0(3),
+    config_.limits.accel_max, std::abs(config_.limits.accel_min));
   if (static_cast<int>(horizon.size()) != config_.N + 1) {
     out.status = "short reference horizon (" + std::to_string(horizon.size()) + "/" +
       std::to_string(config_.N + 1) + " points)";

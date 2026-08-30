@@ -121,7 +121,8 @@ class TuningApp(QMainWindow):
             'kp_vel': {'range': (0.0, 10.0), 'default': 1.0, 'step': 0.1},
             'ki_vel': {'range': (0.0, 5.0), 'default': 0.0, 'step': 0.01},
             'kd_vel': {'range': (0.0, 5.0), 'default': 0.0, 'step': 0.01},
-            'lookahead_distance': {'range': (0.5, 5.0), 'default': 1.5, 'step': 0.1}
+            'lookahead_distance': {'range': (0.5, 5.0), 'default': 1.5, 'step': 0.1},
+            'lookahead_gain': {'range': (0.0, 1.5), 'default': 0.35, 'step': 0.01}
         }
         
         self.spinboxes = {}

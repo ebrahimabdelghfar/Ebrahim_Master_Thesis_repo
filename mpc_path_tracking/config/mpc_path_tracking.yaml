@@ -16,10 +16,10 @@ mpc_path_tracking:
 
     # ---------------- Horizon / timing ----------------
     horizon:
-      N: 100                       # prediction steps
+      N: 60                       # prediction steps
       dt_min: 0.02                 # s, auto-raised to 1/control_rate_hz at startup
       dt_max: 0.07                 # s
-      dt_adaptive: true            # dt = clamp(horizon_distance_m / (N * max(vx_ref, v_floor)), dt_min, dt_max)
+      dt_adaptive: false            # dt = clamp(horizon_distance_m / (N * max(vx_ref, v_floor)), dt_min, dt_max)
       # NOTE: this knob is currently INERT. 5.5/(N*vx_ref) is ~0.002 s at any
       # realistic speed, so the clamp always returns dt_min and the horizon is
       # N*dt_min in time (2.0 s at 50 Hz) - a 54 m look-ahead at 27 m/s, not
@@ -36,14 +36,14 @@ mpc_path_tracking:
       # cross-track error 0.07 m. Check solve time before lowering this again -
       # the budget is 1/control_rate_hz (20 ms here) and measured solves are
       # 13-17 ms, so there is not much headroom.
-      control_rate_hz: 50.0
+      control_rate_hz: 25.0
 
     # ---------------- Cost matrices ----------------
     # error order: [e_y, e_psi, vx_err, vy, r_err]
     cost:
       Q: [20.0, 10.0, 20.0, 0.0, 10.0]
       R: [10.0, 1.0]                # [steering, accel]
-      R_rate: [10.0, 10.0]          # input-rate penalty
+      R_rate: [100.0, 10.0]          # input-rate penalty
       Qf: [20.0, 10.0, 20.0, 0.0, 10.0] #
 
     # ---------------- Vehicle geometry / mass ----------------
@@ -88,13 +88,62 @@ mpc_path_tracking:
       steering_rate_max: 1.0       # rad/s - PLACEHOLDER, measure
       speed_max: 27.67             # m/s (100 km/h plant cap)
       speed_min: 0.0               # m/s
-      accel_max: 14.71             # m/s^2 (mu*g, grip-limited)
-      decel_max: 14.71             # m/s^2 (magnitude; accel_min = -decel_max)
+      accel_max: 5.71             # m/s^2 (mu*g, grip-limited)
+      decel_max: 3.71             # m/s^2 (magnitude; accel_min = -decel_max)
       jerk_max: 1000.0             # m/s^3, effectively unconstrained until tuned
+      # Peak lateral acceleration the REFERENCE may demand. speed_max alone
+      # cannot make a raceline drivable: traj_race_cl.csv sits below 27.67 m/s
+      # everywhere yet peaks at 12.00 m/s^2 (1.22 g) of lateral demand, and
+      # nothing downstream re-derives the corner speed - so the car arrives at
+      # the corner at the CSV's speed, saturates an axle and runs wide. That
+      # is the "does not slow down for corners" symptom. Setting this clamps
+      # vx to sqrt(lateral_accel_max/|kappa|) at ingest and re-smooths the
+      # profile against decel_max/accel_max, so the reference itself brakes
+      # into the turn.
+      # Measured offline (traj_race_cl.csv, controller model == plant, peak
+      # axle mu 1.0 => a 9.81 m/s^2 ceiling), max cross-track error against
+      # the reference's peak demand: 7.84 m/s^2 -> 0.29 m, 8.48 -> 24.0 m,
+      # 9.88 -> 34.0 m. It is a cliff: a Pacejka axle only reaches peak mu at
+      # its peak slip angle, so the closed loop needs the margin. Budget about
+      # 0.7 x the model's grip ceiling ((Df*Fz_f + Dr*Fz_r)/m, reported by
+      # /mpc/status). 7.0 = 0.71 g against the measured 1.0 g ceiling.
+      lateral_accel_max: 7.0       # m/s^2
+      # First-order lag of the speed loop downstream of this node. The speed
+      # command leads the plan by (control period + tau) to invert it. Offline
+      # closed-loop: 0.07 m residual at tau 0.05 s, 3.5 m at 0.3 s, so set this
+      # to the measured CARLA/vehicle speed-loop time constant.
+      # MEASURED CONSEQUENCE OF LEAVING THIS AT 0: the command leads the plan by
+      # (control_period + tau), so a downstream loop of time constant
+      # tau_plant delivers only (0.02 + tau)/tau_plant of the planned
+      # deceleration - 6.7 % at tau_plant = 0.3 s. Offline, plant tau 0.3 s:
+      # corner overspeed 3.42 m/s and max|e_y| 1.62 m at 0.0, versus 0.06 m/s
+      # and 0.36 m once it matches. Overcompensating is nearly free
+      # (0.3 against a 0.1 s plant: 1.13 m/s), so err high. The node logs its
+      # own estimate of tau_plant - see "drivetrain speed loop" in the log.
+      drivetrain_tau_s: 2.77        # s, 0.0 = one control period of accel only
+      # The node identifies this from (v_cmd - v)/vdot while it is the controller
+      # actually driving, and writes the settled value back here after ~50 samples,
+      # so the value above is only the startup guess. Set false to keep the yaml
+      # value and get a warning instead.
+      drivetrain_tau_auto: true
 
     # ---------------- Solver settings ----------------
     solver:
       backend: "acados"                    # "osqp" | "acados"
+      # Solve only when /odom has actually advanced. The CARLA bridge publishes odom
+      # at the SERVER rate (odometry.follow_server_rate, = 1/sim.fixed_delta_seconds
+      # = 30 Hz) while control_rate_hz here is 50, so 2 of every 5 cycles used to
+      # re-solve a sample already solved for. That is not a free extra solve: the
+      # state gets extrapolated further each time, so the command changes out of no
+      # new information and the model steers against its own extrapolation until the
+      # next real sample snaps it back. Measured over 90 s on traj_race_cl.csv at
+      # odom 30 Hz / control 50 Hz - steering sign reversals and RMS steering rate:
+      # N=50  848 reversals, 0.349 rad/s, rate limit binding 15 times   -> 2, 0.043, 0
+      # N=100 1987 reversals, 0.653 rad/s, rate limit binding 1248 times -> 6, 0.045, 0
+      # Cross-track tracking is unchanged either way (0.51 m). The cheapest real fix
+      # is to raise the bridge to 50 Hz physics (sim.fixed_delta_seconds: 0.02); this
+      # flag makes the controller correct at whatever rate the bridge runs.
+      solve_on_new_odom: true
       max_iter: 200
       eps_abs: 1.0e-4
       eps_rel: 1.0e-4
