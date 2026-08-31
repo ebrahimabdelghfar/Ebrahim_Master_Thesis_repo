@@ -20,41 +20,12 @@ mpc_path_tracking:
       dt_min: 0.02                 # s, auto-raised to 1/control_rate_hz at startup
       dt_max: 0.07                 # s
       dt_adaptive: false            # dt = clamp(horizon_distance_m / (N * max(vx_ref, v_floor)), dt_min, dt_max)
-      # NOTE: this knob is currently INERT. 5.5/(N*vx_ref) is ~0.002 s at any
-      # realistic speed, so the clamp always returns dt_min and the horizon is
-      # N*dt_min in time (2.0 s at 50 Hz) - a 54 m look-ahead at 27 m/s, not
-      # 5.5 m. Left as-is rather than "fixed", because the resulting horizon is
-      # the one that was actually tuned and measured; treat N*dt_min as the
-      # real horizon setting.
       horizon_distance_m: 5.5
-      # 20 Hz was the single biggest cause of the high-speed steering chatter.
-      # The path-following loop gain grows as v^2/L (80 m/s^2 per rad at 11 m/s,
-      # 475 at 27) while the transport delay stays constant, so the same lag
-      # that is harmless at 11 m/s destabilises the loop at 27. Measured on
-      # traj_race_cl.csv at 27 m/s with one tick of transport delay: 20 Hz gave
-      # 267 steering sign reversals in 600 cycles; 50 Hz gave 0, with max
-      # cross-track error 0.07 m. Check solve time before lowering this again -
-      # the budget is 1/control_rate_hz (20 ms here) and measured solves are
-      # 13-17 ms, so there is not much headroom.
       control_rate_hz: 20.0
 
     # ---------------- Cost matrices ----------------
     # error order: [e_y, e_psi, vx_err, vy, r_err]
-    # Q[r_err] is the corner-entry stability knob, not a tracking nicety. At 10
-    # the closed loop overshoots the reference yaw rate by ~1.8x on turn-in, so
-    # a corner the reference planned at 7.0 m/s^2 is actually taken at 13-14,
-    # i.e. above the plant's ~9.8 m/s^2 (mu 1.0) ceiling: the axle saturates,
-    # sideslip builds and the yaw mode diverges into a spin. Measured over 250 s
-    # on traj_race_cl.csv (plant mu 1.0, lateral_accel_max 7.0), peak achieved
-    # lateral acceleration and spin events (|beta| > 20 deg):
-    #   Q[r_err]  10 -> 45.1 m/s^2, 31 spins, max|e_y| 28.0 m
-    #             30 -> 11.7,        0 spins, max|e_y|  1.36 m
-    #             50 -> 10.6,        0 spins, max|e_y|  1.35 m
-    #            100 ->  9.55,       0 spins, max|e_y|  1.40 m
-    #            200 ->  8.96,       0 spins, max|e_y|  1.48 m
-    # Lap pace is unchanged above 30 (6352-6353 m per 250 s either way) - the
-    # overshoot was costing time, not buying it. 100 leaves the most grip
-    # margin before cross-track error starts creeping up.
+    # Q[r_err] is the corner-entry stability knob.
     cost:
       Q: [10.0, 5.0, 100.0, 0.0, 100.0]
       R: [10.0, 1.0]                # [steering, accel]
@@ -62,12 +33,6 @@ mpc_path_tracking:
       Qf: [10.0, 5.0, 100.0, 0.0, 100.0] #
 
     # ---------------- Vehicle geometry / mass ----------------
-    # NOTE: On-Track-SysID/models/SIM/SIM_pacejka.txt currently carries a
-    # DIFFERENT geometry (l_f = l_r = 1.0653, l_wb 2.1305). The sysid fits tire
-    # coefficients against its own geometry and then pushes them into this node
-    # via mpc/update_params, so the two files must agree or the coefficients get
-    # reinterpreted on a different bicycle. The values below are the correct
-    # ones - SIM_pacejka.txt is the file that needs updating.
     vehicle:
       mass: 240.0      # kg     - CARLA physics.mass (see note on 204 below)
       Iz: 51.1        # kg*m^2 - ESTIMATED, verify
@@ -76,16 +41,6 @@ mpc_path_tracking:
       h_cg: 0.31538       # m, CG height - ESTIMATED (reserved for load transfer)
 
     # ---------------- Pacejka tire model [B,C,D,E] per axle ----------------
-    # STARTUP PRIOR ONLY - On-Track-SysID overwrites these at runtime through
-    # mpc/update_params. D is the dimensionless peak friction coefficient
-    # (Fy = D*Fz), so it comes straight from CARLA's PhysX tire_friction=1.5
-    # for vehicle.vehicle.asurt_fsai; B/C/E are generic passenger-tire Magic
-    # Formula values. The previous values here (Bf 2.4128, Cf 4.8155,
-    # Df 0.5922, Ef 5.0, Br 14.4445, Cr 1.2129, Dr 0.6842, Er 0.8526) were the
-    # F1TENTH-era fit for the 3.54 kg RC car and were never updated when the
-    # plant became the 240 kg CARLA vehicle. They put peak grip at 0.64 g
-    # against the plant's ~1.5 g, so the model needed far more steering than
-    # the real car did for the same lateral force -> closed-loop limit cycle.
     tire:
       Bf: 10.0
       Cf: 1.9
@@ -106,67 +61,15 @@ mpc_path_tracking:
       accel_max: 5.71             # m/s^2 (mu*g, grip-limited)
       decel_max: 3.71             # m/s^2 (magnitude; accel_min = -decel_max)
       jerk_max: 1000.0             # m/s^3, effectively unconstrained until tuned
-      # Peak lateral acceleration the REFERENCE may demand. speed_max alone
-      # cannot make a raceline drivable: traj_race_cl.csv sits below 27.67 m/s
-      # everywhere yet peaks at 12.00 m/s^2 (1.22 g) of lateral demand, and
-      # nothing downstream re-derives the corner speed - so the car arrives at
-      # the corner at the CSV's speed, saturates an axle and runs wide. That
-      # is the "does not slow down for corners" symptom. Setting this clamps
-      # vx to sqrt(lateral_accel_max/|kappa|) at ingest and re-smooths the
-      # profile against decel_max/accel_max, so the reference itself brakes
-      # into the turn.
-      # It is a cliff: a Pacejka axle only reaches peak mu at its peak slip
-      # angle, and the closed loop overshoots the reference's steady demand on
-      # turn-in, so the margin has to cover both. Budget against the PLANT's
-      # grip ceiling (peak axle mu 1.0 => 9.81 m/s^2), not the controller
-      # model's ((Df*Fz_f + Dr*Fz_r)/m = 14.7 m/s^2 at Df = 1.5, which is what
-      # /mpc/status reports) - the model is the optimistic one.
-      # Measured offline over 250 s on traj_race_cl.csv at plant mu 1.0, with
-      # Q[r_err] = 100 (see the cost block: at the old Q[r_err] = 10 the cliff
-      # sat between 6.5 and 7.0 and this value was on the wrong side of it):
-      #   a_lat  6.5 -> max|e_y| 1.14 m, peak achieved 8.76 m/s^2, 0 spins
-      #          7.0 -> 1.40 m, 9.55 m/s^2, 0 spins  (97 % of the ceiling)
-      #          8.0 -> 3.10 m, 13.1 m/s^2, 0 spins
-      #          8.5 -> 22.3 m, 28 spins
-      # 6.5 also survives a plant that has lost grip to mu 0.9 (1.78 m, peak
-      # 9.01, 0 spins) where 7.0 is already marginal (2.67 m, peak 13.2). The
-      # pace it costs is 0.9 %: 6295 m per 250 s against 6353 at 7.0.
-      lateral_accel_max: 6.5       # m/s^2
-      # First-order lag of the speed loop downstream of this node. The speed
-      # command leads the plan by (control period + tau) to invert it. Offline
-      # closed-loop: 0.07 m residual at tau 0.05 s, 3.5 m at 0.3 s, so set this
-      # to the measured CARLA/vehicle speed-loop time constant.
-      # MEASURED CONSEQUENCE OF LEAVING THIS AT 0: the command leads the plan by
-      # (control_period + tau), so a downstream loop of time constant
-      # tau_plant delivers only (0.02 + tau)/tau_plant of the planned
-      # deceleration - 6.7 % at tau_plant = 0.3 s. Offline, plant tau 0.3 s:
-      # corner overspeed 3.42 m/s and max|e_y| 1.62 m at 0.0, versus 0.06 m/s
-      # and 0.36 m once it matches. Overcompensating is nearly free
-      # (0.3 against a 0.1 s plant: 1.13 m/s), so err high. The node logs its
-      # own estimate of tau_plant - see "drivetrain speed loop" in the log.
-      drivetrain_tau_s: 2.77        # s, 0.0 = one control period of accel only
-      # The node identifies this from (v_cmd - v)/vdot while it is the controller
-      # actually driving, and writes the settled value back here after ~50 samples,
-      # so the value above is only the startup guess. Set false to keep the yaml
-      # value and get a warning instead.
-      drivetrain_tau_auto: true
+      lateral_accel_max: 6.5       # m/s^2 - UPPER CAP only, see grip_utilization
+      grip_utilization: 0.7        # fraction of the identified grip ceiling
+      drivetrain_tau_s: 0.2         # s, 0.0 = one control period of accel only
+      drivetrain_tau_decel_s: -0.2  # s, <0 = same as drivetrain_tau_s
+      drivetrain_tau_auto: false
 
     # ---------------- Solver settings ----------------
     solver:
       backend: "acados"                    # "osqp" | "acados"
-      # Solve only when /odom has actually advanced. The CARLA bridge publishes odom
-      # at the SERVER rate (odometry.follow_server_rate, = 1/sim.fixed_delta_seconds
-      # = 30 Hz) while control_rate_hz here is 50, so 2 of every 5 cycles used to
-      # re-solve a sample already solved for. That is not a free extra solve: the
-      # state gets extrapolated further each time, so the command changes out of no
-      # new information and the model steers against its own extrapolation until the
-      # next real sample snaps it back. Measured over 90 s on traj_race_cl.csv at
-      # odom 30 Hz / control 50 Hz - steering sign reversals and RMS steering rate:
-      # N=50  848 reversals, 0.349 rad/s, rate limit binding 15 times   -> 2, 0.043, 0
-      # N=100 1987 reversals, 0.653 rad/s, rate limit binding 1248 times -> 6, 0.045, 0
-      # Cross-track tracking is unchanged either way (0.51 m). The cheapest real fix
-      # is to raise the bridge to 50 Hz physics (sim.fixed_delta_seconds: 0.02); this
-      # flag makes the controller correct at whatever rate the bridge runs.
       solve_on_new_odom: true
       max_iter: 200
       eps_abs: 1.0e-4
@@ -177,21 +80,8 @@ mpc_path_tracking:
       fallback_on_failure: "hold_last"   # "hold_last" | "zero_command" | "brake"
 
       acados:
-        # Partial condensing, not full. Raising control_rate_hz to 50 cut the
-        # budget to 20 ms, and FULL_CONDENSING_QPOASES needed 14.1 ms of it at
-        # N=100 - no headroom. Partial condensing gives byte-identical tracking
-        # (0 steering sign reversals, max cross-track 0.07 m at 27 m/s) in
-        # 1.63 ms, 8.7x faster, and keeps the full 2 s horizon. Measured
-        # alternatives at 27 m/s / 50 Hz: qpOASES N=75 5.29 ms, N=50 1.86 ms
-        # (but 0.12 m error on the shorter horizon); HPIPM N=75 1.31 ms.
-        # Full condensing builds a dense 2*N-variable QP, which is what makes
-        # it scale badly here; HPIPM keeps the block structure.
         qp_solver: "PARTIAL_CONDENSING_HPIPM"
         cond_N: 5                        # partial-condensing block size (PARTIAL_CONDENSING_HPIPM only)
-        # HPIPM reads this as its interior-point iteration cap. qpOASES instead
-        # reads it as max_nwsr (working-set recalculations) - if you switch
-        # back, note that the old value of 50 returned RET_MAX_NWSR_REACHED
-        # -> acados MAXITER -> "QP solve failed"; 1000 is qpOASES' own default.
         iter_max: 1000
         tol_stat: 1.0e-4
         tol_eq: 1.0e-4

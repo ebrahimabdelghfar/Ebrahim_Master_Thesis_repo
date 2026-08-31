@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <memory>
 #include <string>
@@ -137,28 +138,6 @@ private:
     tire.Cr = request->param_values[5];
     tire.Dr = request->param_values[6];
     tire.Er = request->param_values[7];
-    // The identified tire set is accepted even when its grip ceiling is below
-    // the raceline's peak lateral demand. That mismatch is a property of the
-    // reference, not of the identification, so it is reported and left to the
-    // operator instead of being rejected here.
-    if (ref_handler_.hasWaypoints() && ref_handler_.maxLateralDemand() > 0.0) {
-      double fz_f = 0.0, fz_r = 0.0;
-      vehicle_model_->normalLoads(fz_f, fz_r);
-      const double grip_ceiling =
-        (std::abs(tire.Df) * fz_f + std::abs(tire.Dr) * fz_r) /
-        vehicle_model_->vehicleParams().mass;
-      const double demand = ref_handler_.maxLateralDemand();
-      if (grip_ceiling < demand) {
-        RCLCPP_WARN(
-          get_logger(),
-          "mpc/update_params: identified tires give a peak lateral acceleration of "
-          "%.2f m/s^2 (%.2f g, Df=%.3f Dr=%.3f) but the raceline demands %.2f m/s^2 (%.2f g). "
-          "Corners above the ceiling will have no steady-state solution; accepting the params "
-          "anyway.",
-          grip_ceiling, grip_ceiling / 9.81, tire.Df, tire.Dr, demand, demand / 9.81);
-      }
-    }
-
     // Reject a set that makes the prediction model open-loop unstable inside
     // the speed range we are actually going to drive. Above the oversteer
     // critical speed every horizon stage linearized there diverges, and over
@@ -186,7 +165,57 @@ private:
     controller_->setTireParams(tire);
     RCLCPP_INFO(get_logger(), "tire params updated via mpc/update_params");
     logModelStability(tire);
+    // Friction is a runtime property, so the reference's grip assumption has to
+    // follow the identified tires rather than a constant tuned for one surface.
+    // Re-ingesting cuts corner speeds to sqrt(a_lat_max/|kappa|) against the new
+    // ceiling and re-smooths the profile, which is what keeps a steady-state
+    // solution in existence at every stage when grip drops.
+    identified_grip_ceiling_ = gripCeiling(tire);
+    if (ref_handler_.hasWaypoints()) {
+      ingestWaypoints();
+    }
     response->ack = true;
+  }
+
+  // Peak lateral acceleration the identified tires can carry, both axles at
+  // their Magic-Formula peak (Fy = D*Fz).
+  double gripCeiling(const TireParams & tire) const
+  {
+    double fz_f = 0.0, fz_r = 0.0;
+    vehicle_model_->normalLoads(fz_f, fz_r);
+    return (std::abs(tire.Df) * fz_f + std::abs(tire.Dr) * fz_r) /
+           vehicle_model_->vehicleParams().mass;
+  }
+
+  // What the reference is allowed to demand laterally: the identified ceiling
+  // derated by limits.grip_utilization, never above the operator's
+  // limits.lateral_accel_max cap. Before the first identification there is no
+  // ceiling and the cap alone applies.
+  double effectiveLateralLimit() const
+  {
+    const double cap = get_parameter("limits.lateral_accel_max").as_double();
+    if (!(identified_grip_ceiling_ > 0.0)) {
+      return cap;
+    }
+    const double util = get_parameter("limits.grip_utilization").as_double();
+    return std::min(cap, identified_grip_ceiling_ * util);
+  }
+
+  // Which of the two limits is actually binding, for the ingest log.
+  std::string gripSourceDescription() const
+  {
+    if (!(identified_grip_ceiling_ > 0.0)) {
+      return "limits.lateral_accel_max, no tire identification yet";
+    }
+    char buf[160];
+    const double util = get_parameter("limits.grip_utilization").as_double();
+    std::snprintf(
+      buf, sizeof(buf),
+      "identified grip ceiling %.2f m/s^2 x %.2f utilization = %.2f, capped by "
+      "limits.lateral_accel_max %.2f",
+      identified_grip_ceiling_, util, identified_grip_ceiling_ * util,
+      get_parameter("limits.lateral_accel_max").as_double());
+    return buf;
   }
 
   // Oversteer critical speed of the linear single-track model for `tire`, or
@@ -276,17 +305,18 @@ private:
     // generator chose for its own (grippier) vehicle, so the reference never
     // asks this car to brake for the turn - see
     // ReferenceTrajectoryHandler::setLateralAccelLimit.
-    ref_handler_.setLateralAccelLimit(get_parameter("limits.lateral_accel_max").as_double());
+    ref_handler_.setLateralAccelLimit(effectiveLateralLimit());
     ref_handler_.setLongitudinalLimits(
       get_parameter("limits.decel_max").as_double(),
       get_parameter("limits.accel_max").as_double());
     ref_handler_.setWaypoints(last_waypoints_msg_);
     RCLCPP_INFO(
       get_logger(),
-      "loaded %zu raceline waypoints at speed cap %.2f m/s, lateral cap %.2f m/s^2 (%.2f g); "
-      "reference now peaks at %.2f m/s^2 (%.2f g)",
+      "loaded %zu raceline waypoints at speed cap %.2f m/s, lateral cap %.2f m/s^2 (%.2f g, "
+      "%s); reference now peaks at %.2f m/s^2 (%.2f g)",
       ref_handler_.waypointCount(), ref_handler_.speedLimit(),
       ref_handler_.lateralAccelLimit(), ref_handler_.lateralAccelLimit() / 9.81,
+      gripSourceDescription().c_str(),
       ref_handler_.maxLateralDemand(), ref_handler_.maxLateralDemand() / 9.81);
     if (ref_handler_.curvatureClampedCount() > 0) {
       RCLCPP_WARN(
@@ -333,9 +363,23 @@ private:
   // `driving` MUST be false whenever speed_cmd is not actually published -
   // in managed mode before the handover another controller is driving, and
   // the speed response then has nothing to do with our command.
+  //
+  // Accelerating and braking are identified SEPARATELY, because a speed loop
+  // that opens a throttle one way and releases it (plus brakes) the other is
+  // not one first-order lag. Sharing a constant averages the two, and the
+  // acceleration phase supplies most of the samples on a raceline - so the
+  // braking compensation comes out biased toward the faster half and the car
+  // enters the corner having delivered a fraction of the planned deceleration.
+  // Measured offline over 250 s on traj_race_cl.csv (plant speed loop written
+  // as tau_accel/tau_decel, plant peak axle mu 0.9, tau identified online),
+  // spin events on |beta| > 20 deg and peak achieved lateral acceleration:
+  //   plant 0.5/5.0   shared -> 11 spins, 63.3 m/s^2   split -> 0, 11.5
+  //   plant 2.77/5.0  shared -> 13 spins, 41.7 m/s^2   split -> 0, 12.8
+  //   plant 0.5/2.77  shared -> 11 spins, 59.4 m/s^2   split -> 0,  7.8
+  // On a symmetric plant the two estimates coincide and nothing changes.
   void estimateDrivetrainTau(
-    double speed_meas, double speed_cmd, double configured_tau, double control_period_s,
-    bool driving)
+    double speed_meas, double speed_cmd, double configured_tau,
+    double configured_tau_decel, double control_period_s, bool driving)
   {
     if (!driving) {
       has_prev_speed_sample_ = false;
@@ -349,10 +393,15 @@ private:
       if (std::abs(drive) > 0.5 && drive * vdot > 0.0 && std::abs(vdot) > 1e-3) {
         const double tau_sample = std::clamp(drive / vdot, 0.0, kDrivetrainTauMax);
         if (std::isfinite(tau_sample) && tau_sample > 0.0) {
-          tau_estimate_ = (tau_samples_ > 0)
-            ? 0.98 * tau_estimate_ + 0.02 * tau_sample : tau_sample;
-          ++tau_samples_;
-          applyDrivetrainTau(configured_tau, control_period_s);
+          const bool braking = drive < 0.0;
+          double & estimate = braking ? tau_estimate_decel_ : tau_estimate_;
+          int & samples = braking ? tau_samples_decel_ : tau_samples_;
+          estimate = (samples > 0) ? 0.98 * estimate + 0.02 * tau_sample : tau_sample;
+          ++samples;
+          applyDrivetrainTau(
+            braking ? "limits.drivetrain_tau_decel_s" : "limits.drivetrain_tau_s",
+            braking ? configured_tau_decel : configured_tau, estimate, samples,
+            control_period_s);
         }
       }
     }
@@ -366,35 +415,37 @@ private:
   // samples to be a time constant rather than one noisy difference, and
   // rewritten only on a change worth acting on so the parameter does not
   // dither under the speed command it is itself shaping.
-  void applyDrivetrainTau(double configured_tau, double control_period_s)
+  void applyDrivetrainTau(
+    const char * param, double configured_tau, double estimate, int samples,
+    double control_period_s)
   {
-    if (tau_samples_ < kDrivetrainTauMinSamples) {
+    if (samples < kDrivetrainTauMinSamples) {
       return;
     }
     if (!get_parameter("limits.drivetrain_tau_auto").as_bool()) {
-      if (std::abs(tau_estimate_ - configured_tau) > 0.05) {
+      if (std::abs(estimate - configured_tau) > 0.05) {
         RCLCPP_WARN_THROTTLE(
           get_logger(), *get_clock(), 10000,
           "drivetrain speed loop looks like a first-order lag of tau=%.2f s but "
-          "limits.drivetrain_tau_s is %.2f s - the plant is receiving about %.0f%% of "
-          "the planned acceleration. Set limits.drivetrain_tau_s to %.2f, or turn on "
+          "%s is %.2f s - the plant is receiving about %.0f%% of "
+          "the planned acceleration. Set %s to %.2f, or turn on "
           "limits.drivetrain_tau_auto.",
-          tau_estimate_, configured_tau,
-          100.0 * (control_period_s + configured_tau) / std::max(tau_estimate_, 1e-6),
-          tau_estimate_);
+          estimate, param, configured_tau,
+          100.0 * (control_period_s + configured_tau) / std::max(estimate, 1e-6),
+          param, estimate);
       }
       return;
     }
-    if (std::abs(tau_estimate_ - configured_tau) <= kDrivetrainTauDeadband) {
+    if (std::abs(estimate - configured_tau) <= kDrivetrainTauDeadband) {
       return;
     }
-    set_parameter(rclcpp::Parameter("limits.drivetrain_tau_s", tau_estimate_));
+    set_parameter(rclcpp::Parameter(param, estimate));
     RCLCPP_INFO(
       get_logger(),
-      "limits.drivetrain_tau_s %.2f -> %.2f s from %d measured samples of the speed loop "
+      "%s %.2f -> %.2f s from %d measured samples of the speed loop "
       "(was delivering about %.0f%% of the planned acceleration)",
-      configured_tau, tau_estimate_, tau_samples_,
-      100.0 * (control_period_s + configured_tau) / std::max(tau_estimate_, 1e-6));
+      param, configured_tau, estimate, samples,
+      100.0 * (control_period_s + configured_tau) / std::max(estimate, 1e-6));
   }
 
   // Same command, fresh stamp: the plan is still the one computed for the
@@ -533,12 +584,19 @@ private:
     // first-order lag of whatever tracks this speed command downstream: to
     // make the plant follow the planned speed, ask for where the plan will be
     // one lag constant later. tau = 0 reduces to one control period of accel.
+    // Braking uses its own constant: the loop is slower on the brakes than on
+    // the throttle, and compensating a 5 s braking lag with a 3 s number is
+    // what lets the car arrive at the apex still carrying entry speed.
     const double drivetrain_tau_s = get_parameter("limits.drivetrain_tau_s").as_double();
+    const double tau_decel_param = get_parameter("limits.drivetrain_tau_decel_s").as_double();
+    const double drivetrain_tau_decel_s =
+      tau_decel_param >= 0.0 ? tau_decel_param : drivetrain_tau_s;
+    const double tau_used = out.u0(1) < 0.0 ? drivetrain_tau_decel_s : drivetrain_tau_s;
     const double speed_cmd = std::clamp(
-      x0(3) + out.u0(1) * (control_period_s + drivetrain_tau_s), speed_min, speed_max);
+      x0(3) + out.u0(1) * (control_period_s + tau_used), speed_min, speed_max);
     estimateDrivetrainTau(
-      current_state_(3), speed_cmd, drivetrain_tau_s, control_period_s,
-      standalone_mode_ || start_working_);
+      current_state_(3), speed_cmd, drivetrain_tau_s, drivetrain_tau_decel_s,
+      control_period_s, standalone_mode_ || start_working_);
 
     ackermann_msgs::msg::AckermannDriveStamped cmd;
     cmd.header.stamp = now();
@@ -580,10 +638,15 @@ private:
   std::unique_ptr<VehicleModel> vehicle_model_;
   std::unique_ptr<MpcController> controller_;
   ReferenceTrajectoryHandler ref_handler_;
+  // Peak lateral acceleration of the last ACCEPTED identified tire set; 0 until
+  // the first mpc/update_params, when limits.lateral_accel_max alone applies.
+  double identified_grip_ceiling_{0.0};
   double prev_speed_cmd_{0.0};
   double prev_speed_meas_{0.0};
   double tau_estimate_{0.0};
+  double tau_estimate_decel_{0.0};
   int tau_samples_{0};
+  int tau_samples_decel_{0};
   bool has_prev_speed_sample_{false};
   // Enough samples for the EMA to be a time constant rather than one noisy
   // difference; a deadband so the parameter does not dither under the command

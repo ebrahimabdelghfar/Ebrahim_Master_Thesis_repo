@@ -74,12 +74,25 @@ void ParameterManager::declareAll()
   // keeps the previous behaviour (speed_max is the only clamp).
   node_->declare_parameter<double>(
     "limits.lateral_accel_max", std::numeric_limits<double>::infinity());
+  // Fraction of the IDENTIFIED grip ceiling the reference may demand laterally.
+  // Friction is a runtime property, so the reference follows the tire fit rather
+  // than a constant, with limits.lateral_accel_max as an upper cap; the derating
+  // is the margin for model error, since a reference sitting exactly on the
+  // friction limit leaves none.
+  node_->declare_parameter<double>("limits.grip_utilization", 0.9);
   // First-order lag of the speed loop downstream of this node (drivetrain +
   // whatever tracks the speed command). 0.0 keeps the previous behaviour.
   node_->declare_parameter<double>("limits.drivetrain_tau_s", 0.0);
+  // Same lag while BRAKING. A speed loop that opens a throttle to accelerate and
+  // releases it (plus brakes) to slow down is not symmetric, and one shared
+  // constant is identified mostly from the acceleration phase - which
+  // undercompensates exactly the braking the car needs on corner entry.
+  // Negative = use limits.drivetrain_tau_s for braking too.
+  node_->declare_parameter<double>("limits.drivetrain_tau_decel_s", -1.0);
   // The speed loop's time constant is a plant property the node can measure, so it
-  // identifies it online and writes it back into limits.drivetrain_tau_s. Turn this
-  // off to keep whatever the yaml sets and only get a warning.
+  // identifies it online and writes it back into limits.drivetrain_tau_s (and
+  // limits.drivetrain_tau_decel_s). Turn this off to keep whatever the yaml sets
+  // and only get a warning.
   node_->declare_parameter<bool>("limits.drivetrain_tau_auto", true);
 
   // Solver settings
@@ -222,7 +235,9 @@ void ParameterManager::printAll() const
   RCLCPP_INFO(log, "  decel_max                 : %.2f m/s²", node_->get_parameter("limits.decel_max").as_double());
   RCLCPP_INFO(log, "  jerk_max                  : %.2f m/s³", node_->get_parameter("limits.jerk_max").as_double());
   RCLCPP_INFO(log, "  lateral_accel_max         : %.2f m/s²", node_->get_parameter("limits.lateral_accel_max").as_double());
+  RCLCPP_INFO(log, "  grip_utilization          : %.2f of identified ceiling", node_->get_parameter("limits.grip_utilization").as_double());
   RCLCPP_INFO(log, "  drivetrain_tau_s          : %.3f s", node_->get_parameter("limits.drivetrain_tau_s").as_double());
+  RCLCPP_INFO(log, "  drivetrain_tau_decel_s    : %.3f s", node_->get_parameter("limits.drivetrain_tau_decel_s").as_double());
   RCLCPP_INFO(log, "  drivetrain_tau_auto       : %s", node_->get_parameter("limits.drivetrain_tau_auto").as_bool() ? "true (identified online)" : "false");
 
   // --- Solver ---
