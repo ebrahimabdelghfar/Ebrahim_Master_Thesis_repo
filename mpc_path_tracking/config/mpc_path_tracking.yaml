@@ -103,8 +103,8 @@ mpc_path_tracking:
       steering_rate_max: 1.0       # rad/s - PLACEHOLDER, measure
       speed_max: 31.0             # m/s (100 km/h plant cap)
       speed_min: 0.0               # m/s
-      accel_max: 3.71             # m/s^2 (mu*g, grip-limited)
-      decel_max: 5.71             # m/s^2 (magnitude; accel_min = -decel_max)
+      accel_max: 5.71             # m/s^2 (mu*g, grip-limited)
+      decel_max: 3.71             # m/s^2 (magnitude; accel_min = -decel_max)
       jerk_max: 1000.0             # m/s^3, effectively unconstrained until tuned
       # Peak lateral acceleration the REFERENCE may demand. speed_max alone
       # cannot make a raceline drivable: traj_race_cl.csv sits below 27.67 m/s
