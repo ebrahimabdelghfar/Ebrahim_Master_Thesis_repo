@@ -52,6 +52,11 @@ struct Opts
   double decel_max{3.71};
   double speed_max{31.0};
   double lateral_accel_max{6.5};
+  double grip_util{0.0};          // 0 = off; else min(lateral_accel_max, ceiling*util)
+  // controller tire model (yaml startup prior by default; --ctrl-* injects the
+  // set On-Track-SysID actually pushes through mpc/update_params)
+  double ctrl_Bf{10.0}, ctrl_Cf{1.9}, ctrl_Df{1.5}, ctrl_Ef{0.97};
+  double ctrl_Br{10.0}, ctrl_Cr{1.9}, ctrl_Dr{1.5}, ctrl_Er{0.97};
   double tau_cfg{2.77};
   // plant
   double odom_rate{30.0};
@@ -70,12 +75,15 @@ struct Opts
   bool solve_on_new_odom{true};
 };
 
+// Last occurrence wins, so a wrapper script can supply defaults and still let
+// the caller override them from either side of the command line.
 double arg(const std::vector<std::string> & a, const std::string & key, double def)
 {
+  double v = def;
   for (size_t i = 0; i + 1 < a.size(); ++i) {
-    if (a[i] == key) {return std::atof(a[i + 1].c_str());}
+    if (a[i] == key) {v = std::atof(a[i + 1].c_str());}
   }
-  return def;
+  return v;
 }
 
 std::string argStr(const std::vector<std::string> & a, const std::string & key, std::string def)
@@ -128,12 +136,25 @@ VehicleParams carlaVehicle()
   return v;
 }
 
-TireParams controllerTire()
+TireParams controllerTire(const Opts & o)
 {
   TireParams t;
-  t.Bf = 10.0; t.Cf = 1.9; t.Df = 1.5; t.Ef = 0.97;
-  t.Br = 10.0; t.Cr = 1.9; t.Dr = 1.5; t.Er = 0.97;
+  t.Bf = o.ctrl_Bf; t.Cf = o.ctrl_Cf; t.Df = o.ctrl_Df; t.Ef = o.ctrl_Ef;
+  t.Br = o.ctrl_Br; t.Cr = o.ctrl_Cr; t.Dr = o.ctrl_Dr; t.Er = o.ctrl_Er;
   return t;
+}
+
+// mpc_node::gripCeiling / effectiveLateralLimit replica: what the reference is
+// allowed to demand laterally once a tire identification has been accepted.
+double effectiveLateralLimit(const Opts & o)
+{
+  if (!(o.grip_util > 0.0)) {return o.lateral_accel_max;}
+  const VehicleParams v = carlaVehicle();
+  const double L = v.l_f + v.l_r;
+  const double fz_f = v.mass * 9.81 * v.l_r / L;
+  const double fz_r = v.mass * 9.81 * v.l_f / L;
+  const double ceiling = (std::abs(o.ctrl_Df) * fz_f + std::abs(o.ctrl_Dr) * fz_r) / v.mass;
+  return std::min(o.lateral_accel_max, ceiling * o.grip_util);
 }
 
 // Plant: peak axle mu and cornering stiffness as MEASURED off CARLA's own
@@ -172,6 +193,15 @@ int main(int argc, char ** argv)
   o.decel_max = arg(a, "--decel", o.decel_max);
   o.speed_max = arg(a, "--speed-max", o.speed_max);
   o.lateral_accel_max = arg(a, "--alat", o.lateral_accel_max);
+  o.grip_util = arg(a, "--grip-util", o.grip_util);
+  o.ctrl_Bf = arg(a, "--ctrl-Bf", o.ctrl_Bf);
+  o.ctrl_Cf = arg(a, "--ctrl-Cf", o.ctrl_Cf);
+  o.ctrl_Df = arg(a, "--ctrl-Df", o.ctrl_Df);
+  o.ctrl_Ef = arg(a, "--ctrl-Ef", o.ctrl_Ef);
+  o.ctrl_Br = arg(a, "--ctrl-Br", o.ctrl_Br);
+  o.ctrl_Cr = arg(a, "--ctrl-Cr", o.ctrl_Cr);
+  o.ctrl_Dr = arg(a, "--ctrl-Dr", o.ctrl_Dr);
+  o.ctrl_Er = arg(a, "--ctrl-Er", o.ctrl_Er);
   o.tau_cfg = arg(a, "--tau-cfg", o.tau_cfg);
   o.odom_rate = arg(a, "--odom-rate", o.odom_rate);
   o.tau_plant = arg(a, "--tau-plant", o.tau_plant);
@@ -188,7 +218,7 @@ int main(int argc, char ** argv)
 
   ReferenceTrajectoryHandler ref;
   ref.setSpeedLimit(o.speed_max);
-  ref.setLateralAccelLimit(o.lateral_accel_max);
+  ref.setLateralAccelLimit(effectiveLateralLimit(o));
   ref.setLongitudinalLimits(o.decel_max, o.accel_max);
   const auto raceline = loadRaceline(o.csv, o.psi_offset);
   ref.setWaypoints(raceline);
@@ -219,10 +249,64 @@ int main(int argc, char ** argv)
   acados.cond_N = 5;
   acados.iter_max = 1000;
   MpcController ctrl(
-    VehicleModel(carlaVehicle(), controllerTire()),
+    VehicleModel(carlaVehicle(), controllerTire(o)),
     std::make_unique<AcadosMpcSolver>(cfg.N, acados), cfg);
 
   const VehicleModel plant(carlaVehicle(), plantTire(o));
+
+  // ---- Corner map, built from the CLAMPED reference profile ----------------
+  // The symptom under investigation ("brakes too late / not enough") is a
+  // per-corner property, so the run is scored corner by corner rather than by
+  // lap-wide extrema: where the reference starts braking against where the car
+  // does, and how much speed the car is still carrying at the apex.
+  std::vector<double> ref_s, ref_v;
+  for (const auto & w : raceline.waypoints) {
+    const auto p = ref.nearestPoint(w.x_m, w.y_m);
+    ref_s.push_back(p.s);
+    ref_v.push_back(p.vx);
+  }
+  const double track_len = ref_s.back() + (ref_s.back() - ref_s[ref_s.size() - 2]);
+  const size_t nw = ref_v.size();
+  auto wrapIdx = [nw](long i) {return static_cast<size_t>(((i % (long)nw) + (long)nw) % (long)nw);};
+
+  struct Corner
+  {
+    size_t apex_idx;
+    double apex_s, apex_v, ref_brake_s, ref_entry_v;
+    // filled in during the run
+    double car_v_at_apex{-1.0}, car_brake_s{-1.0}, car_entry_v{0.0};
+    double peak_alat{0.0}, peak_beta{0.0};
+  };
+  std::vector<Corner> corners;
+  const long W = 20;                       // +-40 m window at 2 m spacing
+  for (size_t i = 0; i < nw; ++i) {
+    bool is_min = true;
+    double vmax = ref_v[i];
+    for (long d = -W; d <= W; ++d) {
+      const double vj = ref_v[wrapIdx((long)i + d)];
+      if (vj < ref_v[i] - 1e-9) {is_min = false; break;}
+      vmax = std::max(vmax, vj);
+    }
+    if (!is_min || vmax < ref_v[i] + 1.0) {continue;}    // need a real speed drop
+    if (!corners.empty()) {
+      const double gap = ref_s[i] - corners.back().apex_s;
+      if (gap < 60.0) {continue;}                        // one apex per corner
+    }
+    // Reference brake onset: the upstream local speed maximum.
+    long j = (long)i;
+    double best_v = ref_v[i];
+    long best_j = (long)i;
+    for (long d = 1; d <= 150; ++d) {                    // up to 300 m upstream
+      const size_t k = wrapIdx((long)i - d);
+      if (ref_v[k] > best_v) {best_v = ref_v[k]; best_j = (long)k;}
+      else if (ref_v[k] < best_v - 0.5) {break;}
+    }
+    (void)j;
+    corners.push_back({i, ref_s[i], ref_v[i], ref_s[wrapIdx(best_j)], best_v});
+  }
+
+  // Per-control-cycle track of (arc length, speed) for the corner scoring.
+  std::vector<double> log_s, log_v, log_alat, log_beta;
 
   // Start on the line at the reference speed.
   const auto start = ref.nearestPoint(raceline.waypoints[0].x_m, raceline.waypoints[0].y_m);
@@ -336,15 +420,21 @@ int main(int argc, char ** argv)
       delayed_steer.push_back(steer_cmd);
       delayed_speed.push_back(speed_cmd);
 
-      if (o.out.size()) {
+      {
         const auto np = ref.nearestPoint(x(0), x(1));
         const double e_y = (x(1) - np.y) * std::cos(np.psi) - (x(0) - np.x) * std::sin(np.psi);
         const double beta = std::atan2(x(4), std::max(x(3), 0.1));
-        trace << t << "," << np.s << "," << x(0) << "," << x(1) << "," << x(2) << ","
-              << x(3) << "," << x(4) << "," << x(5) << "," << applied_steer << ","
-              << applied_speed << "," << u_prev(1) << "," << e_y << "," << np.vx << ","
-              << np.kappa << "," << x(3) * x(5) << "," << beta << ","
-              << (has_solved ? 1 : 0) << "\n";
+        log_s.push_back(np.s);
+        log_v.push_back(x(3));
+        log_alat.push_back(std::abs(x(3) * x(5)));
+        log_beta.push_back(std::abs(beta));
+        if (o.out.size()) {
+          trace << t << "," << np.s << "," << x(0) << "," << x(1) << "," << x(2) << ","
+                << x(3) << "," << x(4) << "," << x(5) << "," << applied_steer << ","
+                << applied_speed << "," << u_prev(1) << "," << e_y << "," << np.vx << ","
+                << np.kappa << "," << x(3) * x(5) << "," << beta << ","
+                << (has_solved ? 1 : 0) << "\n";
+        }
       }
       if (last_steer * steer_cmd < 0.0) {++sign_flips;}
       last_steer = steer_cmd;
@@ -384,9 +474,44 @@ int main(int argc, char ** argv)
     }
   }
 
+  // ---- Score each corner: brake onset and apex overspeed ------------------
+  // For every apex the car passes, the worst pass is kept. Brake onset is the
+  // upstream local speed maximum, so it is defined the same way for the car as
+  // it was for the reference and the two are directly comparable.
+  for (auto & c : corners) {
+    for (size_t k = 1; k + 1 < log_s.size(); ++k) {
+      // apex crossing: s passes apex_s going forward (ignore the wrap step)
+      if (!(log_s[k - 1] < c.apex_s && log_s[k] >= c.apex_s)) {continue;}
+      const double overspeed = log_v[k] - c.apex_v;
+      if (c.car_v_at_apex >= 0.0 && overspeed <= c.car_v_at_apex - c.apex_v) {continue;}
+      c.car_v_at_apex = log_v[k];
+      double best_v = log_v[k];
+      size_t best_k = k;
+      for (size_t d = 1; d <= k && d <= 400; ++d) {
+        const size_t j = k - d;
+        if (log_s[j] > log_s[j + 1]) {break;}            // lap wrap
+        if (c.apex_s - log_s[j] > 300.0) {break;}
+        if (log_v[j] > best_v) {best_v = log_v[j]; best_k = j;}
+        else if (log_v[j] < best_v - 0.5) {break;}
+      }
+      c.car_brake_s = log_s[best_k];
+      c.car_entry_v = best_v;
+      c.peak_alat = 0.0;
+      c.peak_beta = 0.0;
+      for (size_t j = best_k; j <= k; ++j) {
+        c.peak_alat = std::max(c.peak_alat, log_alat[j]);
+        c.peak_beta = std::max(c.peak_beta, log_beta[j]);
+      }
+    }
+  }
+
   std::printf(
-    "N=%d rate=%.0f alat=%.2f decel=%.2f accel=%.2f Q[r]=%.0f tau_cfg=%.2f mu=%.2f\n",
-    o.N, o.control_rate, o.lateral_accel_max, o.decel_max, o.accel_max, o.q_r, o.tau_cfg, o.mu);
+    "N=%d rate=%.0f alat=%.2f (eff %.2f) decel=%.2f accel=%.2f Q[r]=%.0f tau_cfg=%.2f mu=%.2f\n",
+    o.N, o.control_rate, o.lateral_accel_max, effectiveLateralLimit(o), o.decel_max, o.accel_max,
+    o.q_r, o.tau_cfg, o.mu);
+  std::printf(
+    "  controller tire: f[%.3f %.3f %.3f %.3f] r[%.3f %.3f %.3f %.3f] | plant mu %.2f\n",
+    o.ctrl_Bf, o.ctrl_Cf, o.ctrl_Df, o.ctrl_Ef, o.ctrl_Br, o.ctrl_Cr, o.ctrl_Dr, o.ctrl_Er, o.mu);
   std::printf(
     "  ref peak a_lat %.2f m/s^2 | curvature-clamped %zu/%zu | speed-clamped %zu\n",
     ref.maxLateralDemand(), ref.curvatureClampedCount(), ref.waypointCount(),
@@ -399,5 +524,34 @@ int main(int argc, char ** argv)
     "  tau: accel %.2f (%d samples) / decel %.2f (%d samples) vs plant %.2f / %.2f\n",
     tau_cfg, tau_samples, tau_cfg_decel, tau_samples_decel, o.tau_plant,
     o.tau_plant_decel > 0.0 ? o.tau_plant_decel : o.tau_plant);
+
+  std::printf(
+    "\n  corner  apex_s  v_ref  v_car  overspeed  brake_late_m  ref_brake_m  car_brake_m"
+    "  a_lat  beta\n");
+  int scored = 0, late = 0;
+  double sum_over = 0.0, worst_over = -1e9, sum_late = 0.0, worst_late = -1e9;
+  for (size_t i = 0; i < corners.size(); ++i) {
+    const Corner & c = corners[i];
+    if (c.car_v_at_apex < 0.0) {continue;}
+    const double over = c.car_v_at_apex - c.apex_v;
+    const double ref_brake_m = c.apex_s - c.ref_brake_s;
+    const double car_brake_m = c.apex_s - c.car_brake_s;
+    const double brake_late = ref_brake_m - car_brake_m;   // >0 = car braked later
+    ++scored;
+    if (brake_late > 5.0) {++late;}
+    sum_over += over; worst_over = std::max(worst_over, over);
+    sum_late += brake_late; worst_late = std::max(worst_late, brake_late);
+    std::printf(
+      "  %5zu  %6.0f  %5.2f  %5.2f  %9.2f  %12.1f  %11.1f  %11.1f  %5.2f  %4.1f\n",
+      i, c.apex_s, c.apex_v, c.car_v_at_apex, over, brake_late, ref_brake_m, car_brake_m,
+      c.peak_alat, c.peak_beta * 180.0 / M_PI);
+  }
+  if (scored > 0) {
+    std::printf(
+      "  %d/%zu corners scored | overspeed mean %.2f worst %.2f m/s | brake onset late "
+      "mean %.1f worst %.1f m | %d corners braking >5 m late\n",
+      scored, corners.size(), sum_over / scored, worst_over, sum_late / scored, worst_late, late);
+  }
+  (void)track_len;
   return 0;
 }

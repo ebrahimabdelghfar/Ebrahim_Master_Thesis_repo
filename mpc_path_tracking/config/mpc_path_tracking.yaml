@@ -63,9 +63,13 @@ mpc_path_tracking:
       jerk_max: 1000.0             # m/s^3, effectively unconstrained until tuned
       lateral_accel_max: 6.5       # m/s^2 - UPPER CAP only, see grip_utilization
       grip_utilization: 0.7        # fraction of the identified grip ceiling
-      drivetrain_tau_s: 0.2         # s, 0.0 = one control period of accel only
+      # Must not sit below the plant's own lag: the plant only delivers
+      # (control_period + tau)/tau_plant of the planned acceleration. Measured
+      # 19 % at 0.2 against CARLA's 2.77 s - the apex slide. Undercompensating
+      # breaks the car, overcompensating costs 0.6 % of pace. ERR HIGH.
+      drivetrain_tau_s: 2.77        # s, 0.0 = one control period of accel only
       drivetrain_tau_decel_s: -0.2  # s, <0 = same as drivetrain_tau_s
-      drivetrain_tau_auto: false
+      drivetrain_tau_auto: true
 
     # ---------------- Solver settings ----------------
     solver:
