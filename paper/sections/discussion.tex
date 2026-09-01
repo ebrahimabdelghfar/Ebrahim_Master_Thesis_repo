@@ -1,124 +1,99 @@
-% === V. DISCUSSION AND LIMITATIONS ===========================================
+% === VIII. DISCUSSION AND LIMITATIONS ========================================
 \section{Discussion and Limitations}
 \label{sec:disc}
 
-\subsection{What generalises beyond this platform}
+\subsection{What generalises}
 
-The reachable-friction bound~\eqref{eq:mureach} is kinematic. It involves no
+The reachable-friction bound~\eqref{eq:mureach} is kinematic: it involves no
 tire parameter, no simulator-specific quantity and no property of the residual
-model, and it therefore applies to any implementation of the
-virtual-steady-state-data strategy of~\cite{ontrack2024}, in simulation or on
-hardware. Its practical content is a design rule: \emph{the rollout must be
-configured to demand at least the friction one intends to identify}, and if it
-cannot, the peak factor $D$ should be treated as unidentified rather than
-reported. The diagnostic signature---coefficients resting exactly on box
-constraints---is likewise generic, and we would argue it should be checked and
-logged by any bounded tire-fitting routine, since it is otherwise
-indistinguishable in the output from a successful fit.
+model, so it applies to any implementation of the virtual-steady-state-data
+strategy of~\cite{ontrack2024}, in simulation or on hardware. Its practical
+content is a design rule---\emph{the rollout must be configured to demand at
+least the friction one intends to identify}---and, where it cannot, $D$ should
+be reported as unidentified rather than as fitted. The diagnostic signature,
+coefficients resting exactly on box constraints, is likewise generic and should
+be checked and logged by any bounded tire-fitting routine, since it is
+otherwise indistinguishable in the output from a successful fit.
 
-The observation that per-coefficient box constraints are insufficient for
-deployment admissibility is also platform-independent. The two failure modes
-we encountered---a set that satisfies every box constraint while being
-degenerate, and a set that satisfies every box constraint while being
-pairwise oversteering and open-loop unstable within the controller's operating
-range---are properties of the parameterisation, not of CARLA. Deep
-Dynamics~\cite{deepdynamics2024} constrains coefficients to nominal ranges
-inside the network; we suggest that a second, derived-quantity check belongs
-at the interface where the model is handed to a controller.
+The insufficiency of per-coefficient box constraints for deployment
+admissibility is also platform-independent. Both failures we
+encountered---a set that satisfies every box constraint while being degenerate,
+and a set that satisfies every box constraint while being pairwise oversteering
+and unstable within the controller's operating range---are properties of the
+parameterisation, not of CARLA. Deep Dynamics~\cite{deepdynamics2024}
+constrains coefficients inside the network; we argue that a second,
+derived-quantity check belongs at the interface where the model is handed to a
+controller.
 
 \subsection{What does not generalise}
 
-Three results are properties of this specific plant and must not be read as
-statements about tires.
-
-First, the numerical tire values. The plant is a PhysX wheeled-vehicle model
-with a configured wheel friction coefficient, not a physically measured tire.
-Table~\ref{tab:ref} is an empirical description of \emph{that} plant's
-behaviour, and the agreement between our identification and it is evidence
-that the identifier recovers the plant it observes---not evidence about real
-tire behaviour. Sagmeister \emph{et al.}~\cite{simfidelity2026} show that the
-sensitivity of controller evaluation to model fidelity is largest precisely
-near the acceleration limits, which is where this study operates; R-CARLA
-\cite{rcarla2025} exists because CARLA's native dynamics are a known weak
-point for racing-grade work. A hardware replication is therefore necessary
-before any claim about identification accuracy on a real vehicle.
-
-Second, the gap between the configured wheel friction (\num{1.5}) and the
-realised peak axle friction (\numrange{1.00}{1.05}). This is a property of
-how the PhysX solver composes wheel material friction with load, slip and
-surface, and provides no information about a physical tire. We report it only
-because it is a trap: an identification that is tuned to converge on the
-number written in the simulator's configuration file will be tuned to
-converge on the wrong number.
-
-Third, the \num{0.76} achieved/commanded steering ratio arises from CARLA's
-native Ackermann controller and this vehicle's steering configuration. The
-\emph{lesson}---identify against the achieved actuator state, not the
-setpoint---is general and well known in system identification practice; the
-magnitude is not.
+Three results are properties of this plant and must not be read as statements
+about tires. First, the numerical tire values: the plant is a PhysX
+wheeled-vehicle model with a configured friction coefficient, so
+Table~\ref{tab:ref} describes \emph{that} plant, and agreement with it is
+evidence that the identifier recovers the plant it observes, not evidence about
+real tire behaviour. Sagmeister \emph{et al.}~\cite{simfidelity2026} show that
+sensitivity to model fidelity is largest near the acceleration limits, which is
+where this study operates, and R-CARLA~\cite{rcarla2025} exists because CARLA's
+native dynamics are a known weak point for racing-grade work; hardware
+replication is therefore necessary before any claim about identification
+accuracy on a real vehicle. Second, the gap between configured wheel friction
+(\num{1.5}) and realised peak axle friction (\numrange{1.00}{1.05}) is a
+property of how the PhysX solver composes friction with load and slip; we
+report it only because an identifier tuned to converge on the number in the
+configuration file will converge on the wrong number. Third, the \num{0.76}
+achieved/commanded steering ratio arises from CARLA's Ackermann controller and
+this vehicle's steering configuration---the lesson, identify against the
+achieved actuator state, is general and standard practice; the magnitude is
+not.
 
 \subsection{Limitations}
 
 \begin{enumerate}
-\item \textbf{The closed-loop validation is incomplete.} Level 3 of
-Section~\ref{subsec:validation} has not been run end-to-end, because the
-corrected identifier's admissibility gate correctly rejects the model for the
-raceline in hand (Section~\ref{subsec:negative}). Until a feasible raceline is
-regenerated, this paper reports open-loop accuracy and closed-loop
-\emph{consequence} (Table~\ref{tab:closedloop}), not closed-loop racing
-performance. We consider stating this preferable to relaxing the gate to
-produce a result.
-
-\item \textbf{No noise sweep.} The baseline's headline robustness claim---a
-\num{3.3}$\times$ RMSE advantage over NLS under injected
-noise~\cite{ontrack2024}---has not been reproduced on this platform. The
-odometry noise model exists in the bridge and is disabled for the runs
-reported here, so the experiment is available; it simply has not been run.
-Our results are therefore not directly comparable to the baseline's
-robustness figures.
-
-\item \textbf{No NLS baseline on this platform.} We compare against the
-plant's own telemetry rather than against an NLS identification of the same
-data. A same-data NLS comparison would strengthen the paper and is
-straightforward to add.
-
-\item \textbf{Single surface, single vehicle, single trajectory.} All results
-come from one vehicle configuration on one map. The bridge exposes runtime
-friction override (\texttt{control/\allowbreak tire\_friction}), so a surface-change
-adaptation experiment---arguably the strongest argument for on-track
-identification---is directly supported but not performed here.
-
-\item \textbf{Yaw inertia is assumed, not measured.} $I_{z}$ enters
-\eqref{eq:omdot} and the stiffness-adaptive sub-stepping directly; see
-Section~\ref{subsec:assumptions}.
-
-\item \textbf{Ablations not completed.} The residual-architecture and
-loss-mode comparisons of Section~\ref{subsec:ablation} are implemented and
-configurable but not yet run, so no claim is made about the value of the S4D
-residual or the physics-informed loss on this platform. In particular, we do
-not claim to reproduce the S4 improvement reported
-by~\cite{visionsysid2026}.
-
-\item \textbf{Longitudinal dynamics are out of scope.} As in the baseline,
-only lateral dynamics are identified; combined-slip and load-transfer effects
-are neglected, and the simulator's longitudinal wheel force channel is
-drivetrain torque rather than a contact-patch force and is unusable as ground
-truth for a longitudinal extension without further work.
+\item \textbf{Closed-loop validation is incomplete.} Level 3 of
+Section~\ref{subsec:validation} has not been run end to end, because the
+admissibility gate correctly rejects the model for the raceline in hand
+(Section~\ref{subsec:negative}). Until a feasible raceline is regenerated this
+paper reports open-loop accuracy and closed-loop \emph{consequence}
+(Table~\ref{tab:closedloop}), not closed-loop racing performance. We consider
+stating this preferable to relaxing the gate.
+\item \textbf{No noise sweep.} The baseline's robustness claim---a
+\num{3.3}$\times$ RMSE advantage over nonlinear least squares under injected
+noise~\cite{ontrack2024}---has not been reproduced here. The bridge's odometry
+noise model exists and is disabled for these runs, so the experiment is
+available; it has not been run, and our results are therefore not directly
+comparable to the baseline's robustness figures.
+\item \textbf{No same-data NLS baseline.} We compare against the plant's own
+telemetry rather than against a nonlinear least-squares identification of the
+same data. That comparison would strengthen the paper and is straightforward to
+add.
+\item \textbf{Single surface, vehicle and trajectory.} All results come from
+one vehicle configuration on one map. The runtime friction override supports a
+surface-change adaptation experiment---arguably the strongest argument for
+on-track identification---but it is not performed here.
+\item \textbf{Yaw inertia is assumed, not measured}
+(Section~\ref{subsec:assumptions}).
+\item \textbf{Ablations not completed}, so no claim is made about the S4D
+residual or the physics-informed loss on this platform
+(Section~\ref{subsec:ablation}); in particular we do not claim to reproduce the
+S4 improvement of~\cite{visionsysid2026}.
+\item \textbf{Longitudinal dynamics are out of scope.} As in the baseline only
+lateral dynamics are identified; combined slip and load transfer are neglected,
+and the simulator's longitudinal wheel force channel is drivetrain torque
+rather than a contact-patch force, so it is unusable as ground truth for a
+longitudinal extension without further work.
 \end{enumerate}
 
 \subsection{Threats to validity}
 
-The most serious internal threat is that several of the corrections listed in
-Table~\ref{tab:defects} were applied together rather than in a factorial
-design; only the rollout-speed correction was isolated by the zeroed-residual
-round-trip of Section~\ref{subsec:isolation}. The measured effects attributed
-to the individual measurement-side corrections come from re-fitting the same
-recorded run with one change at a time, which controls for the data but not
-for interaction between the changes. A full ablation over the six defects
-would settle this and is inexpensive to run offline.
-
+The most serious internal threat is that several corrections of
+Table~\ref{tab:defects} were applied together rather than factorially; only the
+rollout-speed correction was isolated, by the zeroed-residual round-trip of
+Section~\ref{subsec:isolation}. The effects attributed to individual
+measurement-side corrections come from re-fitting the same recorded run with
+one change at a time, which controls for the data but not for interaction
+between changes; a full ablation would settle this and is inexpensive offline.
 The most serious external threat is the simulator's tire model, discussed
-above. The mitigation available within this study is that every claim is
-scored against the plant's own per-wheel forces rather than against a
-secondary model, so the identification result is at least not
-self-referential.
+above; the mitigation available within this study is that every claim is scored
+against the plant's own per-wheel forces rather than against a secondary model,
+so the identification result is at least not self-referential.

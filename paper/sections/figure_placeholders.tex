@@ -122,3 +122,27 @@ feasible raceline for the measured vehicle, see
 Section~\ref{subsec:negative}.}
 \label{fig:closedloop}
 \end{figure}
+
+\begin{figure*}[t]
+\centering
+\placeholderboxwide{Pending: three panels: (a) $\mu_{\mathrm{reach}}$ versus
+rollout speed at full scale and 1:10; (b) round-trip identified $D$ versus
+rollout speed under the baseline and the excitation-aware configuration; (c)
+the $(\alpha_{f},F_{y,f})$ coverage each configuration hands to the
+fit.}{5.0cm}
+\caption{The baseline pipeline~\cite{ontrack2024} against this work, with the
+residual network held at zero so that the rollout configuration is the only
+variable. \textbf{Not yet produced}; generation recipe in
+\texttt{figures/make\_baseline\_comparison.py}. (a) The friction the synthetic
+rollout can demand, \eqref{eq:mureach}: the baseline's
+\SIrange{2}{4}{\meter\per\second} clip reaches $\mu=0.43$ on the full-scale
+vehicle but $\approx2.0$ on the 1:10 platform it was designed for, which is
+why the defect is scale-latent. (b) A known tire rolled out and fitted back
+across rollout speeds: inside the baseline clip the peak factor lands on its
+box bound, above \SI{7}{\meter\per\second} it is recovered. (c) The
+$(\alpha_{f},F_{y,f})$ data the Pacejka fit actually sees under each
+configuration, against the true curve; the baseline configuration supplies
+only the initial linear ramp, where solely the product $BCD$ is
+identifiable.}
+\label{fig:baseline}
+\end{figure*}

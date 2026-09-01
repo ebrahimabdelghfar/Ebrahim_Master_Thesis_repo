@@ -1,129 +1,128 @@
 % === I. INTRODUCTION =========================================================
 \section{Introduction}
 
-\IEEEPARstart{M}{odel-based} controllers for autonomous racing---nonlinear
-model predictive control (MPC), model predictive contouring control, and
-model- and acceleration-based pursuit---derive their performance from the
-fidelity of the vehicle model they carry
+\IEEEPARstart{M}{odel-based} controllers for autonomous racing derive their
+performance from the fidelity of the vehicle model they carry
 \cite{liniger2015,kabzan2019lbmpc,forzaeth2024}. In the lateral channel that
-fidelity is dominated by one component: the tire. The tire--road interface is
-the physical boundary of the vehicle's manoeuvrability, and it is also the
-least accessible component to measure, because its parameters depend on
-surface, temperature, wear and load in ways that change between sessions
-\cite{pacejka2012book,amz2020}.
+fidelity is dominated by the tire, which is simultaneously the physical bound
+on manoeuvrability and the least accessible component to measure: its
+behaviour depends on surface, temperature, wear and load in ways that change
+between sessions \cite{pacejka2012book,amz2020}.
 
 Classical characterisation resolves this by removing the vehicle from the
-track: steady-state circular or ramp-steer manoeuvres in a large open space
-yield clean data at the cost of logistics that a race weekend rarely affords
+track---steady-state circular or ramp-steer manoeuvres in a large open space
+yield clean data at a logistical cost a race weekend rarely affords
 \cite{ontrack2024}. On-track identification removes the logistics but
-reintroduces transients, noise, and---critically---the fact that a racing
-line is a poor excitation signal for a nonlinear model. Nonlinear
-least-squares (NLS) applied directly to on-track data is known to be brittle
-in exactly this regime \cite{ontrack2024}.
+reintroduces transients, noise and, critically, the fact that a racing line is
+a poor excitation signal for a nonlinear model; nonlinear least squares applied
+directly to lap data is known to be brittle in exactly this regime
+\cite{ontrack2024}.
 
-Dikici \emph{et al.}~\cite{ontrack2024} propose a hybrid remedy that is the
-direct baseline for this paper. A small residual multilayer perceptron is
-trained on 30\,s of ordinary lap data to predict the one-step error of a
-nominal single-track model. The corrected model---nominal plus residual---is
-then rolled out through a \emph{synthetic}, quasi-steady steering sweep, and
-Pacejka coefficients are fitted to that synthetic sweep by least squares.
-Because the sweep is generated rather than driven, it can be made steady and
-noise-free; because the residual network only has to interpolate within the
-distribution it was trained on, its known generalisation weakness is
-contained. The procedure is applied iteratively, each fit becoming the next
-nominal model. On a 1:10 scaled platform the method reports a
-\num{3.3}$\times$ lower one-step RMSE than NLS under noise and tire models
-comparable to steady-state identification, from 30\,s of driving and 3\,s of
-training \cite{ontrack2024}.
+Dikici \emph{et al.}~\cite{ontrack2024} propose the hybrid remedy that is the
+starting point of this paper. A small residual network is trained on
+\SI{30}{\second} of ordinary lap data to predict the one-step error of a
+nominal single-track model; the corrected model is then rolled out through a
+\emph{synthetic}, quasi-steady steering sweep; and Pacejka coefficients are
+fitted to that synthetic sweep. Because the sweep is generated rather than
+driven it can be made steady and noise-free, and because the residual network
+only has to interpolate within its training distribution its generalisation
+weakness is contained. The procedure iterates, each fit becoming the next
+nominal model. On a 1:10 platform it reports a \num{3.3}$\times$ lower one-step
+RMSE than nonlinear least squares under noise, from \SI{30}{\second} of driving
+\cite{ontrack2024}.
 
 \subsection{Problem statement}
 
-This paper asks what happens when that pipeline is moved from a
-\SI{3.7}{\kilo\gram}, \SI{0.32}{\meter}-wheelbase RC platform to a full-scale
+This paper asks what the pipeline identifies when it is moved from a
+\SI{3.7}{\kilo\gram}, \SI{0.32}{\meter}-wheelbase platform to a full-scale
 Formula Student vehicle: \SI{269.6}{\kilo\gram}, \SI{1.53}{\meter} wheelbase,
-\SI{16}{\degree} of road-wheel lock, driven at \SIrange{11}{27}{\meter\per\second}.
-The move is not a matter of editing a parameter file. Two scale-dependent
-mechanisms, both invisible at 1:10, break the identification:
+\SI{16}{\degree} of road-wheel lock, driven at
+\SIrange{11}{27}{\meter\per\second}. The question is one of identifiability
+rather than of parameter transfer. Two scale-dependent mechanisms, both latent
+at 1:10, break the estimate:
 
 \begin{enumerate}
-\item \textbf{Excitation collapses in the virtual-data step.} The Pacejka fit
-never sees the recorded lap; it sees the synthetic rollout. The friction that
-rollout can reach is bounded by
-$\mu_{\mathrm{reach}}\!\approx\!v^{2}\delta_{\max}/(gL)$, which is a property
-of the \emph{rollout configuration}, not of the tire. A rollout speed
-inherited from the scaled platform caps $\mu_{\mathrm{reach}}$ at $0.43$ on
-this vehicle. Below the tire's peak, the Magic Formula degenerates to
-$F_{y}\approx F_{z}(BCD)\alpha$: only the product $BCD$ is identifiable, and
-the optimiser parks the individual coefficients wherever the box constraints
-stop it \cite{ljung1999sysid,pacejka2012book}.
+\item \textbf{Excitation collapses inside the virtual-data step.} The Pacejka
+fit never sees the recorded lap; it sees the synthetic rollout, whose reachable
+friction $\mu_{\mathrm{reach}}\!\approx\!v^{2}\delta_{\max}/(gL)$ is a property
+of the rollout configuration, not of the tire. A rollout speed inherited from
+the scaled platform caps it at $0.43$ here. Below the tire's peak the Magic
+Formula degenerates to $F_{y}\approx F_{z}(BCD)\alpha$: only the product $BCD$
+is identifiable and the bounded optimiser resolves the remaining freedom on a
+box edge \cite{ljung1999sysid,pacejka2012book}.
 
 \item \textbf{Lateral demand scales as $v^{2}$, so a bad grip estimate is
 silent until it is catastrophic.} An identified peak friction coefficient of
-\num{0.40} produces a \SI{0.03}{\meter} cross-track error at
+\num{0.40} produces \SI{0.03}{\meter} of cross-track error at
 \SI{11}{\meter\per\second} and \SI{41.89}{\meter} at
-\SI{27}{\meter\per\second} in our closed-loop harness. The scaled platform
-never reaches the speed at which the error becomes observable.
+\SI{27}{\meter\per\second}. The scaled platform never reaches the speed at
+which the error becomes observable.
 \end{enumerate}
 
-A third difference is an opportunity rather than an obstacle. Because the
-experiments are conducted in the CARLA simulator \cite{carla2017} through a
-custom ROS~2 interface, the simulator's own per-wheel telemetry---slip angle,
-normal load, lateral force, per wheel---is available as ground truth. An
-on-track identifier can therefore be validated against the forces the plant
-actually generated, which is not possible on a physical car without a
-force-measuring wheel hub.
+A third difference is an opportunity. Because the study is conducted in the
+CARLA simulator \cite{carla2017} through a purpose-built ROS~2 interface, the
+simulator's own per-wheel telemetry---slip angle, normal load, lateral force,
+per wheel---is available as ground truth, so an on-track identifier can be
+scored against the forces the plant actually generated.
 
 \subsection{Contributions}
 
+The contributions are an identifiability result, the pipeline changes it
+implies, and the simulation architecture that makes both verifiable.
+
 \begin{enumerate}
-\item \textbf{An identifiability analysis of the virtual-data step}, with the
-closed-form reachable-friction bound above, together with an
-\emph{excitation-aware rollout} that selects the rollout speed from the
-measured lap and warns whenever the configuration cannot reach the prior's
-peak. This is a correction to the baseline method
-\cite{ontrack2024}---applicable at any scale, but latent at 1:10 because a
-\SIrange{2}{4}{\meter\per\second} rollout is representative there and is not
-here (Sections~\ref{subsec:rollout}, \ref{subsec:excitation}).
+\item \textbf{An identifiability analysis of the virtual-data step}
+(Section~\ref{subsec:excitation}), giving the closed-form reachable-friction
+bound above and an \emph{excitation-aware rollout} that selects the rollout
+speed from the measured lap and warns whenever the configuration cannot reach
+the prior's peak. This corrects the baseline method~\cite{ontrack2024} at any
+scale; it is latent at 1:10 because a \SIrange{2}{4}{\meter\per\second} rollout
+is representative there and is not here.
 
-\item \textbf{Two mechanisms that stabilise the iterative
-co-identification.} We bound the synthetic steering sweep at
-$1.5\times$ the 99th percentile of the steering actually observed, so the fit
-cannot read the residual network's extrapolation as grip; and we freeze the
-Tikhonov regularisation target at the configured prior while letting the
-optimiser's start point track the iterations. Together these remove a
-\num{1.01}$\rightarrow$\num{1.87} drift of the peak friction coefficient over
-six iterations (Section~\ref{subsec:iterative}).
+\item \textbf{Two mechanisms that stabilise the iterative co-identification}
+(Section~\ref{subsec:iterative}): the synthetic sweep is bounded at
+$1.5\times$ the 99th percentile of the observed steering, so the fit cannot
+read the residual network's extrapolation as grip; and the Tikhonov target is
+frozen at the configured prior while the optimiser's start point tracks the
+iterations. Together they remove a \num{1.01}$\rightarrow$\num{1.87} drift of
+the peak factor over six iterations.
 
-\item \textbf{Measurement-side corrections} for full-scale deployment: slip
-angles built from the \emph{achieved} road-wheel angle rather than the
-command (measured ratio \num{0.76}, worth \SI{20}{\percent} of front axle
-stiffness); mass and wheelbase taken from measured static wheel loads rather
-than from the configuration file; and a friction warm-start computed as a
-high quantile over the whole buffer and applied as a \emph{floor} on the
-prior, rather than as a median over an explicitly low-slip mask
-(Section~\ref{subsec:measurement}).
+\item \textbf{Measurement-side corrections for full-scale deployment}
+(Section~\ref{subsec:measurement}): slip angles built from the \emph{achieved}
+road-wheel angle rather than the command; mass and wheelbase from measured
+static wheel loads rather than from a configuration file; and a friction
+warm-start computed as a high quantile over the whole buffer and applied as a
+\emph{floor} rather than as a median over a low-slip mask.
 
-\item \textbf{Admissibility gates on derived physical quantities} at the
-model-to-controller boundary---axle cornering stiffness, understeer sign and
-critical speed, and grip ceiling against the raceline's peak lateral
-demand---rather than per-coefficient box checks, which cannot see a
-degenerate fit or a pairwise-oversteering axle set
-(Section~\ref{subsec:gates}).
+\item \textbf{A simulation architecture for on-track identification research}
+(Sections~\ref{subsec:platform}--\ref{subsec:data}). \bridge{} exposes the
+plant's own per-wheel forces, slip angles and loads as ROS~2 topics alongside a
+conventional autonomy interface, and closes the identification loop end to
+end---acquisition, preprocessing, fitting, ground-truth force validation---on a
+single simulation clock.
 
-\item \textbf{A simulation platform for on-track identification research}
-(\bridge{}) that exposes the plant's own per-wheel forces, slip angles and
-loads as ROS~2 topics alongside a conventional autonomy interface, enabling
-the ground-truth comparisons reported here (Section~\ref{subsec:platform}).
+\item \textbf{Admissibility gates on derived physical quantities}
+(Section~\ref{sec:integration}) at the model-to-controller boundary---axle
+cornering stiffness, understeer sign and critical speed, and grip ceiling
+against the trajectory's lateral demand---rather than per-coefficient box
+checks, which cannot detect a degenerate fit or a pairwise-oversteering axle
+set.
 
-\item \textbf{An honest negative result.} With the identifier corrected, the
-model reports a grip ceiling of \SIrange{1.02}{1.16}{\g} against a measured
-steady-state ceiling of $\approx\SI{1.0}{\g}$, while the optimised raceline
-used in this study demands \SI{1.22}{\g}. The admissibility gate therefore
-refuses the identification for closed-loop use---correctly. We report this
-rather than loosening the gate, and quantify the raceline regeneration it
-implies (Section~\ref{subsec:negative}).
+\item \textbf{A negative result reported rather than suppressed}
+(Section~\ref{subsec:negative}). The corrected model reports a grip ceiling of
+\SIrange{1.02}{1.16}{\g} against a measured steady-state ceiling of
+$\approx\SI{1.0}{\g}$, while the optimised raceline used here demands
+\SI{1.22}{\g}; the gate refuses the identification for closed-loop use, and we
+quantify the raceline regeneration this implies instead of loosening the gate.
 \end{enumerate}
 
-All results in this paper are obtained in simulation. Section~\ref{sec:disc}
-states explicitly which conclusions are expected to transfer to a physical
-vehicle and which are properties of the simulator's tire model.
+The paper follows that order: Section~\ref{sec:related} places the work against
+the state of the art; Section~\ref{sec:problem} states the identification
+problem and its structural identifiability properties;
+Section~\ref{sec:platform} describes the simulation architecture and data
+pipeline; Section~\ref{sec:method} the identification methodology;
+Section~\ref{sec:results} the results; Section~\ref{sec:integration} how the
+identified model is handed to the controller; and
+Sections~\ref{sec:disc}--\ref{sec:conclusion} the limitations and outlook. All
+results are obtained in simulation, and Section~\ref{sec:disc} states which
+conclusions are expected to transfer to hardware.

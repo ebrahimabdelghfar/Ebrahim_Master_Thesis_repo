@@ -1,7 +1,7 @@
 data_collection_duration: 30
 num_of_iterations: 6   # NN-train <-> Pacejka-refit co-identification loop count (README-documented, was previously hardcoded and ignored)
 sample_dt: 0.02         # MUST match 1/rate in on_track_sys_id.py (rate=50 Hz) - single source of truth for the nominal integration step used by generate_predictions.py, simulated_data_gen, and the physics-informed loss
-nn_architecture: "physics_inputs"   # options: baseline | wide | physics_inputs | ensemble | s4
+nn_architecture: "s4"   # options: baseline | wide | physics_inputs | ensemble | s4
 
 ode_solver: "rk4" # options: euler | rk2 | rk4
 
@@ -26,8 +26,8 @@ ensemble_n_members: 3
 ensemble_base_seed: 42
 
 # Physics-inputs-specific
-physics_inputs_lf: 0.15795   # meters — MUST match pacejka_params.yaml lf value
-physics_inputs_lr: 0.17205   # meters — MUST match pacejka_params.yaml lr value
+physics_inputs_lf: 0.738142   # meters — MUST match pacejka_params.yaml lf value
+physics_inputs_lr: 0.795362   # meters — MUST match pacejka_params.yaml lr value
 
 # S4D-specific (nn_architecture: s4) - a diagonal Structured State Space
 # temporal-residual model (Gu, Goel & Ré, "On the Parameterization and
@@ -45,7 +45,7 @@ s4:
   sequence_length: 20          # W: sliding-window length (samples) fed per training example; 20 @ 50Hz sample_dt = 0.4s, matched to tire-relaxation timescales
   dt_min: 0.001                 # learnable per-channel discretization step, log-uniform init range (standard S4D defaults) - NOT the same as sample_dt above, this is a free SSM hyperparameter, not tied to the physical 1/rate timestep
   dt_max: 0.1
-  use_physics_inputs: false      # true => augment each timestep with slip angles alpha_f/alpha_r (6-dim input) before the S4D input projection
+  use_physics_inputs: true      # true => augment each timestep with slip angles alpha_f/alpha_r (6-dim input) before the S4D input projection
   # NOTE: nn_architecture: ensemble + s4 is not supported - these are
   # mutually exclusive top-level architecture choices, not composable.
 

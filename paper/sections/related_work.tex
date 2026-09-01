@@ -1,158 +1,120 @@
 % === II. RELATED WORK ========================================================
-\section{Related Work}
+\section{Related Work and Position}
 \label{sec:related}
 
-\subsection{Tire modeling and Magic Formula identification}
+\subsection{Tire models and Magic Formula identification}
 
 The Magic Formula of Bakker, Nyborg and Pacejka~\cite{pacejka1987sae} and its
-subsequent consolidation~\cite{pacejka1992magic,pacejka2012book} remains the
-standard empirical description of steady-state tire force generation, and is
-the model identified in this work. Its lateral form,
-\begin{equation}
-F_{y}=F_{z}\,D\sin\!\big(C\arctan\!\big(B\alpha-E(B\alpha-\arctan B\alpha)\big)\big),
-\label{eq:mf}
-\end{equation}
-is parameterised by a stiffness factor $B$, shape factor $C$, peak factor $D$
-and curvature factor $E$. Two properties of \eqref{eq:mf} are structural and
-are used repeatedly in this paper. First, its slope at zero slip is
-$F_{z}BCD$, so the axle cornering stiffness depends on the coefficients only
-through that product and $E$ drops out. Second---and this is the identifiability
-statement---if the data does not approach the peak, \eqref{eq:mf} linearises to
-$F_{y}\approx F_{z}(BCD)\alpha$ and $B$, $C$, $D$ become mutually
-unidentifiable. This is a standard persistent-excitation argument
-\cite{ljung1999sysid}; we do not claim it as novel, but we do claim that the
-baseline pipeline's virtual-data step can silently violate it, and that the
-violation is what produced the failure we report.
-
-Classical characterisation obtains the coefficients from steady-state
-manoeuvres in a controlled space \cite{ontrack2024,amz2020}, which yields
-clean data at high logistical cost. Direct fitting to measured contact-patch
-forces, where a force-measuring hub or a simulator's own wheel telemetry is
-available, is the most informative variant; in this work it is used only as a
-\emph{reference} against which the on-track identifier is scored, never as
-part of the identification loop.
+consolidation~\cite{pacejka1992magic,pacejka2012book} remains the standard
+empirical description of steady-state tire force generation and is the model
+identified here; its lateral form and the two structural properties this paper
+relies on are stated in Section~\ref{sec:problem}. Classical characterisation
+obtains the coefficients from steady-state manoeuvres in a controlled space
+\cite{ontrack2024,amz2020}: clean data at high logistical cost. Direct fitting
+to measured contact-patch forces is the most informative variant and requires a
+force-measuring hub or a simulator's own wheel telemetry; in this work it is
+used only as a \emph{reference} against which the on-track identifier is
+scored, never inside the identification loop.
 
 \subsection{On-track and data-driven identification}
 
-On-track methods trade excitation quality for operational simplicity. NLS
-applied to lap data is the classical baseline and is known to be brittle
-under noise \cite{ontrack2024}. Gaussian-process approaches learn the model
-mismatch of a nominal model and have been used both for identification and
-directly inside the controller
-\cite{hewing2018cautious,hewing2020cautious,kabzan2019lbmpc}; they are
-accurate but carry a continuing computational cost and, as
+On-track methods trade excitation quality for operational simplicity.
+Nonlinear least squares on lap data is the classical baseline and is brittle
+under noise \cite{ontrack2024}. Gaussian-process approaches learn the mismatch
+of a nominal model and have been used both for identification and inside the
+controller \cite{hewing2018cautious,hewing2020cautious,kabzan2019lbmpc}; they
+are accurate but carry a continuing computational cost and, as
 \cite{ontrack2024} observes, are usually evaluated starting from an already
-accurate physical model. Neural approaches replace the GP with a cheaper
-regressor at the cost of generalisation guarantees.
+accurate physical model. Neural residuals replace the Gaussian process with a
+cheaper regressor at the cost of generalisation guarantees.
 
 Deep Dynamics~\cite{deepdynamics2024} is the closest work on the
 physics-constraint axis: it estimates Pacejka coefficients inside a neural
-network and adds a \emph{Physics Guard} layer that clamps the internal
-coefficient estimates into nominal physical ranges. Our admissibility gates
-share that motivation but differ in placement and in what is constrained. We
-found---and report as a substantive finding---that per-coefficient box
-constraints are \emph{insufficient}: the degenerate fit that motivated this
-work satisfied every box constraint while five of eight coefficients sat
-exactly on a bound, and a later fit satisfied every box constraint while
-being pairwise oversteering and open-loop unstable above
-\SI{17.4}{\meter\per\second}. We therefore gate on derived quantities
-(cornering stiffness, understeer sign, critical speed, grip ceiling versus
-the trajectory's demand) at the model-to-controller interface, and treat a
-coefficient sitting on a bound as a diagnostic of non-identifiability rather
-than as a successful clamp.
+network and adds a \emph{Physics Guard} layer clamping the internal estimates
+into nominal ranges. Our admissibility gates share the motivation but differ
+in placement and in what is constrained. We report as a substantive finding
+that per-coefficient box constraints are \emph{insufficient}: the degenerate
+fit that motivated this work satisfied every box constraint while five of eight
+coefficients sat exactly on a bound, and a later fit satisfied every box
+constraint while being pairwise oversteering and open-loop unstable above
+\SI{17.4}{\meter\per\second}. We therefore gate on derived quantities at the
+model-to-controller interface and treat a coefficient resting on a bound as a
+diagnostic of non-identifiability rather than as a successful clamp.
 
-The hybrid residual-plus-virtual-data structure of Dikici
-\emph{et al.}~\cite{ontrack2024} is the baseline we extend, and is described
-in detail in Section~\ref{sec:method}. Its key idea---use the learned model
-only where it interpolates, and extract physically parameterised coefficients
-from it---is retained unchanged. What we correct is the mechanism that
-decides \emph{where} the learned model is queried.
+The hybrid residual-plus-virtual-data structure of~\cite{ontrack2024} is the
+pipeline we extend. Its key idea---query the learned model only where it
+interpolates, and extract physically parameterised coefficients from it---is
+retained unchanged. What we correct is the mechanism that decides \emph{where}
+the learned model is queried.
 
 \subsection{Overlap with concurrent work}
 
-Wu \emph{et al.}~\cite{visionsysid2026} extend the same baseline pipeline
-concurrently and independently, and the overlap must be stated plainly. They
-introduce (i) a vision-based friction prior from a lightweight CNN over road
-texture, used to warm-start the optimisation; (ii) an S4 structured
-state-space model in place of the MLP, to capture temporal residuals; and
-(iii) Nelder--Mead for the iterative Pacejka extraction, with virtual
-simulation in CarSim. The pipeline described in this paper independently
-contains an S4-family temporal residual architecture (an S4D
-variant~\cite{gu2022s4d,gu2022s4} evaluated by recurrent scan rather than FFT
-convolution, selected for the short $\approx$1500-sample sequences here), a
-friction warm-start, and Nelder--Mead and differential-evolution solver
-options alongside trust-region reflective.
+Wu \emph{et al.}~\cite{visionsysid2026} extend the same baseline concurrently
+and independently, and the overlap must be stated plainly. They introduce (i) a
+vision-based friction prior from a lightweight CNN over road texture, used to
+warm-start the optimisation; (ii) an S4 structured state-space model in place
+of the MLP; and (iii) Nelder--Mead for the iterative Pacejka extraction, with
+virtual simulation in CarSim. The pipeline described here independently
+contains an S4D temporal residual~\cite{gu2022s4d,gu2022s4}, a friction
+warm-start, and Nelder--Mead and differential-evolution solver options
+alongside trust-region reflective. We therefore do \emph{not} claim the
+temporal-residual architecture, the friction warm-start concept, or the
+derivative-free solver as contributions.
 
-We therefore do \emph{not} claim the temporal-residual architecture, the
-friction warm-start concept, or the derivative-free solver as contributions
-of this work. Two differences are worth recording because they are technical
-rather than merely chronological. First, our friction prior is
+Two differences are technical rather than chronological. Our friction prior is
 proprioceptive---derived from measured accelerations, in the spirit of
-model-free friction estimation from IMU data~\cite{slipfriction2025}---rather
-than visual, and therefore does not require a camera or a textured-surface
-assumption. Second, and more importantly, we find that a friction prior
-computed as \emph{utilised} friction is a lower bound on \emph{available}
-friction and cannot substitute for excitation: on a gentle lap the median
-utilisation on our vehicle measures \num{0.044}. We consequently apply the
-prior as a floor rather than as a replacement, and locate the actual fix in
-the rollout excitation rather than in the initialisation. To our knowledge
-the reachable-friction bound of Section~\ref{subsec:excitation} and its
-consequence for the virtual-data step have not previously been stated.
+model-free friction estimation from inertial data~\cite{slipfriction2025}---and
+therefore needs no camera or textured-surface assumption. More importantly, a
+prior computed from \emph{utilised} friction is a lower bound on
+\emph{available} friction and cannot substitute for excitation: on a gentle lap
+the median utilisation on our vehicle measures \num{0.044}. We consequently
+apply the prior as a floor and locate the actual fix in the rollout excitation
+rather than in the initialisation. To our knowledge the reachable-friction
+bound of Section~\ref{subsec:excitation} and its consequence for the
+virtual-data step have not previously been stated.
 
-\subsection{Learning-based and model predictive control for racing}
-
-The downstream consumer of the identified model in this work is a nonlinear
-MPC built on \texttt{acados}~\cite{acados2022}, using HPIPM partial
-condensing~\cite{hpipm2020} and, in earlier configurations,
-qpOASES~\cite{qpoases2014}. The path-tracking formulation follows standard
-practice in racing MPC \cite{liniger2015,kabzan2019lbmpc}; the reference
-raceline is generated by minimum-curvature optimisation in the manner of
-Heilmeier \emph{et al.}~\cite{heilmeier2020}. Our contribution on this side
-is not a new controller but the observation, made concrete in
-Section~\ref{subsec:gates}, that an identified tire set can be numerically
-inadmissible for the controller in ways the identifier itself has no way to
-see---stiff linearisation, oversteering axle pairs, and grip ceilings below
-the trajectory's demand---and that these are best enforced as an explicit
-contract at the interface.
-
-\subsection{Simulation-based validation and CARLA}
+\subsection{Simulation architectures for identification and validation}
 
 CARLA~\cite{carla2017} is the standard open simulator for autonomous-driving
-research and provides the sensor and scenario infrastructure used here.
-Its native vehicle dynamics come from the underlying PhysX wheeled-vehicle
-model, which is a rigid-body model with per-wheel tire friction rather than
-an empirical Magic Formula fit to measured data; this is the reason our study
-treats the simulator as a well-instrumented \emph{plant} to be identified,
-not as a source of ground-truth Pacejka coefficients. Recent work has
-addressed exactly this fidelity gap: R-CARLA~\cite{rcarla2025} makes the
-dynamics model interchangeable while retaining CARLA's sensor simulation and
-reports substantial sim-to-real gap reductions, and Sagmeister
-\emph{et al.}~\cite{simfidelity2026} quantify how far a vehicle model can be
-simplified before conclusions about a trajectory-following controller stop
-transferring---finding, relevantly for us, that the sensitivity is largest
-near the acceleration limits. CARLA has also been used as the validation
-environment for complete Formula Student Driverless stacks with ROS~2
-interfaces \cite{carlaros2025}, and for digital-twin racing pipelines. The
-platform described in Section~\ref{subsec:platform} sits in this line: it is
-a ROS~2 bridge around a Formula Student vehicle model in CARLA, distinguished
-by exposing the simulator's own per-wheel slip, load and force telemetry so
-that an identification method can be scored against the forces the plant
-actually produced.
+research and supplies the sensor and scenario infrastructure used here. Its
+native dynamics come from the underlying PhysX wheeled-vehicle model---a
+rigid-body model with per-wheel tire friction rather than an empirical Magic
+Formula fit to measured data---which is why this study treats the simulator as
+a well-instrumented \emph{plant} to be identified and not as a source of
+ground-truth Pacejka coefficients. Recent work addresses that fidelity gap
+directly: R-CARLA~\cite{rcarla2025} makes the dynamics model interchangeable
+while retaining CARLA's sensor simulation, and Sagmeister \emph{et
+al.}~\cite{simfidelity2026} quantify how far a vehicle model can be simplified
+before conclusions about a trajectory-following controller stop
+transferring---finding, relevantly here, that sensitivity is largest near the
+acceleration limits. CARLA has also hosted complete Formula Student Driverless
+stacks with ROS~2 interfaces \cite{carlaros2025}. The architecture of
+Section~\ref{sec:platform} sits in this line and is distinguished by exposing
+the simulator's own per-wheel slip, load and force telemetry on a
+simulation-time-stamped interface, so that an identification method can be
+scored against the forces the plant actually produced rather than against a
+secondary model. Scaled platforms---F1TENTH~\cite{f1tenth2020} and the ForzaETH
+Race Stack~\cite{forzaeth2024}---provide the software context of the baseline;
+full-scale Formula Student Driverless systems~\cite{amz2020} the vehicle class
+targeted here.
 
-Scaled autonomous racing platforms---F1TENTH~\cite{f1tenth2020} and the
-ForzaETH Race Stack~\cite{forzaeth2024}---provide the software context of the
-baseline. Full-scale Formula Student Driverless systems~\cite{amz2020}
-provide the vehicle class targeted here.
+\subsection{Downstream consumer and gap addressed}
 
-\subsection{Gap addressed}
+The identified model is consumed by a nonlinear MPC path-tracking controller
+built on \texttt{acados}~\cite{acados2022} with partial-condensing
+HPIPM~\cite{hpipm2020}, following standard practice in racing MPC
+\cite{liniger2015,kabzan2019lbmpc}, tracking a minimum-curvature raceline
+generated in the manner of Heilmeier \emph{et al.}~\cite{heilmeier2020}. We
+claim no contribution to the controller itself; the controller appears in this
+paper only as the consumer that defines what an admissible identification is
+(Section~\ref{sec:integration}).
 
-Summarising: the baseline~\cite{ontrack2024} establishes that a residual
-network plus virtual steady-state data can recover a Pacejka model from a
-lap, at 1:10 scale. Concurrent work~\cite{visionsysid2026} improves its
-residual architecture and its initialisation. Neither addresses the
-condition under which the virtual data itself carries information about the
-tire's peak, which is the binding constraint at full scale. Neither treats
-the admissibility of the identified model for the controller that will
-consume it as an explicit, physically derived contract. This paper addresses
-both, and does so on a platform where the answer can be checked against the
-plant's own forces.
+Summarising the gap: the baseline~\cite{ontrack2024} establishes that a
+residual network plus virtual steady-state data recovers a Pacejka model from a
+lap at 1:10 scale, and concurrent work~\cite{visionsysid2026} improves its
+residual architecture and its initialisation. Neither addresses the condition
+under which the virtual data itself carries information about the tire's peak,
+which is the binding constraint at full scale, and neither treats the
+admissibility of the identified model for its downstream controller as an
+explicit, physically derived contract. This paper addresses both, on a platform
+where the answer can be checked against the plant's own forces.

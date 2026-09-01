@@ -26,6 +26,7 @@ try:
     from helpers.pacejka_formula import pacejka_formula
     from helpers.benchmarking_metrics import OnlineBenchmark
     from helpers.friction_warmstart import estimate_mu_from_buffer, estimate_mu_from_imu
+    from helpers.mu_estimator import estimate_mu
 except ImportError:
     import sys
     # Add the src directory to path for development
@@ -36,6 +37,7 @@ except ImportError:
     from helpers.pacejka_formula import pacejka_formula
     from helpers.benchmarking_metrics import OnlineBenchmark
     from helpers.friction_warmstart import estimate_mu_from_buffer, estimate_mu_from_imu
+    from helpers.mu_estimator import estimate_mu
 
 
 class OnTrackSysId(Node):
@@ -47,26 +49,12 @@ class OnTrackSysId(Node):
         self.declare_parameter('plot_model', False)
         self.declare_parameter('odom_topic', '/odom')
         self.declare_parameter('ackermann_cmd_topic', '/drive')
-        # Measured road-wheel angle. The /drive command is a SETPOINT: on the
-        # CARLA asurt_fsai the achieved angle is 0.76 +/- 0.03 of the
-        # commanded one (measured 2026-08-22 against
-        # /sim/feedback/steering_angles' wheel_FL/FR joints over 13-21 m/s),
-        # which biases alpha_f high by ~25 % and the identified front
-        # cornering stiffness low by the same factor: fitting the same run
-        # with the command gave C_front = 13725 N/rad against CARLA's own
-        # 17198 N/rad, and with the measured angle 18486 N/rad.
-        # Empty string = disabled, use the command (previous behaviour).
         self.declare_parameter('steering_feedback_topic', '')
         self.declare_parameter('steering_feedback_units', 'rad')   # rad | deg
         self.declare_parameter('steering_feedback_scale', 1.0)
         self.declare_parameter('steering_feedback_timeout_s', 1.0)
         self.declare_parameter('benchmarking_log_interval', 100)
         self.declare_parameter('reidentification_interval_s', 30.0)
-        # If enabled, every accepted identification cycle is also forwarded
-        # (best-effort, fire-and-forget) to tire_force_benchmark via the same
-        # IdentifiedParam service contract adaptive_controller_manager uses
-        # for its own benchmark_update_params_enable/service - see
-        # forward_to_benchmark(). Off by default.
         self.declare_parameter('benchmark_update_params_enable', False)
         self.declare_parameter('benchmark_update_params_service', 'benchmark/update_params')
         # Get parameters
@@ -104,17 +92,6 @@ class OnTrackSysId(Node):
         self.log_torch_device()
         self.setup_data_storage()
 
-        # Sensor-stream QoS. The /odom publisher (simulator / CarMaker bridge)
-        # offers BEST_EFFORT, while a subscription created with a plain depth
-        # requests RELIABLE. That request is incompatible with a best-effort
-        # offer, so DDS refuses the match, silently delivers nothing and only
-        # logs:
-        #   "New publisher discovered on topic '/odom', offering incompatible
-        #    QoS. No messages will be received from it.
-        #    Last incompatible policy: RELIABILITY"
-        # Requesting BEST_EFFORT is compatible with BOTH best-effort and
-        # reliable publishers, so it is the safe request for high-rate sensor
-        # data. depth stays 1: this node always wants the freshest sample.
         qos_sensor = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -174,6 +151,11 @@ class OnTrackSysId(Node):
         self.first_run_pub = self.create_publisher(Bool, 'sysid/first_run', qos_latched)
         self.first_run_pub.publish(Bool(data=True))
 
+        # Identified peak friction [Df, Dr, mu_axle, warm_start_mu], latched so
+        # a consumer starting after an identification still sees it.
+        self.friction_pub = self.create_publisher(
+            Float64MultiArray, 'sysid/friction', qos_latched)
+
         # Submits identified tire params to adaptive_controller_manager;
         # replaces the old one-shot latched /sysid/training_complete String.
         self.update_params_cli = self.create_client(IdentifiedParam, 'sysid/update_params')
@@ -198,7 +180,16 @@ class OnTrackSysId(Node):
 
         # Cold-start friction warm-start (see maybe_compute_warm_start_mu()) -
         # applies only once, to the node's first-ever identification cycle.
+        # Re-running it every cycle re-anchors the Pacejka D initial guess AND
+        # the frozen regularisation prior every reidentification_interval_s,
+        # which moves the tire model under the running controller.
         self._is_first_identification = True
+        # Last mu_hat actually computed. Held so the latched sysid/friction
+        # keeps reporting it on a cycle that did not compute one, rather than
+        # reverting slot 3 to NaN.
+        self._last_warm_start_mu = float('nan')
+        # Full mu_estimator.py result of the last cycle, for publish_friction().
+        self._last_mu_estimate = None
         warm_start_cfg = (self.model_params or {}).get('friction_warm_start', {})
         if warm_start_cfg.get('enable', False) and warm_start_cfg.get('accel_source', 'finite_diff') == 'imu':
             imu_topic = warm_start_cfg.get('imu_topic', '/imu')
@@ -216,13 +207,6 @@ class OnTrackSysId(Node):
         timer_period = 1.0 / self.rate
         self.loop_timer = self.create_timer(timer_period, self.loop_callback)
         
-        # State tracking. Phases: 'COLLECTING' (initial fill of the rolling
-        # data buffer) -> 'TRAINING' (run identification, submit params) ->
-        # 'AWAITING_ACK' (non-blocking wait for adaptive_controller_manager's
-        # response) -> 'RUNNING' (estimation + periodic re-identification
-        # every reidentification_interval_s). collect_data() keeps refreshing
-        # the rolling buffer in every phase past 'COLLECTING' so each
-        # periodic retrain uses fresh on-track data, not the original window.
         self.phase = 'COLLECTING'
         self.pending_update_future = None
         self.next_reid_time = None
@@ -405,13 +389,21 @@ class OnTrackSysId(Node):
     def maybe_compute_warm_start_mu(self):
         """
         Non-vision friction warm-start (see helpers/friction_warmstart.py):
-        estimates a cold-start D_f/D_r initial guess from the buffer this
-        node already collects, replacing the static pacejka_params.yaml
-        default for the FIRST identification cycle only. Must be called
-        (and read self.data) BEFORE run_nn_train() - train_model.py's
-        filter_data() mutates its training_data argument's columns in place,
-        and self.data is passed by reference, so reading after training
-        would silently see Butterworth-filtered data instead of raw odom.
+        estimates a D_f/D_r initial guess from the buffer this node already
+        collects, flooring the static pacejka_params.yaml default for the
+        FIRST identification cycle only. Every subsequent
+        reidentification_interval_s retrain cold-starts from pacejka_model's
+        static D exactly as before this feature was added: the warm start is
+        both the solver's initial guess and, via nn_train's C_P*_prior freeze,
+        its regularisation target, so re-running it every cycle rewrites the
+        tire model - and through it the MPC's reference speed profile - under
+        the running controller.
+
+        Must be called (and read self.data) BEFORE run_nn_train() -
+        train_model.py's filter_data() mutates its training_data argument's
+        columns in place, and self.data is passed by reference, so reading
+        after training would silently see Butterworth-filtered data instead
+        of raw odom.
         """
         if not self._is_first_identification or self.model_params is None:
             return None
@@ -421,6 +413,15 @@ class OnTrackSysId(Node):
 
         l_f, l_r = self.model_params['l_f'], self.model_params['l_r']
         accel_source = cfg.get('accel_source', 'finite_diff')
+
+        # Opt-in only: see the brush block in pacejka_params.yaml for why
+        # brush_axle is not the default.
+        if cfg.get('method', 'friction_ratio') == 'brush_axle':
+            mu = self.estimate_mu_brush(cfg, accel_source)
+            if mu is not None:
+                return mu
+            self.get_logger().info(
+                "Falling back to the friction_ratio utilisation bound for this cycle.")
 
         if accel_source == 'imu':
             if self._imu_msg_count == 0:
@@ -448,6 +449,76 @@ class OnTrackSysId(Node):
         self.get_logger().info(
             f"Friction warm-start ({accel_source}): mu_hat={mu_hat:.4f} from {n_used} low-slip samples.")
         return mu_hat
+
+    def estimate_mu_brush(self, cfg, accel_source):
+        """Peak-friction identification via helpers/mu_estimator.py.
+
+        Returns {'f','r','floor'} for train_model.apply_friction_warm_start,
+        or None when neither axle produced a trustworthy fit - in which case
+        the caller falls back to the friction_ratio utilisation bound.
+        """
+        brush_cfg = dict(cfg.get('brush', {}) or {})
+        brush_cfg.setdefault('vx_min', cfg.get('vx_min', 2.5))
+        brush_cfg.setdefault('utilisation_quantile', cfg.get('quantile', 0.99))
+
+        accels = self._imu_accel_buffer.copy() if (
+            accel_source == 'imu' and self._imu_msg_count > 0) else None
+        out = estimate_mu(self.data.copy(), self.model_params, brush_cfg,
+                          1.0 / self.rate, accels=accels)
+        self._last_mu_estimate = out
+
+        for side, key in (('front', 'f'), ('rear', 'r')):
+            fit = out[side]
+            if out[f'ok_{key}']:
+                self.get_logger().info(
+                    f"mu identified ({side}): mu={fit['mu']:.4f} +/- {fit['sigma_mu']:.4f}, "
+                    f"C_alpha={fit['C_alpha']:.0f} N/rad, peak grip utilisation "
+                    f"{fit['utilisation']:.2f}, {fit['n']} samples, rmse {fit['rmse']:.4f}")
+            else:
+                self.get_logger().warn(f"mu NOT identified ({side}): {fit['reason']}")
+
+        if np.isfinite(out['imu_vs_kinematic_ay_rms']):
+            # A large gap here is an IMU bias, a mounting offset from the CG,
+            # or road bank - all of which bias the axle forces and so mu.
+            self.get_logger().info(
+                f"IMU a_y vs odometry kinematics: {out['imu_vs_kinematic_ay_rms']:.3f} m/s^2 RMS.")
+
+        if not (out['ok_f'] or out['ok_r']):
+            return None
+        return {'f': out['mu_f'] if out['ok_f'] else None,
+                'r': out['mu_r'] if out['ok_r'] else None,
+                'floor': out['mu_utilisation']}
+
+    def publish_friction(self, warm_start_mu=None):
+        """
+        Publishes the identified peak friction as
+        [Df, Dr, mu_axle, warm_start_mu, mu_brush_f, mu_brush_r, mu_utilisation].
+
+        Df/Dr are the Pacejka D coefficients (per-axle peak friction) and
+        mu_axle is the load-weighted vehicle-level peak. warm_start_mu is the
+        pre-training estimate, held at its last computed value. The final
+        three come straight from helpers/mu_estimator.py: the two per-axle
+        brush fits (NaN when that axle was not identifiable this cycle) and
+        the quantile(|a|/g) utilisation bound, which is always finite and is
+        always a LOWER bound on the available grip.
+        """
+        D_f = float(self.C_Pf_model[2])
+        D_r = float(self.C_Pr_model[2])
+        mu_axle = (D_f * self.F_zf + D_r * self.F_zr) / (self.m * 9.81)
+
+        if warm_start_mu is not None:
+            self._last_warm_start_mu = float(
+                warm_start_mu['floor'] if isinstance(warm_start_mu, dict) else warm_start_mu)
+
+        est = self._last_mu_estimate or {}
+        msg = Float64MultiArray()
+        msg.data = [D_f, D_r, mu_axle, self._last_warm_start_mu,
+                    float(est.get('mu_f', float('nan'))) if est.get('ok_f') else float('nan'),
+                    float(est.get('mu_r', float('nan'))) if est.get('ok_r') else float('nan'),
+                    float(est.get('mu_utilisation', float('nan')))]
+        self.friction_pub.publish(msg)
+        self.get_logger().info(
+            f"Identified friction: Df={D_f:.4f} Dr={D_r:.4f} mu_axle={mu_axle:.4f}")
 
     def run_nn_train(self, warm_start_mu=None):
         """
@@ -601,6 +672,7 @@ class OnTrackSysId(Node):
             self.get_logger().warn(
                 "nn_train returned no coefficients - submitting the static prior instead.")
 
+        self.publish_friction(warm_start_mu)
 
         self.last_time = self.current_time
         # Re-arm the rolling-window progress counter/log for the next

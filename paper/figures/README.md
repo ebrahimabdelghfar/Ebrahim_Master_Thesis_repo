@@ -332,6 +332,42 @@ over the raceline. The `adaptive_controller_benchmark` package already exports
 
 ---
 
+## Fig. 14 — `baseline_vs_ours.pdf` — Baseline pipeline vs. this work  *(pending)*
+
+**Type:** 3 panels, full text width. **Needs no recorded run and no trained
+network** — it is analytic plus an offline round-trip through the repository's
+own solver, with the residual network held at zero so the rollout
+configuration is the only variable. Held back until the identification runs
+behind Figs. 7–10 are collected, so that a measured operating point can be
+marked on panel (a).
+
+Generator: `paper/figures/make_baseline_comparison.py` (`python3
+paper/figures/make_baseline_comparison.py`, writes `baseline_vs_ours.pdf`
+next to itself and prints the round-trip table). It imports
+`On-Track-SysID/src/helpers/solve_pacejka.py` directly, so the fit in the
+figure is the fit the pipeline runs.
+
+- (a) `μ_reach = v²·δ_sweep/(g·L)` vs rollout speed, full scale (`L = 1.5334`)
+  and 1:10 (`L = 0.32`), with the baseline's [2, 4] m/s clip band, the
+  corrected `≥ 7` m/s band, and the plant's measured `μ ≈ 1.0`.
+- (b) Known tire in, fitted tire out: identified `D_f`, `D_r` vs rollout
+  speed over [2, 20] m/s, with the `PACEJKA_BOUNDS` D rails at 0.4 and 2.0 and
+  the true `D` marked. **Run both arms** — baseline configuration (single
+  start, no Tikhonov term, the shipped prior with `D` below its own lower
+  bound) and the corrected configuration (8 starts, `prior_weight = 0.05`,
+  measured prior) — so the panel separates the excitation effect from the
+  solver and prior corrections. The script currently plots the corrected arm
+  only; add the baseline arm before publishing.
+- (c) `(α_f, F_y,f)` of the synthetic sweep at 4 m/s and at 12 m/s over the
+  true Magic Formula curve, with the peak-force slip angle marked.
+
+Pairs with Table VII (`tab:baseline`, Section VI-D), which is the qualitative
+axis-by-axis comparison; this figure is its quantitative half. Fig. 6
+(`mu_reach.pdf`) is a subset of panel (a) — if both are produced, drop Fig. 6
+or reduce it to the single `δ_sweep` used in the runs.
+
+---
+
 ## Tables
 
 | Table | Content | Source |
@@ -342,8 +378,9 @@ over the raceline. The `adaptive_controller_benchmark` package already exports
 | IV | Closed-loop consequence | offline MPC harness |
 | V | Hypotheses and verdicts | this study |
 | VI | Defects, causes, corrections | this study |
-| **VII (to add)** | Coefficients: baseline / corrected / reference, per axle, with derived `C_f`, `C_r`, `a_y^max`, `v_crit` | `SIM_pacejka.txt` across runs |
-| **VIII (to add)** | Validation metrics: RMSE and R² for `v_y`, `ω` at 1/5/10-step horizons; per-axle force RMSE vs `tire_forces` | `estimation_benchmark`, `tire_force_benchmark` |
+| VII | Baseline pipeline vs. this work, axis by axis | this study; pairs with Fig. 14 |
+| **VIII (to add)** | Coefficients: baseline / corrected / reference, per axle, with derived `C_f`, `C_r`, `a_y^max`, `v_crit` | `SIM_pacejka.txt` across runs |
+| **IX (to add)** | Validation metrics: RMSE and R² for `v_y`, `ω` at 1/5/10-step horizons; per-axle force RMSE vs `tire_forces` | `estimation_benchmark`, `tire_force_benchmark` |
 
 **Optional robustness column for Table VIII:** replicate the baseline's noise
 sweep by enabling `odometry.noise` in the bridge config and scaling the

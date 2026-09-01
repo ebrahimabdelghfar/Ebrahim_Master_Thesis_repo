@@ -1,384 +1,66 @@
-% === III. METHOD =============================================================
-\section{Method}
+% === V. IDENTIFICATION METHODOLOGY ===========================================
+\section{Identification Methodology}
 \label{sec:method}
 
-Figure~\ref{fig:pipeline} shows the complete pipeline. Subsections
-\ref{subsec:model}--\ref{subsec:baseline} restate the baseline
-\cite{ontrack2024} to fix notation; \ref{subsec:platform}--\ref{subsec:bridge}
-describe the experimental platform; and
-\ref{subsec:excitation}--\ref{subsec:gates} describe this paper's changes.
-Section~\ref{subsec:assumptions} lists the assumptions made where an
-implementation detail could not be measured.
+This section describes the identification pipeline as it stands after
+correction. Section~\ref{subsec:residual} covers the residual model,
+\ref{subsec:excitation}--\ref{subsec:iterative} the two changes to the
+virtual-data step that constitute the paper's central methodological
+contribution, \ref{subsec:fit} the fit itself, \ref{subsec:measurement} the
+measurement chain, and \ref{subsec:validation} the validation protocol.
+Figure~\ref{fig:pipeline} summarises the loop.
 
 \begin{figure}[t]
 \centering
 \placeholderbox{Loop diagram of the four identification stages, with this
-paper's four changes highlighted.}{4.6cm}
+paper's changes highlighted.}{4.6cm}
 \caption{The identification pipeline. Recorded lap data trains the residual
-network; the corrected model is rolled out through a synthetic steering
-sweep; Pacejka coefficients are fitted to that sweep; the fit becomes the next
-nominal model. Highlighted: the excitation-aware rollout speed
+network; the corrected model is rolled out through a synthetic steering sweep;
+Pacejka coefficients are fitted to that sweep; the fit becomes the next nominal
+model. Highlighted: the excitation-aware rollout speed
 (Section~\ref{subsec:excitation}), the extrapolation-bounded sweep and frozen
 regularisation target (Section~\ref{subsec:iterative}), and the admissibility
-gate on the output (Section~\ref{subsec:gates}).}
+gate on the output (Section~\ref{sec:integration}).}
 \label{fig:pipeline}
 \end{figure}
-
-\subsection{Vehicle model}
-\label{subsec:model}
-
-We use the dynamic single-track (bicycle) model of the baseline, with rigid
-body mass $m$, yaw inertia $I_{z}$, and centre-of-gravity distances $l_{f}$,
-$l_{r}$ to the front and rear axles, $L=l_{f}+l_{r}$. Longitudinal and
-lateral dynamics are decoupled and load transfer is neglected:
-\begin{align}
-\dot v_{y} &= \tfrac{1}{m}\big(\Fyr+\Fyf\cos\delta - m v_{x}\omega\big),\label{eq:vydot}\\
-\dot\omega &= \tfrac{1}{I_{z}}\big(\Fyf l_{f}\cos\delta - \Fyr l_{r}\big).\label{eq:omdot}
-\end{align}
-Slip angles follow from the kinematic relations
-\begin{equation}
-\alpha_{f}=\delta-\arctan\!\Big(\tfrac{v_{y}+l_{f}\omega}{v_{x}}\Big),\quad
-\alpha_{r}=-\arctan\!\Big(\tfrac{v_{y}-l_{r}\omega}{v_{x}}\Big),
-\label{eq:slip}
-\end{equation}
-and the axle forces from the Magic Formula~\eqref{eq:mf} with per-axle
-coefficients $\phip=[B_{f},C_{f},D_{f},E_{f},B_{r},C_{r},D_{r},E_{r}]$. The
-identification state and input are $\vecx=[v_{y},\omega]$ and
-$\vecu=[v_{x},\delta]$.
-
-The baseline discretises \eqref{eq:vydot}--\eqref{eq:omdot} by explicit Euler
-at $T_{s}$. We retain Euler as the default but expose second- and
-fourth-order Runge--Kutta as configuration options
-(\texttt{ode\_solver}), because the full-scale vehicle's lateral mode is
-stiffer relative to $T_{s}$ than the scaled platform's; the same concern
-appears in a sharper form in the downstream MPC
-(Section~\ref{subsec:gates}). The nominal one-step map is written
-$\hat\vecx_{k+1}=f(\vecx_{k},\vecu_{k},\phip)$.
-
-Two derived quantities are used throughout and are worth naming explicitly.
-The linearised axle cornering stiffness is the slope of \eqref{eq:mf} at zero
-slip,
-\begin{equation}
-C_{i}=F_{z,i}B_{i}C_{i}^{\mathrm{MF}}D_{i},\qquad i\in\{f,r\},
-\label{eq:stiffness}
-\end{equation}
-(writing $C^{\mathrm{MF}}$ for the Magic Formula shape factor to avoid a
-clash), and the grip ceiling implied by an identified set is
-\begin{equation}
-a_{y}^{\max}=\frac{D_{f}F_{z,f}+D_{r}F_{z,r}}{m}.
-\label{eq:gripceiling}
-\end{equation}
-The linear single-track model built from \eqref{eq:stiffness} is
-oversteering when $l_{f}C_{f}>l_{r}C_{r}$ and is then open-loop unstable
-above the critical speed
-$v_{\mathrm{crit}}=L\sqrt{C_{f}C_{r}/\big(m(l_{f}C_{f}-l_{r}C_{r})\big)}$
-\cite{rajamani2012}.
-
-\subsection{Baseline identification pipeline}
-\label{subsec:baseline}
-
-The baseline proceeds in four stages, repeated for $N_{\mathrm{it}}$
-iterations \cite{ontrack2024}:
-
-\begin{enumerate}
-\item \textbf{Residual learning.} A small MLP $f_{NN}$ is trained on the
-recorded lap to predict the one-step error
-$e_{k}=\vecx_{k+1}-\hat\vecx_{k+1}$ from $[v_{x},v_{y},\omega,\delta]_{k}$.
-The corrected model is $\vecx_{k+1}=\hat\vecx_{k+1}+e_{k}$.
-\item \textbf{Virtual steady-state generation.} The corrected model is
-integrated open-loop at a constant longitudinal speed while the steering angle
-is ramped linearly from $0$ to $\delta_{\mathrm{sweep}}$, producing a
-synthetic quasi-steady dataset.
-\item \textbf{Pacejka fit.} Assuming $\dot v_{y}=\dot\omega=0$ on the
-synthetic data, axle forces are recovered from the yaw balance,
-\begin{equation}
-\Fyr=\frac{m l_{f}v_{x}\omega}{L},\qquad
-\Fyf=\frac{m l_{r} v_{x}\omega}{L\cos\delta},
-\label{eq:ssforces}
-\end{equation}
-slip angles from \eqref{eq:slip}, and $\phip$ is fitted to
-$(\alpha_{i},F_{y,i})$ by bounded least squares.
-\item \textbf{Re-nomination.} The fitted $\phip$ becomes the nominal model of
-the next iteration and the residual network is reinitialised.
-\end{enumerate}
-
-The crucial structural point, and the one that motivates
-Section~\ref{subsec:excitation}, is that stage 3 \emph{never sees the recorded
-lap}. It sees the output of stage 2. The recorded lap enters only through the
-residual network.
-
-\subsection{Experimental platform: Formula AI vehicle in CARLA}
-\label{subsec:platform}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.86\columnwidth]{fig2.png}
-\caption{The Formula AI vehicle model,
-\texttt{vehicle.\allowbreak vehicle.\allowbreak asurt\_fsai}, on the start/finish straight of the
-\texttt{silverstone} map in CARLA. This open-wheel Formula Student--class
-vehicle is the plant identified throughout this paper; its lateral forces are
-produced by the engine's PhysX wheeled-vehicle solver rather than by an
-analytic tire model, which is why the reference curve of
-Table~\ref{tab:ref} is fitted to the simulator's own per-wheel telemetry.
-Measured geometry and mass are given in Table~\ref{tab:vehicle}
-($l_{f}=\SI{0.738}{\meter}$, $l_{r}=\SI{0.795}{\meter}$,
-$L=\SI{1.533}{\meter}$, wheel radius \SI{0.25}{\meter},
-$\pm\SI{16}{\degree}$ road-wheel limit, \SI{269.6}{\kilo\gram}). The IMU and
-GNSS sensors are mounted at the vehicle origin (zero offset in the bridge
-configuration).}
-\label{fig:vehicle}
-\end{figure}
-
-The plant is a Formula Student--class driverless vehicle model,
-\texttt{vehicle.\allowbreak vehicle.\allowbreak asurt\_fsai}, instantiated in
-CARLA~\cite{carla2017} (server build 0.9.16, Unreal Engine 4.26) on the
-\texttt{silverstone} map. It is a four-wheeled, front-steered, all-wheel-drive
-rigid-body vehicle simulated by the engine's PhysX wheeled-vehicle solver;
-lateral force generation is produced by the solver's per-wheel tire model
-under a configured friction coefficient, not by an analytic Magic Formula.
-This distinction matters for interpreting the results: the simulator has no
-``true'' Pacejka coefficients to recover, so the reference tire curve used in
-Section~\ref{sec:results} is itself a Magic Formula fit to the simulator's own
-per-wheel force/slip/load telemetry, obtained under a dedicated
-limit-excitation manoeuvre. The vehicle is shown in
-Fig.~\ref{fig:vehicle}.
-
-\begin{table}[t]
-\caption{Vehicle configuration and measured plant properties. Configured
-values are set in the bridge's \texttt{carla\_interface\_\allowbreak config.yaml};
-measured values are obtained from the simulator's per-wheel telemetry.}
-\label{tab:vehicle}
-\centering
-\footnotesize
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}llll@{}}
-\toprule
-Quantity  & Value & Unit\\
-\midrule
-Mass $m$                       & 240.0 & \si{\kilo\gram}\\
-Static wheel load (total)      & 2644.5 & \si{\newton}\\
-Front/rear static split        & 51.2 / 48.8 & \si{\percent}\\
-Wheelbase $L$                  & 1.5334 & \si{\meter}\\
-$l_{f}$ / $l_{r}$              & 0.7381 / 0.7953 & \si{\meter}\\
-Yaw inertia $I_{z}$            & 51.1 & \si{\kilo\gram\meter\squared}\\
-Wheel radius                   & 0.25 & \si{\meter}\\
-Max road-wheel angle           & 16.0 & \si{\degree}\\
-PhysX \textbf{tire\_friction}  & 1.5 & ---\\
-Realised peak axle $\mu$       & \textbf{1.00--1.05} & ---\\
-Peak transient $a_{y}$         & 1.50 & \si{\g}\\
-Steady-state $a_{y}$ ceiling   & $\approx$1.0 & \si{\g}\\
-Axle cornering stiffness       & $\approx 12.1\,F_{z}$ & \si{\newton\per\radian}\\
-\quad front / rear             & 17198 / 16516 & \si{\newton\per\radian}\\
-Drag coefficient               & 0.426 & ---\\
-\bottomrule
-\end{tabular}
-
-\vspace{2pt}
-{\raggedright\footnotesize\textsuperscript{a}Assumed; see
-Section~\ref{subsec:assumptions}.\par}
-\end{table}
-
-Table~\ref{tab:vehicle} contrasts configured against measured properties, and
-three rows in it are load-bearing for the rest of the paper. First,
-the mass the physics engine actually simulates (\SI{269.6}{\kilo\gram},
-measured as total static normal load at rest) is \SI{12}{\percent} above the
-configured \SI{240}{\kilo\gram}; since \eqref{eq:ssforces} is linear in $m$,
-using the configured value biases every ``measured'' force by the same
-\SI{12}{\percent}. Second, the PhysX wheel material friction coefficient
-(\num{1.5}) is \emph{not} the realised peak axle friction
-(\numrange{1.00}{1.05}); an identification that converges toward \num{1.5}
-because the configuration file says so is converging on the wrong target.
-Third, the achieved road-wheel angle is \num{0.76} of the commanded angle, so
-slip angles built from the command are systematically too large.
-
-\begin{figure*}[t]
-\centering
-\resizebox{\textwidth}{!}{\input{figures/bridge_architecture}}
-\caption{Architecture of the \bridge{} ROS~2 interface. The bridge links
-against CARLA's C\texttt{++} client, drives the ego vehicle through CARLA's
-native Ackermann controller, and republishes state, sensors and per-wheel
-wheel telemetry on ROS~2 topics stamped from the simulation clock. The
-\texttt{feedback/\allowbreak tire\_forces} path (highlighted) carries the
-simulator's own per-wheel slip angle, normal load and lateral force, and is
-the ground truth against which the identifier is scored.}
-\label{fig:bridge}
-\end{figure*}
-
-\subsection{\bridge{}: ROS~2 interface and telemetry}
-\label{subsec:bridge}
-
-\bridge{} is a C++ ROS~2 lifecycle node (\texttt{carla\_telemetry\_cpp})
-linked directly against CARLA's C++ client library. It spawns and configures
-the ego vehicle, drives its control inputs, and republishes the simulator's
-state as standard ROS~2 topics. All identification traffic in this paper
-crosses this interface. Figure~\ref{fig:bridge} should render the resulting
-architecture.
-
-\subsubsection{Command path}
-The bridge is configured in \texttt{ackermann\_drive} mode: it subscribes to a
-single \texttt{ack\-er\-mann\_msgs/AckermannDriveStamped} on \texttt{/drive}
-and forwards speed and steering angle to CARLA's native Ackermann controller,
-whose server-side cascaded speed/acceleration PID loops are configured once at
-startup. No client-side steering PID is present---the commanded road-wheel
-angle is passed through in radians---which is why the achieved/\allowbreak commanded ratio
-of Table~\ref{tab:vehicle} is a property of the vehicle and its steering
-curve rather than of a tuning choice in the bridge. A speed cap
-(\texttt{max\_velocity\_kmh}) is applied in both control modes.
-
-\subsubsection{Feedback path used for identification}
-Table~\ref{tab:topics} lists the interface actually consumed by the
-identifier and its validation. Three properties of this interface are
-specific to this platform and are what make the study possible.
-
-\begin{table}[t]
-\caption{ROS~2 interface used by the identification and validation pipeline.
-Namespace is \texttt{/sim} unless marked absolute.}
-\label{tab:topics}
-\centering
-\scriptsize
-\setlength{\tabcolsep}{3pt}
-\begin{tabular}{@{}p{2.4cm}p{2.75cm}p{2.5cm}@{}}
-\toprule
-Topic & Type & Role\\
-\midrule
-\texttt{/odom} & \texttt{nav\_msgs/Odometry} & State $v_{x},v_{y},\omega$; twist is body-frame\\
-\texttt{feedback/\allowbreak steering\_angle} & \texttt{std\_msgs/Float32} (deg) & Achieved road-wheel angle $\delta$\\
-\texttt{feedback/imu} & \texttt{sensor\_msgs/Imu} & $a_{x},a_{y}$ for the friction warm-start\\
-\texttt{feedback/\allowbreak tire\_forces} & \texttt{sim\_manager\_\allowbreak msgs/\allowbreak TireForces} & Per-wheel $\alpha$, $F_{z}$, $F_{y}$: \textbf{ground truth}\\
-\texttt{feedback/speed} & \texttt{std\_msgs/Float32} & Forward speed echo\\
-\texttt{feedback/motors} & \texttt{std\_msgs/String} (JSON) & Per-wheel speed/torque/brake\\
-\texttt{/drive} & \texttt{ackermann\_msgs/\allowbreak Ackermann\allowbreak Drive\allowbreak Stamped} & Control command in\\
-\texttt{control/\allowbreak tire\_friction} & \texttt{std\_msgs/Float32} & Runtime grip override\\
-\texttt{/clock} \emph{(abs.)} & \texttt{rosgraph\_msgs/\allowbreak Clock} & Simulation time base\\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\paragraph{Per-wheel ground truth}
-\texttt{feedback/\allowbreak tire\_forces} is a direct passthrough of CARLA's own
-\texttt{Wheel\-TelemetryData}: per-wheel lateral slip angle, normal load,
-lateral force, longitudinal force and wheel torque, in wheel order
-[FL, FR, RL, RR]. There is no analytic tire model inside the bridge, so
-nothing on this topic can disagree with the physics the vehicle is being
-driven by. The lateral force is sign-flipped and the slip angle converted
-from degrees into the ROS right-handed body frame ($+y$ left); the
-longitudinal force is \emph{not} a contact-patch force---CARLA computes it as
-$-\tau/r_{w}$, i.e.\ drivetrain torque at the axle---and is therefore not
-used in this work. This topic is what allows an on-track identifier to be
-scored against the forces the plant actually generated.
-
-\paragraph{Simulation-time stamping}
-Every feedback message is stamped from the same simulation-time epoch as
-\texttt{/clock}, not from wall-clock time. In synchronous mode CARLA ticks as
-fast as the server manages (observed near $1.9\times$ real time on our
-hardware), so wall-clock stamping would drift the identification dataset
-against itself without bound.
-
-\paragraph{Odometry and QoS}
-Odometry is computed from the actor transform and velocity, published at
-\SI{50}{\hertz} with \texttt{follow\_server\_rate} enabled, with an optional
-additive Gaussian noise model (disabled for the runs reported here). The
-publisher offers \texttt{BEST\_EFFORT}; every subscriber in the
-identification stack requests \texttt{BEST\_EFFORT} accordingly. We record
-this because a reliability mismatch on this interface is silent---DDS
-requires requested $\le$ offered, so a \texttt{RELIABLE} request against a
-\texttt{BEST\_EFFORT} publisher produces one warning and then no data at all.
-
-\paragraph{Verification of frame conventions}
-Because \eqref{eq:slip} is meaningless if $v_{y}$ is expressed in the wrong
-frame, the body-frame assumption on \texttt{/odom}'s twist was verified
-directly rather than assumed: correlation between \texttt{twist.linear.y} and
-the body-frame lateral velocity reconstructed from pose and world velocity is
-\num{0.93} with \SI{0.09}{\meter\per\second} RMS error, against
-\SI{16.7}{\meter\per\second} RMS under a world-frame interpretation.
-
-\subsubsection{Modifications for identification}
-The following changes were made to the vehicle, sensing or control stack
-specifically to support this study, and are listed so that the setup is
-reproducible:
-\begin{itemize}
-\item \emph{Steering feedback exposed to the identifier.}
-\texttt{feedback/\allowbreak steering\_angle} existed but had no
-subscribers; the
-identifier now consumes it (with configurable units, scale and staleness
-timeout) and falls back to the \texttt{/drive} setpoint when it is silent.
-\item \emph{Runtime grip and drag overrides.}
-\texttt{control/\allowbreak tire\_friction} and \texttt{control/\allowbreak drag\_coefficient} write
-straight to the live \texttt{VehiclePhysicsControl}, allowing the surface
-friction to be changed within a run without respawning---the intended
-mechanism for future surface-change experiments
-(Section~\ref{sec:conclusion}).
-\item \emph{Drivetrain and tire tuning for low-speed stability.} The torque
-curve, zero-throttle damping rates and wheel \texttt{tire\_friction} were
-tuned against a low-speed hold test; a wheel friction coefficient above
-$\approx$2.0 on a steered wheel scrubs hard enough at creep speed to stall
-the drivetrain intermittently. These values define the plant being
-identified and must be reported with any tire result.
-\item \emph{Telemetry on a dedicated thread} at \SI{10}{\hertz}, off the
-control loop and the ROS executor, because each telemetry tick costs several
-blocking CARLA RPCs.
-\end{itemize}
-
-\subsection{Data collection and preprocessing}
-\label{subsec:data}
-
-The vehicle is driven around the raceline by a model-free pure-pursuit
-controller, which requires no tire knowledge---only the wheelbase---and is
-therefore a valid bootstrap, exactly as in the baseline
-\cite{ontrack2024,forzaeth2024}. Odometry, the achieved steering angle and
-the drive command are sampled into a ring buffer at \SI{50}{\hertz}
-($T_{s}=\SI{0.02}{\second}$) for \SI{30}{\second}, gated on
-$v_{x}>\SI{1}{\meter\per\second}$. Preprocessing follows the baseline: a
-zero-phase low-pass filter, then symmetry augmentation by mirroring
-$(v_{y},\omega,\delta)\rightarrow(-v_{y},-\omega,-\delta)$ with $v_{x}$
-unchanged, which both doubles the data and removes the cornering bias of a
-circuit. Re-identification is retriggered every
-\texttt{reidentification\_\allowbreak interval\_s} (\SI{30}{\second} by default).
 
 \subsection{Residual model}
 \label{subsec:residual}
 
-The default residual architecture is the baseline MLP: 4 inputs, one hidden
-layer of 8 units, 2 outputs, LeakyReLU, 58 parameters, Adam at
-$5\times10^{-4}$, full-batch, MSE. Because the full-scale vehicle's residual
-has different structure from the scaled platform's, the architecture is now
-selectable (\texttt{nn\_architecture}): \texttt{baseline}, \texttt{wide},
-\texttt{physics\_inputs} (slip angles appended to the input vector),
-\texttt{ensemble}, and \texttt{s4}---an S4D diagonal state-space temporal
-residual \cite{gu2022s4d,gu2022s4} evaluated by causal recurrent scan over a
-sliding window of 20 samples (\SI{0.4}{\second}, matched to tire-relaxation
-timescales). As noted in Section~\ref{sec:related}, the S4-family residual
-overlaps with concurrent work~\cite{visionsysid2026} and is not claimed as a
-contribution.
-
-An optional physics-informed loss~\cite{raissi2019pinn,deepdynamics2024} is
-available as an ablation switch (\texttt{loss\_mode}), adding to the data
-term a dynamics-consistency residual evaluated on the corrected one-step
-prediction, a left/right symmetry term, and an input-gradient smoothness
-term, with configurable weights. The default configuration for the results
-reported here is \texttt{loss\_mode: mse}, i.e.\ the baseline objective; the
-physics-informed variant is reported as an ablation
-(Section~\ref{subsec:ablation}).
+The default residual is the baseline multilayer perceptron: 4 inputs, one
+hidden layer of 8 units, 2 outputs, LeakyReLU, 58 parameters, full-batch Adam
+at $5\times10^{-4}$ on an MSE objective. Because the full-scale residual has
+different structure from the scaled platform's, the architecture is selectable:
+\texttt{baseline}, \texttt{wide}, \texttt{physics\_inputs} (slip angles
+appended to the input vector), \texttt{ensemble}, and \texttt{s4}---an S4D
+diagonal state-space temporal residual \cite{gu2022s4d,gu2022s4} evaluated by
+causal recurrent scan over a sliding window of 20 samples
+(\SI{0.4}{\second}, matched to tire-relaxation timescales). As stated in
+Section~\ref{sec:related}, the S4-family residual overlaps with concurrent
+work~\cite{visionsysid2026} and is not claimed as a contribution. An optional
+physics-informed loss~\cite{raissi2019pinn,deepdynamics2024}---dynamics
+consistency, left/right symmetry and input-gradient smoothness---is available
+as an ablation switch; the results below use the baseline MSE objective.
 
 \subsection{Excitation-aware virtual rollout}
 \label{subsec:excitation}
 
-This is the central correction. Consider stage 2 of
+This is the central correction. Consider stage~2 of
 Section~\ref{subsec:baseline}: a constant-speed rollout at $v$ with the
 steering ramped to $\delta_{\mathrm{sweep}}$. In quasi-steady cornering the
-lateral acceleration a single-track vehicle can develop kinematically is
+lateral acceleration a single-track vehicle develops kinematically is
 $a_{y}=v^{2}\kappa$ with $\kappa\approx\delta/L$, so the largest friction
 coefficient the rollout can \emph{demand} of the tire is
 \begin{equation}
 \boxed{\;\mu_{\mathrm{reach}}\;\approx\;\frac{v^{2}\,\delta_{\mathrm{sweep}}}{g\,L}\;}
 \label{eq:mureach}
 \end{equation}
-Equation~\eqref{eq:mureach} contains no tire parameter. It is a property of
-the rollout configuration alone. If $\mu_{\mathrm{reach}}<D$, the synthetic
-data never leaves the linear ramp of \eqref{eq:mf}, only the product $BCD$ is
-identifiable \cite{ljung1999sysid}, and the bounded optimiser resolves the
-remaining freedom by sliding onto a box edge---which is precisely the
-signature we observed.
+Equation~\eqref{eq:mureach} contains no tire parameter: it is a property of the
+rollout configuration alone. If $\mu_{\mathrm{reach}}<D$, the synthetic data
+never leaves the linear ramp of \eqref{eq:mf}, only the product $BCD$ is
+identifiable (Section~\ref{subsec:identifiability}), and the bounded optimiser
+resolves the residual freedom on a box edge---precisely the signature reported
+in Section~\ref{subsec:failure}.
 
 The baseline implementation selects the rollout speed as
 $v=\mathrm{clip}(\overline{v_{x}},\,2,\,4)\,\si{\meter\per\second}$, a value
@@ -386,80 +68,75 @@ representative of a 1:10 platform. On our vehicle, with
 $\delta_{\mathrm{sweep}}=\SI{0.4}{\radian}$ and $L=\SI{1.5334}{\meter}$,
 \eqref{eq:mureach} gives $\mu_{\mathrm{reach}}=0.43$ at
 \SI{4}{\meter\per\second}: the rollout cannot ask the tire for more than
-\SI{0.43}{\g} no matter what the tire is. At 1:10 scale, with
+\SI{0.43}{\g} whatever the tire is. At 1:10 scale, with
 $L\approx\SI{0.32}{\meter}$, the same rollout speed yields
 $\mu_{\mathrm{reach}}\approx2.0$ and the pathology is invisible.
 
 \subsubsection{Correction}
 \label{subsec:rollout}
 The rollout speed is now taken from the speed the vehicle was actually driven
-at, clamped by configuration bounds
-(\texttt{pacejka\_rollout.\allowbreak speed\_min}$=\SI{7}{\meter\per\second}$,
-\texttt{speed\_max}$=$\texttt{null}), and the pipeline emits a warning
-whenever \eqref{eq:mureach} evaluates below the prior's $D$---turning a
-silent degeneracy into a startup diagnostic. The bound in
-\eqref{eq:mureach} is also the right tool for choosing a data-collection
-speed: identification data should be gathered at
+at, clamped by configuration bounds (lower bound
+\SI{7}{\meter\per\second}, no upper bound), and the pipeline warns whenever
+\eqref{eq:mureach} evaluates below the prior's $D$---turning a silent
+degeneracy into a startup diagnostic. The same bound is the right tool for
+choosing a data-collection speed: identification data should be gathered at
 $v\ge\sqrt{gLD/\delta_{\mathrm{sweep}}}$.
 
 \subsection{Bounded extrapolation and frozen-prior regularisation}
 \label{subsec:iterative}
 
-Raising the rollout speed exposes a second, opposite failure. The residual
-network is queried by the rollout at steering angles the network has never
-seen: on a pure-pursuit lap the observed $|\delta|$ stays below
+Raising the rollout speed exposes a second, opposite failure. The rollout
+queries the residual network at steering angles it has never seen: on a
+pure-pursuit lap the observed $|\delta|$ stays below
 $\approx\SI{0.06}{\radian}$ while the sweep ran to \SI{0.4}{\radian}. The fit
 then reads the network's extrapolation as additional grip, and because each
 iteration's answer became both the next iteration's nominal model \emph{and}
-its regularisation target, the error compounded: $D$ walked from the
-\num{1.009}/\num{1.002} prior to \num{1.5402}/\num{1.8721} over six
-iterations, i.e.\ a claimed \SI{1.7}{\g} on a vehicle measuring
-\SI{1.0}{\g} in steady state.
+its regularisation target, the error compounds: $D$ walked from the
+\num{1.009}/\num{1.002} prior to \num{1.5402}/\num{1.8721} over six iterations,
+a claimed \SI{1.7}{\g} on a vehicle measuring \SI{1.0}{\g} in steady state.
 
-Two changes close this loop:
+Two changes close the loop:
 \begin{enumerate}
 \item \textbf{Extrapolation bound.} The sweep terminates at
 $\delta_{\mathrm{sweep}}=\mathrm{clip}\big(\lambda_{e}\cdot
 P_{99}(|\delta_{\mathrm{obs}}|),\,\delta_{\min},\,\delta_{\max}\big)$ with
 $\lambda_{e}=1.5$, $\delta_{\min}=\SI{0.05}{\radian}$,
-$\delta_{\max}=\SI{0.34}{\radian}$. The network is never queried more than
+$\delta_{\max}=\SI{0.34}{\radian}$, so the network is never queried more than
 \SI{50}{\percent} beyond the steering range it was trained on.
-\item \textbf{Frozen prior.} The Tikhonov target of the fit is frozen at the
-configured prior $\phip^{0}$ for all iterations, while the optimiser's
-\emph{start point} continues to track the previous iteration. The objective
-per axle is
+\item \textbf{Frozen prior.} The Tikhonov target is frozen at the configured
+prior $\phip^{0}$ for all iterations, while the optimiser's \emph{start point}
+continues to track the previous iteration. The per-axle objective is
 \begin{equation}
 \min_{\phi}\;\sum_{k}\rho\!\big(r_{k}(\phi)\big)\;+\;\sum_{j}w_{j}\big(\phi_{j}-\phi^{0}_{j}\big)^{2},
 \label{eq:fitobj}
 \end{equation}
-with $r_{k}$ the force residual, $\rho$ a soft-$\ell_{1}$ robust loss, and
+with $r_{k}$ the force residual, $\rho$ a soft-$\ell_{1}$ robust loss and
 $w_{j}$ scaled to the data residual budget by a single dimensionless weight
-$\lambda=0.05$. The purpose of the regulariser is specifically to hold the
-coefficients the manoeuvre does not excite---$E$ above all---at their nominal
-value instead of on a box edge.
+$\lambda=0.05$. The regulariser exists specifically to hold the coefficients
+the manoeuvre does not excite---$E$ above all---at their nominal value instead
+of on a box edge.
 \end{enumerate}
 
 \subsection{Pacejka fit}
 \label{subsec:fit}
 
-Fitting uses the steady-state force recovery of \eqref{eq:ssforces} on the
-synthetic data, with box constraints
+Fitting applies the steady-state force recovery of \eqref{eq:ssforces} to the
+synthetic data under box constraints
 $\phip\in([4.0,1.2,0.4,-3.0],[20.0,2.2,2.0,1.0])$ per axle. Relative to the
 baseline we (i) raised the number of jittered multi-starts from 1 to 8, (ii)
 added a derivative-free simplex (Nelder--Mead) and a global
-differential-evolution solver as selectable alternatives to trust-region
-reflective, and (iii) corrected the configured prior, which previously
-initialised $D$ \emph{below} its own lower bound and thus started every
-optimisation on the rail it then failed to leave. The prior now carries the
-measured tire of Table~\ref{tab:ref}, fitted directly to the simulator's
-per-wheel telemetry.
+differential-evolution solver as alternatives to trust-region reflective, and
+(iii) corrected the configured prior, which previously initialised $D$
+\emph{below} its own lower bound and thus started every optimisation on the
+rail it then failed to leave. The prior now carries the measured tire of
+Table~\ref{tab:ref}.
 
-We stress that none of (i)--(iii) fixes the degeneracy on its own. They were
-verified as secondary: with the rollout speed left at
-\SI{4}{\meter\per\second}, a synthetic $D=1.5$ tire fits back as
-$D_{f}=0.753$, $D_{r}=0.737$ with three coefficients railed, regardless of
-solver or start; at \SIrange{8}{20}{\meter\per\second} the same tire fits
-back as $D=\numrange{1.40}{1.61}$ with nothing railed.
+None of (i)--(iii) fixes the degeneracy on its own, and they were verified as
+secondary: with the rollout speed left at \SI{4}{\meter\per\second}, a
+synthetic $D=1.5$ tire fits back as $D_{f}=0.753$, $D_{r}=0.737$ with three
+coefficients railed regardless of solver or start point; at
+\SIrange{8}{20}{\meter\per\second} the same tire fits back as
+$D=\numrange{1.40}{1.61}$ with nothing railed.
 
 \subsection{Measurement-side corrections}
 \label{subsec:measurement}
@@ -468,105 +145,59 @@ Three corrections apply to the measurement chain rather than to the estimator.
 
 \subsubsection{Achieved versus commanded steering}
 $\alpha_{f}$ in \eqref{eq:slip} was built from the \texttt{/drive} setpoint.
-The measured achieved/commanded ratio on this vehicle is \num{0.76}, so
-$\alpha_{f}$ was systematically $\approx\SI{25}{\percent}$ too large and the
-fitted front stiffness $\approx\SI{20}{\percent}$ too small
+The measured achieved/commanded ratio is \num{0.76}, so $\alpha_{f}$ was
+systematically $\approx\SI{25}{\percent}$ too large and the fitted front
+stiffness $\approx\SI{20}{\percent}$ too small
 (\SI{13725}{\newton\per\radian} against the simulator's
 \SI{17198}{\newton\per\radian} on the same run). Using
-\texttt{feedback/\allowbreak steering\_angle} recovers \SI{18486}{\newton\per\radian}.
+\texttt{feedback/\allowbreak steering\_angle} recovers
+\SI{18486}{\newton\per\radian}.
 
 \subsubsection{Mass and geometry}
 $m$ and $l_{wb}$ are taken from the measured static wheel loads
 (Table~\ref{tab:vehicle}) rather than from the configuration file, and
 $l_{wb}\equiv l_{f}+l_{r}$ is enforced by a regression test, because
-\eqref{eq:ssforces} uses the wheelbase for the normal loads and the axle
-split for the force division; the two disagreeing is a silent bias.
+\eqref{eq:ssforces} uses the wheelbase for the normal loads and the axle split
+for the force division; the two disagreeing is a silent bias.
 
 \subsubsection{Friction warm-start as a floor}
 An initial estimate of $D$ is derived from measured accelerations, in the
 spirit of model-free friction estimation \cite{slipfriction2025}. The
 baseline-adjacent implementation computed the \emph{median} of
-$\sqrt{a_{x}^{2}+a_{y}^{2}}/g$ over an explicitly \emph{low-slip} mask. This
-is structurally wrong: it measures utilised friction over samples selected
-for being far from the limit, and utilisation is a lower bound on capability.
-On a \SI{13}{\meter\per\second} pure-pursuit lap the median measures
-\num{0.044} while the peak measures \num{0.46}. The estimator is now a
-99th-percentile over the whole buffer and is applied as a \emph{floor} on the
-prior's $D$, never as a replacement, and only on the first identification of
-a node lifetime. We report this as a corrected implementation detail, not as
-a criticism of the underlying friction-estimation literature, whose methods
-target \emph{available} friction and assume near-limit excitation.
+$\sqrt{a_{x}^{2}+a_{y}^{2}}/g$ over an explicitly \emph{low-slip} mask, which
+is structurally wrong: it measures utilised friction over samples selected for
+being far from the limit, and utilisation lower-bounds capability. On a
+\SI{13}{\meter\per\second} pure-pursuit lap the median measures \num{0.044}
+against a peak of \num{0.46}. The estimator is now a 99th percentile over the
+whole buffer, applied as a \emph{floor} on the prior's $D$, never as a
+replacement, and only on the first identification of a node lifetime. This is a
+corrected implementation detail rather than a criticism of the
+friction-estimation literature, whose methods target \emph{available} friction
+and assume near-limit excitation.
 
-\subsection{Deployment: admissibility gates}
-\label{subsec:gates}
-
-The identified $\phip$ is pushed to a nonlinear MPC path-tracking controller
-(\texttt{acados}~\cite{acados2022}, $N=100$, $dt=\SI{0.02}{\second}$ raised to
-the \SI{50}{\hertz} control period, partial-condensing
-HPIPM~\cite{hpipm2020}) over a ROS~2 service. We found that a coefficient set
-can be simultaneously inside every box constraint and unusable, in three
-distinct ways, and that each needs a gate on a \emph{derived} quantity:
-
-\begin{enumerate}
-\item \textbf{Grip ceiling versus trajectory demand.} The controller computes
-$\max_{k}(v_{x,k}^{2}|\kappa_{k}|)$ over the speed-clamped reference and
-rejects any identification whose $a_{y}^{\max}$ from \eqref{eq:gripceiling}
-falls below it. The degenerate fit reported a \SI{0.40}{\g} ceiling against a
-\SI{1.22}{\g} demand and produced \SI{41.89}{\meter} of cross-track error at
-\SI{27}{\meter\per\second} in closed-loop simulation, against
-\SI{0.03}{\meter} for a physically plausible set.
-\item \textbf{Understeer sign and critical speed.} A set with
-$l_{f}C_{f}>l_{r}C_{r}$ whose $v_{\mathrm{crit}}$ falls inside the
-controller's speed range makes the model open-loop unstable; the resulting
-$\rho(A_{d})>1$ is raised to $\rho^{N}$ in the condensed QP and the solve
-fails. An observed set gave $C_{f}=\SI{37031}{\newton\per\radian}$ against
-$C_{r}=\SI{11691}{\newton\per\radian}$, i.e.\
-$v_{\mathrm{crit}}=\SI{17.4}{\meter\per\second}$.
-\item \textbf{Integration stiffness.} Even a stable set can be stiff relative
-to the control period. A single explicit RK4 step at
-$dt=\SI{0.05}{\second}$ gave $\rho(A_{d})=547$ at \SI{5}{\meter\per\second}
-for one identified set. The model now sub-steps adaptively, sizing the
-sub-step from the model's own fastest lateral mode
-$|\lambda|\approx(C_{f}+C_{r})/(mv_{x})+(l_{f}^{2}C_{f}+l_{r}^{2}C_{r})/(I_{z}v_{x})$
-so that $|\lambda|h\le1.5$, which restores $\rho\approx1.000$ across the
-speed range at a measured cost of \SIrange{2.3}{6.8}{\milli\second} per
-100-stage horizon.
-\end{enumerate}
-
-Two further controller-side changes were required before the identified model
-could be evaluated in closed loop at full-scale speeds, and are reported for
-completeness rather than as identification contributions: reference speeds
-are clamped at ingest (the raceline's \SIrange{14.9}{46.0}{\meter\per\second}
-against a plant cap silently corrupted the speed target, the yaw-rate
-reference, the horizon arc-length advance and the adaptive step size at
-once), and the solved state is rolled forward by the measured transport delay
-(odometry age $+$ control period $+$ last solve time) before each solve,
-which took cross-track error at \SI{27}{\meter\per\second} from
-\SI{130.55}{\meter} to \SI{0.38}{\meter}.
-
-\subsection{Validation methodology}
+\subsection{Validation protocol}
 \label{subsec:validation}
 
 Three levels of validation are used, in increasing strength:
 \begin{enumerate}
-\item \textbf{One-step prediction} on a held-out run, as in the baseline:
-RMSE and $R^{2}$ of $v_{y}$ and $\omega$ under
-$\hat\vecx_{k+1}=f(\vecx_{k},\vecu_{k},\phip)$. A dedicated ROS~2 node
-extends this to configurable multi-step horizons (1/5/10 steps) with
-Euler/Heun/RK4 integration and online Welford statistics.
+\item \textbf{One-step prediction} on a held-out run, as in the baseline: RMSE
+and $R^{2}$ of $v_{y}$ and $\omega$ under
+$\hat\vecx_{k+1}=f(\vecx_{k},\vecu_{k},\phip)$. A dedicated ROS~2 node extends
+this to configurable multi-step horizons (1/5/10 steps) with Euler/Heun/RK4
+integration and online Welford statistics.
 \item \textbf{Direct force comparison} against
-\texttt{feedback/\allowbreak tire\_forces}: the identified curve is evaluated at the
-measured $(\alpha,F_{z})$ and compared to the measured $F_{y}$, per axle.
-This is the level unavailable on a physical platform and is the strongest
-evidence in the paper.
+\texttt{feedback/\allowbreak tire\_forces}: the identified curve is evaluated at
+the measured $(\alpha,F_{z})$ and compared per axle against the measured
+$F_{y}$. This level is unavailable on a physical platform without a
+force-measuring hub and is the strongest evidence in the paper.
 \item \textbf{Closed-loop tracking} under the MPC using the identified model:
 lap time, mean and maximum lateral deviation, steering sign reversals per
 control step, and RMS steering rate against the rate limit. This level is
-\emph{not} completed in this paper; see Section~\ref{subsec:negative}.
+\emph{not} completed here; see Section~\ref{subsec:negative}.
 \end{enumerate}
 
 The steady-state force recovery of \eqref{eq:ssforces} was itself validated
-against the simulator's own axle force on a normal lap: correlation
-\num{0.993}, slope \num{0.94}. This matters because \eqref{eq:ssforces} is
-not a force measurement---it is fully determined by $v_{x}\omega$---and its
-adequacy had to be established rather than assumed.
+against the simulator's axle force on a normal lap (correlation \num{0.993},
+slope \num{0.94}). This matters because \eqref{eq:ssforces} is not a force
+measurement---it is fully determined by $v_{x}\omega$---so its adequacy had to
+be established rather than assumed.

@@ -46,6 +46,9 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_pacejka_identifiability
     test/test_pacejka_identifiability.py
     TIMEOUT 300)
+  ament_add_pytest_test(test_mu_estimator
+    test/test_mu_estimator.py
+    TIMEOUT 300)
 endif()
 
 ament_package()

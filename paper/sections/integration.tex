@@ -1,0 +1,57 @@
+% === VII. INTEGRATION WITH THE CONTROLLER ====================================
+\section{Integration with the Controller}
+\label{sec:integration}
+
+The identified model leaves the pipeline through one interface. A nonlinear MPC
+path-tracking controller (\texttt{acados}~\cite{acados2022}, partial-condensing
+HPIPM~\cite{hpipm2020}, horizon $N=100$ at a \SI{50}{\hertz} control period)
+carries the same single-track model as the identifier and consumes $\phip$
+directly: the eight Pacejka coefficients enter the prediction model's axle
+forces through \eqref{eq:mf}, and nothing else about the controller changes
+when a new identification arrives. Coefficients are pushed over a ROS~2 service
+at the end of each identification cycle, so the controller's model tracks the
+plant at the re-identification rate. We claim no contribution to the controller
+design; it appears here as the consumer that defines what an admissible
+identification is.
+
+\subsection{Admissibility gates}
+\label{subsec:gates}
+
+A coefficient set can lie strictly inside every box constraint and still be
+unusable. We observed three distinct ways, each requiring a gate on a
+\emph{derived} quantity rather than on a coefficient:
+
+\begin{enumerate}
+\item \textbf{Grip ceiling versus trajectory demand.} The controller computes
+$\max_{k}(v_{x,k}^{2}|\kappa_{k}|)$ over the speed-clamped reference and
+rejects any identification whose $a_{y}^{\max}$ from \eqref{eq:gripceiling}
+falls below it. The degenerate fit reported a \SI{0.40}{\g} ceiling against a
+\SI{1.22}{\g} demand and produced \SI{41.89}{\meter} of cross-track error at
+\SI{27}{\meter\per\second}, against \SI{0.03}{\meter} for a physically
+plausible set (Table~\ref{tab:closedloop}).
+\item \textbf{Understeer sign and critical speed.} A set with
+$l_{f}C_{f}>l_{r}C_{r}$ whose $v_{\mathrm{crit}}$ falls inside the controller's
+speed range makes the prediction model open-loop unstable, and the resulting
+$\rho(A_{d})>1$ is raised to $\rho^{N}$ in the condensed QP. An observed set
+gave $C_{f}=\SI{37031}{\newton\per\radian}$ against
+$C_{r}=\SI{11691}{\newton\per\radian}$, i.e.\
+$v_{\mathrm{crit}}=\SI{17.4}{\meter\per\second}$.
+\item \textbf{Integration stiffness.} Even a stable set can be stiff relative
+to the control period: a single explicit RK4 step at $dt=\SI{0.05}{\second}$
+gave $\rho(A_{d})=547$ at \SI{5}{\meter\per\second} for one identified set. The
+model sub-steps adaptively, sizing the sub-step from the model's own fastest
+lateral mode
+$|\lambda|\approx(C_{f}+C_{r})/(mv_{x})+(l_{f}^{2}C_{f}+l_{r}^{2}C_{r})/(I_{z}v_{x})$
+so that $|\lambda|h\le1.5$, restoring $\rho\approx1.000$ across the speed range
+at \SIrange{2.3}{6.8}{\milli\second} per 100-stage horizon.
+\end{enumerate}
+
+The gates are the contract between identification and control: an
+identification that passes is a model the controller can be held responsible
+for, and one that fails is reported as unidentified rather than silently
+deployed. Two further controller-side changes were required before any
+identified model could be evaluated at full-scale speeds and are recorded for
+completeness rather than as identification results: reference speeds are
+clamped at ingest, and the solved state is rolled forward by the measured
+transport delay before each solve, which took cross-track error at
+\SI{27}{\meter\per\second} from \SI{130.55}{\meter} to \SI{0.38}{\meter}.

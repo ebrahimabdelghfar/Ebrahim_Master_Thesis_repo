@@ -110,3 +110,32 @@ friction_warm_start:
   vx_min: 2.5                  # m/s — margin above collect_data()'s own vx>1 gate
   omega_max: 5.0                # rad/s — mirrors analyse_tires()'s abs(omega)<=5 filter
   min_samples: 20                # below this, skip override, fall back to static D default
+
+  # Reserved for method: brush_axle (helpers/mu_estimator.py), which fits the
+  # Fiala brush model to IMU-reconstructed axle forces to identify the PEAK
+  # friction instead of the utilised one. NOT enabled: on 2026-09-01 it
+  # returned mu 1.71/1.58 against the 1.00-1.05 measured on this vehicle and,
+  # because the warm start is a floor, that bias can only push D up. Re-enable
+  # only after the mass in models/SIM/SIM_pacejka.txt (240.0 against a
+  # measured 269.6 kg) and I_z are corrected - the axle forces are linear in
+  # both - and after the identified mu is checked against the measurement.
+  brush:
+    min_samples: 200             # gated samples needed per axle before fitting
+    alpha_min: 0.005             # rad — below this a sample carries no tyre information
+    alpha_linear_max: 0.02       # rad — subset used for the C_alpha initial guess only
+    ax_max_g: 0.35               # drop samples above this |a_x|: the brush fit is pure-lateral
+                                 # and combined slip shrinks the lateral capacity. Matches the
+                                 # |a_x| < 0.3 g limit Ray/Rajamani report for the same class
+                                 # of estimator.
+    utilisation_min: 0.40        # peak |F_y|/(mu*F_z) needed before the answer is trusted.
+                                 # 0.40 is where d(mu)/d(force ratio) stops blowing up, and is
+                                 # the same 40 % floor Acosta & Kanarachos report for
+                                 # lateral-dynamics friction estimation.
+    sigma_rel_max: 0.15          # reject when the fit's own sigma_mu/mu exceeds this
+    C_bounds: [2000.0, 300000.0] # N/rad, per axle
+    mu_bounds: [0.2, 2.0]        # mirrors PACEJKA_BOUNDS' D range
+    f_scale: 0.05                # soft_l1 robust loss scale, in units of F_y/F_z
+    savgol_window: 21            # samples — yaw-rate derivative and kinematic-accel fallback
+    savgol_poly: 2
+    use_load_transfer: true      # apply m*a_x*h_cg/l_wb to the axle vertical loads
+    utilisation_quantile: 0.99   # quantile for the |a|/g lower bound reported alongside

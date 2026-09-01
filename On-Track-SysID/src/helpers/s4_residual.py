@@ -4,12 +4,12 @@ S4D (diagonal Structured State Space) temporal-residual model.
 This is the S4D variant (Gu, Goel & Re, "On the Parameterization and
 Initialization of Diagonal State Space Models", arXiv:2206.11893) -- NOT the
 original FFT/Cauchy-kernel S4 (Gu et al., arXiv:2111.00396). Both share the
-same HiPPO-derived complex-diagonal state-transition matrix, but S4D is
-evaluated with a plain causal recurrent scan instead of an FFT convolution,
-which is the right complexity/risk tradeoff for this pipeline's short
-(~1500-sample) training sequences, vs. S4's machinery which targets
-sequences of thousands-to-millions of steps. Don't relabel this as "the" S4
-paper's exact algorithm.
+same HiPPO-derived complex-diagonal state-transition matrix, but S4D needs
+neither S4's Cauchy kernel nor its FFT convolution: a diagonal A makes the
+impulse response K_l = Re(C . exp(A*dt*l) . Bbar) a closed-form Vandermonde
+product, and at this pipeline's window length (W = 20) the cheapest way to
+apply it is a dense causal Toeplitz matmul, not an FFT. Don't relabel this
+as "the" S4 paper's exact algorithm.
 
 Two call contracts:
   - forward(x): x (batch, W, d_in) -> (batch, 2), state always init to zero
@@ -62,19 +62,25 @@ class S4DBlock(nn.Module):
         log_dt_init = torch.rand(H) * (math.log(dt_max) - math.log(dt_min)) + math.log(dt_min)
         self.log_dt = nn.Parameter(log_dt_init)
 
-    def _discretize(self):
+    def _dt_A(self):
+        """(A, A*dt) as real/imag pairs, each (H, N). Shared by the recurrent
+        step and the convolution kernel."""
         A_re = -torch.exp(self.log_A_real)  # (H, N), always < 0 -> stable
         A_im = self.A_imag  # (H, N)
 
         dt = torch.exp(self.log_dt).clamp(self.dt_min, self.dt_max)  # (H,)
         dt = dt.unsqueeze(-1)  # (H, 1), broadcasts against (H, N)
+        return A_re, A_im, A_re * dt, A_im * dt
+
+    def _discretize(self):
+        A_re, A_im, dtA_re, dtA_im = self._dt_A()
 
         # Zero-order hold: Abar = exp(A*dt). |Abar| = exp(Re(A)*dt) < 1 for
         # any dt > 0 since Re(A) < 0 by construction - unconditionally
         # stable, no extra clipping needed.
-        decay = torch.exp(A_re * dt)
-        Abar_re = decay * torch.cos(A_im * dt)
-        Abar_im = decay * torch.sin(A_im * dt)
+        decay = torch.exp(dtA_re)
+        Abar_re = decay * torch.cos(dtA_im)
+        Abar_im = decay * torch.sin(dtA_im)
 
         # Bbar = (Abar - 1) / A  (B fixed = 1, standard minimal-S4D
         # simplification - halves param count for negligible expressiveness
@@ -86,6 +92,26 @@ class S4DBlock(nn.Module):
         Bbar_im = (p_im * q_re - p_re * q_im) / denom
 
         return Abar_re, Abar_im, Bbar_re, Bbar_im
+
+    def _kernel(self, L):
+        """Causal impulse response K[h, l] = Re(C_h * Abar_h^l * Bbar_h), (H, L).
+
+        Same LTI system _recur_step iterates: from zero initial state,
+        y_t = sum_{l<=t} K[:, l] * u_{t-l} + D * u_t. Abar^l = exp(A*dt*l) has
+        a closed form, so the whole length-L response is one Vandermonde
+        product rather than an L-step Python scan.
+        """
+        _, _, Bbar_re, Bbar_im = self._discretize()
+        _, _, dtA_re, dtA_im = self._dt_A()
+
+        CB_re = self.C_re * Bbar_re - self.C_im * Bbar_im
+        CB_im = self.C_re * Bbar_im + self.C_im * Bbar_re
+
+        l = torch.arange(L, device=dtA_re.device, dtype=dtA_re.dtype)
+        mag = torch.exp(dtA_re.unsqueeze(-1) * l)  # (H, N, L)
+        ang = dtA_im.unsqueeze(-1) * l
+        K = CB_re.unsqueeze(-1) * (mag * torch.cos(ang)) - CB_im.unsqueeze(-1) * (mag * torch.sin(ang))
+        return K.sum(1)  # (H, L)
 
     def init_state(self, batch_size, device=None, dtype=None):
         shape = (batch_size, self.H, self.N)
@@ -109,19 +135,31 @@ class S4DBlock(nn.Module):
         y_t, new_re, new_im = self._recur_step(u_t, state_re, state_im, coeffs)
         return y_t, (new_re, new_im)
 
-    def forward_sequence(self, u, state_re=None, state_im=None):
-        """u: (batch, W, H) -> y_seq: (batch, W, H), final (state_re, state_im)."""
-        batch = u.shape[0]
-        if state_re is None:
-            state_re, state_im = self.init_state(batch, device=u.device, dtype=u.dtype)
+    def _causal_toeplitz(self, W, device, dtype):
+        """(H, W, W) lower-triangular Toeplitz of the impulse response, so that
+        y = T @ u is the causal convolution from a zero initial state."""
+        K = self._kernel(W)  # (H, W)
+        idx = torch.arange(W, device=device)
+        lag = idx.unsqueeze(1) - idx.unsqueeze(0)  # (W, W), t - s
+        return K[:, lag.clamp(min=0)] * (lag >= 0).to(dtype)
 
-        coeffs = self._discretize()
-        outputs = []
-        for t in range(u.shape[1]):
-            y_t, state_re, state_im = self._recur_step(u[:, t, :], state_re, state_im, coeffs)
-            outputs.append(y_t)
-        y_seq = torch.stack(outputs, dim=1)  # (batch, W, H)
-        return y_seq, (state_re, state_im)
+    def forward_sequence(self, u):
+        """u: (batch, W, H) -> y_seq: (batch, W, H), zero initial state."""
+        T = self._causal_toeplitz(u.shape[1], u.device, u.dtype)
+        y = torch.matmul(T, u.permute(0, 2, 1).unsqueeze(-1)).squeeze(-1)  # (batch, H, W)
+        return y.permute(0, 2, 1) + self.D * u
+
+    def forward_last(self, u):
+        """u: (batch, W, H) -> y at the final timestep only: (batch, H).
+
+        The stack's last layer only ever reads y_seq[:, -1, :], so contracting
+        the reversed kernel straight onto the window skips the other W-1
+        outputs entirely.
+        """
+        W = u.shape[1]
+        K_rev = self._kernel(W).flip(-1)  # (H, W), K[h, W-1-s]
+        y_last = torch.einsum('hs,bsh->bh', K_rev, u)
+        return y_last + self.D * u[:, -1, :]
 
 
 class S4DResidual(nn.Module):
@@ -141,10 +179,9 @@ class S4DResidual(nn.Module):
     def forward(self, x):
         """x: (batch, W, d_in) -> (batch, 2), residual at the window's last timestep."""
         h = self.act(self.input_proj(x))  # (batch, W, H)
-        for layer in self.layers:
-            y_seq, _ = layer.forward_sequence(h)
-            h = h + self.act(y_seq)
-        last = h[:, -1, :]  # (batch, H)
+        for layer in self.layers[:-1]:
+            h = h + self.act(layer.forward_sequence(h))
+        last = h[:, -1, :] + self.act(self.layers[-1].forward_last(h))  # (batch, H)
         return self.output_proj(last)
 
     def init_state(self, batch_size, device=None, dtype=None):

@@ -1,0 +1,106 @@
+% === III. PROBLEM FORMULATION ================================================
+\section{Identification Problem}
+\label{sec:problem}
+
+\subsection{Model structure}
+\label{subsec:model}
+
+The identification model is the dynamic single-track model of the baseline,
+with mass $m$, yaw inertia $I_{z}$ and centre-of-gravity distances $l_{f}$,
+$l_{r}$, $L=l_{f}+l_{r}$. Longitudinal and lateral dynamics are decoupled and
+load transfer is neglected:
+\begin{align}
+\dot v_{y} &= \tfrac{1}{m}\big(\Fyr+\Fyf\cos\delta - m v_{x}\omega\big),\label{eq:vydot}\\
+\dot\omega &= \tfrac{1}{I_{z}}\big(\Fyf l_{f}\cos\delta - \Fyr l_{r}\big),\label{eq:omdot}
+\end{align}
+with slip angles
+\begin{equation}
+\alpha_{f}=\delta-\arctan\!\Big(\tfrac{v_{y}+l_{f}\omega}{v_{x}}\Big),\quad
+\alpha_{r}=-\arctan\!\Big(\tfrac{v_{y}-l_{r}\omega}{v_{x}}\Big).
+\label{eq:slip}
+\end{equation}
+Axle forces follow the lateral Magic Formula
+\begin{equation}
+F_{y}=F_{z}\,D\sin\!\big(C\arctan\!\big(B\alpha-E(B\alpha-\arctan B\alpha)\big)\big),
+\label{eq:mf}
+\end{equation}
+with per-axle coefficients
+$\phip=[B_{f},C_{f},D_{f},E_{f},B_{r},C_{r},D_{r},E_{r}]$. The identification
+state and input are $\vecx=[v_{y},\omega]$ and $\vecu=[v_{x},\delta]$, and the
+nominal one-step map is $\hat\vecx_{k+1}=f(\vecx_{k},\vecu_{k},\phip)$. The
+baseline discretises \eqref{eq:vydot}--\eqref{eq:omdot} by explicit Euler at
+$T_{s}$; we retain Euler as the default and expose second- and fourth-order
+Runge--Kutta as options, because the full-scale vehicle's lateral mode is
+stiffer relative to $T_{s}$ than the scaled platform's.
+
+\subsection{Objective and derived quantities}
+
+The identification objective is to recover $\phip$ from a single
+\SI{30}{\second} segment of ordinary lap data, without dedicated manoeuvres,
+such that the resulting model is both predictive and \emph{admissible} for the
+controller that consumes it. Admissibility is expressed on derived quantities
+rather than on coefficients. The linearised axle cornering stiffness is the
+slope of \eqref{eq:mf} at zero slip,
+\begin{equation}
+C_{i}=F_{z,i}B_{i}C_{i}^{\mathrm{MF}}D_{i},\qquad i\in\{f,r\},
+\label{eq:stiffness}
+\end{equation}
+(writing $C^{\mathrm{MF}}$ for the shape factor to avoid a clash), and the grip
+ceiling implied by an identified set is
+\begin{equation}
+a_{y}^{\max}=\frac{D_{f}F_{z,f}+D_{r}F_{z,r}}{m}.
+\label{eq:gripceiling}
+\end{equation}
+The linear model built from \eqref{eq:stiffness} is oversteering when
+$l_{f}C_{f}>l_{r}C_{r}$ and is then open-loop unstable above the critical speed
+$v_{\mathrm{crit}}=L\sqrt{C_{f}C_{r}/\big(m(l_{f}C_{f}-l_{r}C_{r})\big)}$
+\cite{rajamani2012}.
+
+\subsection{Structural identifiability}
+\label{subsec:identifiability}
+
+Two properties of \eqref{eq:mf} are used throughout. First, its slope at zero
+slip is $F_{z}BCD$: the cornering stiffness depends on the coefficients only
+through that product, and $E$ drops out. Second, and decisively, if the data
+does not approach the peak then \eqref{eq:mf} linearises to
+$F_{y}\approx F_{z}(BCD)\alpha$ and $B$, $C$, $D$ become mutually
+unidentifiable. This is the standard persistent-excitation argument
+\cite{ljung1999sysid} and is not claimed as novel. What we claim, and
+demonstrate in Section~\ref{subsec:excitation}, is that the baseline pipeline's
+virtual-data step can silently violate it, and that a bounded optimiser then
+resolves the remaining freedom by sliding onto a box edge---so the violation is
+reported as a converged fit rather than as a failure.
+
+\subsection{Baseline pipeline}
+\label{subsec:baseline}
+
+The baseline proceeds in four stages, repeated for $N_{\mathrm{it}}$
+iterations \cite{ontrack2024}:
+
+\begin{enumerate}
+\item \textbf{Residual learning.} A small network $f_{NN}$ is trained on the
+recorded lap to predict the one-step error
+$e_{k}=\vecx_{k+1}-\hat\vecx_{k+1}$ from $[v_{x},v_{y},\omega,\delta]_{k}$; the
+corrected model is $\vecx_{k+1}=\hat\vecx_{k+1}+e_{k}$.
+\item \textbf{Virtual steady-state generation.} The corrected model is
+integrated open-loop at constant longitudinal speed while the steering angle is
+ramped from $0$ to $\delta_{\mathrm{sweep}}$, producing a synthetic
+quasi-steady dataset.
+\item \textbf{Pacejka fit.} Assuming $\dot v_{y}=\dot\omega=0$ on the synthetic
+data, axle forces are recovered from the yaw balance,
+\begin{equation}
+\Fyr=\frac{m l_{f}v_{x}\omega}{L},\qquad
+\Fyf=\frac{m l_{r} v_{x}\omega}{L\cos\delta},
+\label{eq:ssforces}
+\end{equation}
+slip angles from \eqref{eq:slip}, and $\phip$ is fitted to
+$(\alpha_{i},F_{y,i})$ by bounded least squares.
+\item \textbf{Re-nomination.} The fitted $\phip$ becomes the next iteration's
+nominal model and the residual network is reinitialised.
+\end{enumerate}
+
+The structural point that drives the rest of this paper is that stage~3
+\emph{never sees the recorded lap}. It sees the output of stage~2. The recorded
+lap enters only through the residual network, so the excitation available to
+the fit is set by the rollout configuration and not by how the vehicle was
+driven.

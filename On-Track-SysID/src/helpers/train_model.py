@@ -18,6 +18,7 @@ Signal contract: inputs [vx,vy,omega,delta], outputs [e_vy,e_omega].
 Units: m/s, m/s, rad/s, rad -> m/s, rad/s.
 """
 
+import copy
 import os
 import time
 import numpy as np
@@ -158,11 +159,14 @@ def _last_step(X):
     """(N,W,d) windowed s4 input -> (N,d) at the window's last timestep; (N,d) passes through."""
     return X[:, -1, :] if X.dim() == 3 else X
 
-def compute_physics_informed_loss(nn_model, X_train, y_train, model, dt, lambda_cfg):
-    criterion = nn.MSELoss()
-    outputs = nn_model(X_train)
-    data_loss = criterion(outputs, y_train)
+def precompute_physics_terms(X_train, model, dt):
+    """Hoist the network-independent half of the physics-informed loss.
 
+    The nominal Pacejka rollout and the sign-mirrored input batch depend only
+    on X_train and the nominal model, both of which are fixed for the whole of
+    one train_residual_nn() call - they were being rebuilt identically on every
+    one of its `epochs` iterations.
+    """
     X_state = _last_step(X_train)
     v_x = X_state[:, 0]
     v_y = X_state[:, 1]
@@ -186,23 +190,63 @@ def compute_physics_informed_loss(nn_model, X_train, y_train, model, dt, lambda_
     F_f_nom = torch_pacejka_force(model['C_Pf_model'], alpha_f_nom, F_zf)
     F_r_nom = torch_pacejka_force(model['C_Pr_model'], alpha_r_nom, F_zr)
 
-    v_y_dot_nom = (1.0 / m) * (F_r_nom + F_f_nom * torch.cos(delta) - m * v_x * omega)
-    omega_dot_nom = (1.0 / I_z) * (F_f_nom * l_f * torch.cos(delta) - F_r_nom * l_r)
-    v_y_next_nom = v_y + v_y_dot_nom * dt
-    omega_next_nom = omega + omega_dot_nom * dt
+    cos_delta = torch.cos(delta)
+    v_y_dot_nom = (1.0 / m) * (F_r_nom + F_f_nom * cos_delta - m * v_x * omega)
+    omega_dot_nom = (1.0 / I_z) * (F_f_nom * l_f * cos_delta - F_r_nom * l_r)
 
-    v_y_next = v_y_next_nom + outputs[:, 0]
-    omega_next = omega_next_nom + outputs[:, 1]
+    X_mirror = X_train.clone()
+    X_mirror[..., 1] = -X_mirror[..., 1]
+    X_mirror[..., 2] = -X_mirror[..., 2]
+    X_mirror[..., 3] = -X_mirror[..., 3]
+    if X_mirror.shape[-1] >= 6:
+        X_mirror[..., 4] = -X_mirror[..., 4]
+        X_mirror[..., 5] = -X_mirror[..., 5]
+
+    return {
+        'v_x': v_x, 'v_y': v_y, 'omega': omega, 'delta': delta,
+        'v_x_safe': v_x_safe, 'cos_delta': cos_delta,
+        'F_zf': F_zf, 'F_zr': F_zr,
+        'm': m, 'I_z': I_z, 'l_f': l_f, 'l_r': l_r,
+        'v_y_next_nom': v_y + v_y_dot_nom * dt,
+        'omega_next_nom': omega + omega_dot_nom * dt,
+        'X_mirror': X_mirror,
+    }
+
+
+def compute_physics_informed_loss(nn_model, X_train, y_train, model, dt, lambda_cfg, cache=None):
+    criterion = nn.MSELoss()
+    if cache is None:
+        cache = precompute_physics_terms(X_train, model, dt)
+
+    m, I_z = cache['m'], cache['I_z']
+    l_f, l_r = cache['l_f'], cache['l_r']
+    v_x, v_y, omega = cache['v_x'], cache['v_y'], cache['omega']
+    v_x_safe, cos_delta = cache['v_x_safe'], cache['cos_delta']
+
+    # One batched forward over [X_train ; mirrored X_train] replaces the three
+    # separate passes this used to make. The data, physics and smoothness terms
+    # all read the same outputs (X_in carries requires_grad, so the smoothness
+    # Jacobian comes off this graph instead of a third forward), and the
+    # symmetry term is the second half of the batch.
+    X_in = X_train.detach().requires_grad_(True)
+    n = X_train.shape[0]
+    out_both = nn_model(torch.cat([X_in, cache['X_mirror']], dim=0))
+    outputs, outputs_mirror = out_both[:n], out_both[n:]
+
+    data_loss = criterion(outputs, y_train)
+
+    v_y_next = cache['v_y_next_nom'] + outputs[:, 0]
+    omega_next = cache['omega_next_nom'] + outputs[:, 1]
     v_y_dot = (v_y_next - v_y) / dt
     omega_dot = (omega_next - omega) / dt
 
-    alpha_f_next = -torch.atan((v_y_next + omega_next * l_f) / v_x_safe) + delta
+    alpha_f_next = -torch.atan((v_y_next + omega_next * l_f) / v_x_safe) + cache['delta']
     alpha_r_next = -torch.atan((v_y_next - omega_next * l_r) / v_x_safe)
-    F_f_next = torch_pacejka_force(model['C_Pf_model'], alpha_f_next, F_zf)
-    F_r_next = torch_pacejka_force(model['C_Pr_model'], alpha_r_next, F_zr)
+    F_f_next = torch_pacejka_force(model['C_Pf_model'], alpha_f_next, cache['F_zf'])
+    F_r_next = torch_pacejka_force(model['C_Pr_model'], alpha_r_next, cache['F_zr'])
 
-    lat_dyn_residual = m * v_y_dot + m * v_x * omega_next - (F_r_next + F_f_next * torch.cos(delta))
-    yaw_dyn_residual = I_z * omega_dot - (F_f_next * l_f * torch.cos(delta) - F_r_next * l_r)
+    lat_dyn_residual = m * v_y_dot + m * v_x * omega_next - (F_r_next + F_f_next * cos_delta)
+    yaw_dyn_residual = I_z * omega_dot - (F_f_next * l_f * cos_delta - F_r_next * l_r)
 
     steady_vy_dot_th = float(lambda_cfg.get('steady_vy_dot_threshold', 0.8))
     steady_omega_dot_th = float(lambda_cfg.get('steady_omega_dot_threshold', 6.0))
@@ -213,20 +257,10 @@ def compute_physics_informed_loss(nn_model, X_train, y_train, model, dt, lambda_
     else:
         steady_loss = torch.mean(lat_dyn_residual ** 2) + torch.mean(yaw_dyn_residual ** 2)
 
-    X_mirror = X_train.clone()
-    X_mirror[..., 1] = -X_mirror[..., 1]
-    X_mirror[..., 2] = -X_mirror[..., 2]
-    X_mirror[..., 3] = -X_mirror[..., 3]
-    if X_mirror.shape[-1] >= 6:
-        X_mirror[..., 4] = -X_mirror[..., 4]
-        X_mirror[..., 5] = -X_mirror[..., 5]
-    outputs_mirror = nn_model(X_mirror)
     symmetry_loss = torch.mean((outputs + outputs_mirror) ** 2)
 
-    X_smooth = X_train.detach().clone().requires_grad_(True)
-    outputs_smooth = nn_model(X_smooth)
-    grad_vy = torch.autograd.grad(outputs_smooth[:, 0].sum(), X_smooth, create_graph=True)[0]
-    grad_omega = torch.autograd.grad(outputs_smooth[:, 1].sum(), X_smooth, create_graph=True)[0]
+    grad_vy = torch.autograd.grad(outputs[:, 0].sum(), X_in, create_graph=True)[0]
+    grad_omega = torch.autograd.grad(outputs[:, 1].sum(), X_in, create_graph=True)[0]
     smoothness_loss = torch.mean(grad_vy ** 2) + torch.mean(grad_omega ** 2)
 
     lambda_steady = float(lambda_cfg.get('lambda_steady', 0.1))
@@ -395,7 +429,15 @@ def train_residual_nn(X_train_raw, y_train, params: dict, vehicle_model=None, cu
     else:
         members_to_train = [model]
         seeds = [42]
-    
+
+    # The nominal Pacejka terms and the mirrored batch are identical for every
+    # epoch and every ensemble member, so build them once here. Shuffled
+    # mini-batches differ each epoch, so only the full-batch path can reuse them.
+    physics_cache = None
+    if batch_size <= 0 and loss_mode == 'physics_informed' and vehicle_model is not None:
+        physics_cache = precompute_physics_terms(X_t, vehicle_model, sample_dt)
+
+
     for m_idx, member in enumerate(members_to_train):
         torch.manual_seed(seeds[m_idx])
         np.random.seed(seeds[m_idx])
@@ -409,7 +451,7 @@ def train_residual_nn(X_train_raw, y_train, params: dict, vehicle_model=None, cu
         if batch_size > 0:
             dataset = TensorDataset(X_t, y_t)
             loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-            
+
         desc_str = "Epochs:"
         if current_iteration is not None and total_iterations is not None:
             desc_str = f"Iter: {current_iteration}/{total_iterations}"
@@ -438,7 +480,7 @@ def train_residual_nn(X_train_raw, y_train, params: dict, vehicle_model=None, cu
             else:
                 optimizer.zero_grad()
                 if loss_mode == 'physics_informed' and vehicle_model is not None:
-                    loss, terms = compute_physics_informed_loss(member, X_t, y_t, vehicle_model, sample_dt, physics_loss_cfg)
+                    loss, terms = compute_physics_informed_loss(member, X_t, y_t, vehicle_model, sample_dt, physics_loss_cfg, cache=physics_cache)
                 else:
                     out = member(X_t)
                     loss = criterion(out, y_t)
@@ -481,11 +523,13 @@ def simulated_data_gen(nn_model, vehicle_model, avg_vel, nn_params, delta_max=No
     dt = float(nn_params.get('sample_dt', 0.02))
     ode_solver = nn_params.get('ode_solver', 'euler').lower()
     arch = nn_params.get('nn_architecture', 'baseline')
-    # Same device the model was trained on (train_residual_nn already resolved
-    # nn_params['device'] and moved the model there) - reading it back off the
-    # model itself keeps this in sync without re-running device resolution
-    # (and its cuda-unavailable fallback logic) a second time.
-    device = next(nn_model.parameters()).device
+    # This rollout is `timesteps` strictly-sequential single-sample steps, so on
+    # a GPU it is pure kernel-launch and per-step .item() sync latency: measured
+    # 898 ms on cuda against 267 ms on cpu for the same S4D model. Run it on a
+    # cpu copy whatever device training used - same weights, same arithmetic,
+    # and the caller's model is left where it was.
+    device = torch.device('cpu')
+    nn_model = copy.deepcopy(nn_model).to(device)
 
     timesteps = 500
 
@@ -613,6 +657,7 @@ def get_model_param(racecar_version):
         "pacejka_rollout": pacejka_params.get('pacejka_rollout', {}),
         "m": vehicle_params['m'],
         "I_z": vehicle_params['I_z'],
+        "h_cg": vehicle_params.get('h_cg', 0.0),
         "l_f": vehicle_params['l_f'],
         "l_r": vehicle_params['l_r'],
         "l_wb": vehicle_params['l_wb'],
@@ -719,29 +764,61 @@ def rollout_delta_max(training_data, model):
     return delta_max
 
 
+def apply_friction_warm_start(model, warm_start_mu):
+    """Seed the Pacejka D initial guess from the on-track friction estimate.
+
+    `warm_start_mu` is either a float (peak UTILISED friction, a lower bound)
+    or a dict {'f': mu_front_or_None, 'r': mu_rear_or_None, 'floor': float}
+    produced by helpers/mu_estimator.py. The per-axle entries are a sharper
+    estimate than `floor` and are preferred where present.
+
+    IT IS A FLOOR, NEVER A CEILING - for either kind of input, and even when
+    the brush fit reports high confidence. Two things downstream depend on
+    that:
+
+      - nn_train() freezes C_P*_prior from C_P*_model right after this runs,
+        so whatever lands here is both the initial guess AND the frozen
+        regularisation target of every co-identification iteration.
+      - mpc_node re-ingests the raceline at
+        min(lateral_accel_max, gripCeiling * grip_utilization) on every
+        accepted mpc/update_params (see buglog bug-046), so a D that comes
+        out low rewrites the reference speed profile under the running
+        controller. A D that comes out low AND MOVES between cycles rewrites
+        it repeatedly, which is what letting this lower D produced on
+        2026-09-01: bug-sysid-mu-warm-start-lowered-D-and-destabilised-car.
+
+    The brush fit's own sigma_mu is a precision figure, not an accuracy one -
+    a wrong mass, a wrong I_z, an IMU bias or road bank all fit tightly and
+    wrongly - so it cannot license overriding this.
+    """
+    d_lower, d_upper = PACEJKA_BOUNDS[0][2], PACEJKA_BOUNDS[1][2]
+    if not isinstance(warm_start_mu, dict):
+        warm_start_mu = {'f': None, 'r': None, 'floor': float(warm_start_mu)}
+
+    for key, axle in (('C_Pf_model', 'f'), ('C_Pr_model', 'r')):
+        mu = warm_start_mu.get(axle)
+        source = 'identified mu'
+        if mu is None or not np.isfinite(mu):
+            mu, source = warm_start_mu.get('floor'), 'mu_hat'
+        if mu is None or not np.isfinite(mu):
+            continue
+        d_val = float(np.clip(mu, d_lower, d_upper))
+        if d_val > model[key][2]:
+            log_info(f"Friction warm-start: raising {key} D initial guess "
+                     f"{model[key][2]:.4f} -> {d_val:.4f} ({source}={mu:.4f})")
+            model[key][2] = d_val
+        else:
+            log_info(f"Friction warm-start: keeping {key} D initial guess "
+                     f"{model[key][2]:.4f} ({source}={mu:.4f} does not exceed it; "
+                     "the warm start is a floor, never a ceiling)")
+
+
 def nn_train(training_data, racecar_version, save_LUT_name, plot_model, warm_start_mu=None):
     model = get_model_param(racecar_version)
     nn_params = get_nn_params()
 
     if warm_start_mu is not None:
-        d_lower, d_upper = PACEJKA_BOUNDS[0][2], PACEJKA_BOUNDS[1][2]
-        d_val = float(np.clip(warm_start_mu, d_lower, d_upper))
-        # mu_hat is peak UTILISED friction, which is a lower bound on the
-        # available friction (see friction_warmstart._mu_from_accel). Applying
-        # it as a replacement let a gentle lap - 0.04 g median, 0.63 g peak
-        # measured on this vehicle - overwrite a physically sane prior with a
-        # near-zero D. It is a floor, never a ceiling.
-        for key in ('C_Pf_model', 'C_Pr_model'):
-            if d_val > model[key][2]:
-                log_info(
-                    f"Cold-start friction warm-start: raising {key} D initial guess "
-                    f"{model[key][2]:.4f} -> {d_val:.4f} (mu_hat={warm_start_mu:.4f})")
-                model[key][2] = d_val
-            else:
-                log_info(
-                    f"Cold-start friction warm-start: keeping {key} D initial guess "
-                    f"{model[key][2]:.4f} (mu_hat={warm_start_mu:.4f} is only a lower bound "
-                    "and does not exceed it)")
+        apply_friction_warm_start(model, warm_start_mu)
 
     num_of_iterations = nn_params.get('num_of_iterations', 6)
     arch = nn_params.get('nn_architecture', 'baseline')
