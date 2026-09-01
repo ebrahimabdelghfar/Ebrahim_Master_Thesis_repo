@@ -61,17 +61,28 @@ alongside trust-region reflective. We therefore do \emph{not} claim the
 temporal-residual architecture, the friction warm-start concept, or the
 derivative-free solver as contributions.
 
-Two differences are technical rather than chronological. Our friction prior is
-proprioceptive---derived from measured accelerations, in the spirit of
+Three differences are technical rather than chronological. First, our friction
+prior is proprioceptive---derived from measured accelerations, in the spirit of
 model-free friction estimation from inertial data~\cite{slipfriction2025}---and
-therefore needs no camera or textured-surface assumption. More importantly, a
-prior computed from \emph{utilised} friction is a lower bound on
-\emph{available} friction and cannot substitute for excitation: on a gentle lap
-the median utilisation on our vehicle measures \num{0.044}. We consequently
-apply the prior as a floor and locate the actual fix in the rollout excitation
-rather than in the initialisation. To our knowledge the reachable-friction
-bound of Section~\ref{subsec:excitation} and its consequence for the
-virtual-data step have not previously been stated.
+therefore needs no camera or textured-surface assumption. Second, a prior
+computed from \emph{utilised} friction is a lower bound on \emph{available}
+friction and cannot substitute for excitation: on a gentle lap the median
+utilisation on our vehicle measures \num{0.044}. We therefore identify the peak
+from the curvature of the axle force curve, by a gated two-parameter brush-model
+fit~\cite{fiala1954} of the kind surveyed by Acosta \emph{et
+al.}~\cite{acosta2017friction}, and---whatever the fit's own confidence---apply
+the result only as a floor, for a reason that belongs to the interface with the
+controller rather than to the estimator (Section~\ref{subsec:mufloor}). The
+actual fix for the degeneracy is located in the rollout excitation, not in the
+initialisation. Third, we report the cost of the temporal residual and reduce
+it by \num{8.7}$\times$ without changing its output
+(Section~\ref{subsec:s4cost}), which is what makes an S4-family residual a
+deployable option on a vehicle CPU rather than an offline one; the techniques
+are standard for diagonal state-space
+models~\cite{gu2022s4d,gu2022s4,smith2023s5} and we claim only the measurement
+and the exactness. To our knowledge the reachable-friction bound of
+Section~\ref{subsec:excitation} and its consequence for the virtual-data step
+have not previously been stated.
 
 \subsection{Simulation architectures for identification and validation}
 

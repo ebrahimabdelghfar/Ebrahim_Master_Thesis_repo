@@ -512,13 +512,10 @@ class OnTrackSysId(Node):
 
         est = self._last_mu_estimate or {}
         msg = Float64MultiArray()
-        msg.data = [D_f, D_r, mu_axle, self._last_warm_start_mu,
-                    float(est.get('mu_f', float('nan'))) if est.get('ok_f') else float('nan'),
-                    float(est.get('mu_r', float('nan'))) if est.get('ok_r') else float('nan'),
-                    float(est.get('mu_utilisation', float('nan')))]
+        msg.data = [D_f, D_r, mu_axle, self._last_warm_start_mu]
         self.friction_pub.publish(msg)
         self.get_logger().info(
-            f"Identified friction: Df={D_f:.4f} Dr={D_r:.4f} mu_axle={mu_axle:.4f}")
+            f"Identified friction: Df={D_f:.4f} Dr={D_r:.4f} mu_axle={mu_axle:.4f} warm_start_mu={self._last_warm_start_mu:.4f}")
 
     def run_nn_train(self, warm_start_mu=None):
         """

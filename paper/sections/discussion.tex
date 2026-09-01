@@ -72,11 +72,29 @@ one vehicle configuration on one map. The runtime friction override supports a
 surface-change adaptation experiment---arguably the strongest argument for
 on-track identification---but it is not performed here.
 \item \textbf{Yaw inertia is assumed, not measured}
-(Section~\ref{subsec:assumptions}).
-\item \textbf{Ablations not completed}, so no claim is made about the S4D
-residual or the physics-informed loss on this platform
-(Section~\ref{subsec:ablation}); in particular we do not claim to reproduce the
-S4 improvement of~\cite{visionsysid2026}.
+(Section~\ref{subsec:assumptions}). This bears directly on the friction warm
+start: the axle forces of \eqref{eq:newtoneuler} scale linearly with $m$ and
+carry $I_{z}\dot\omega$ as a $\approx\SI{10}{\percent}$ term, so both feed
+straight into $\mu$ without widening its confidence interval
+(Section~\ref{subsec:frictionfloor}). The estimator additionally assumes a flat
+road, an IMU at the centre of gravity and pure lateral slip; a road bank leaks
+$g\sin\phi$ into $a_{y}$, a longitudinal IMU offset $x$ adds $\dot\omega x$,
+and combined-slip samples are dropped rather than corrected because the axle
+longitudinal force split a friction-ellipse correction needs is not observable
+from this sensor set.
+\item \textbf{The friction estimator is validated on a synthetic plant, not yet
+in CARLA} (Table~\ref{tab:mu}). It is a synthetic plant chosen precisely
+because $\mu$ is known there and excitation can be swept independently of it,
+but the CARLA cross-check against the simulator's own per-wheel forces
+(Figs.~\ref{fig:mufit}--\ref{fig:mucycles}) is not collected, and the shipped
+configuration therefore still selects the utilisation bound by default.
+\item \textbf{Ablations not completed}, so no claim is made about the accuracy
+of the S4D residual, the augmented inputs or the physics-informed loss on this
+platform (Section~\ref{subsec:ablation}); in particular we do not claim to
+reproduce the S4 improvement of~\cite{visionsysid2026}. What is claimed about
+the S4D residual here is its cost and the exactness of the reduction
+(Table~\ref{tab:runtime}), which is a statement about the implementation and
+says nothing about whether the architecture identifies a better tire.
 \item \textbf{Longitudinal dynamics are out of scope.} As in the baseline only
 lateral dynamics are identified; combined slip and load transfer are neglected,
 and the simulator's longitudinal wheel force channel is drivetrain torque

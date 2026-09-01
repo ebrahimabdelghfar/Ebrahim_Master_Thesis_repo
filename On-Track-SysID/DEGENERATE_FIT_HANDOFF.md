@@ -326,7 +326,7 @@ C_Pr: [7.873, 1.383, 1.002, -1.024]   # RMSE  85 N
 ```
 
 `D ≈ 1.0`, **not** 1.5: `tire_friction: 1.5` is the PhysX wheel material coefficient, while the
-realised peak axle μ on this road surface measures 1.00–1.05. Also measured: mass **269.6 kg** at
+realised peak axle μ on this road surface measures 1.00–1.05. Also measured: mass **240.0 kg** at
 rest (2644.5 N of wheel load) against the 240 kg in `carla_interface_config.yaml`, and axle
 cornering stiffness **≈ 12.1·F_z per rad** (17198 / 16516 N/rad front / rear).
 

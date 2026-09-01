@@ -17,8 +17,9 @@ optimiser resolves the ambiguity on a box edge.
 
 Correcting this---together with an extrapolation bound on the steering sweep, a
 frozen regularisation target, identification against the achieved rather than
-the commanded road-wheel angle, measured mass and geometry, and a
-peak-rather-than-median friction floor---produces identifications with no
+the commanded road-wheel angle, measured mass and geometry, and a friction
+warm start identified from the curvature of the axle force curve and applied
+only as a floor---produces identifications with no
 railed coefficient, peak friction coefficients of \numrange{1.05}{1.18} against
 a measured \numrange{1.00}{1.05}, axle cornering stiffnesses within
 \SIrange{10}{20}{\percent} of the simulator's own, correct understeer sign, and
@@ -35,16 +36,24 @@ than relaxing the gate.
 \paragraph{Immediate}
 \begin{enumerate}
 \item Regenerate the raceline for the \emph{measured} vehicle
-($m=\SI{269.6}{\kilo\gram}$, $\mu_{\mathrm{peak}}=1.0$,
+($m=\SI{240.0}{\kilo\gram}$, $\mu_{\mathrm{peak}}=1.0$,
 $v_{\max}\approx\SIrange{13}{14}{\meter\per\second}$) and run the closed-loop
 validation: lap time, mean and maximum lateral deviation, and steering sign
 reversals per control step, against a hand-tuned prior model as control.
 \item Run the noise sweep of~\cite{ontrack2024} on this platform using the
 bridge's odometry noise model, with a nonlinear least-squares identification of
 the same data as the comparison arm.
-\item Complete the residual-architecture and loss-mode ablations of
-Section~\ref{subsec:ablation}, and a factorial ablation over the six
-corrections of Table~\ref{tab:defects}.
+\item Complete the residual-architecture, input-augmentation and loss-mode
+ablations of Section~\ref{subsec:ablation}, and a factorial ablation over the
+six corrections of Table~\ref{tab:defects}. The runtime objection to the
+temporal arm is removed (Section~\ref{subsec:runtime}).
+\item Collect the friction-estimator diagnostics of
+Figs.~\ref{fig:mufit}--\ref{fig:mucycles} on the CARLA plant. The estimator is
+so far validated against a synthetic brush-tire plant, where $\mu$ is known
+exactly (Table~\ref{tab:mu}); what is missing is the same comparison against
+the simulator's per-wheel forces across a pace sweep, including the
+$\sigma_{\mu}/\mu$ gate boundary and the IMU-versus-kinematics cross-check that
+guards the mass and inertia assumptions.
 \item Measure $I_{z}$ rather than assuming it
 (Section~\ref{subsec:assumptions}).
 \end{enumerate}

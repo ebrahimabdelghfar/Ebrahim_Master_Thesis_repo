@@ -16,17 +16,17 @@ telemetry.
 \subsubsection{Reference trajectory}
 \label{subsubsec:raceline}
 Every run follows the same optimised raceline (Fig.~\ref{fig:raceline}),
-produced with the TUM \texttt{global\_race\-trajectory\_optimization}
+produced with the TUM global race trajectory optimization
 package~\cite{tumracetraj} under its minimum-curvature
 formulation~\cite{heilmeier2020} on a recorded centreline of the CARLA
-\texttt{silverstone} circuit: a closed \SI{5830}{\meter} lap of 2916 waypoints
+silverstone circuit: a closed \SI{5830}{\meter} lap of 2916 waypoints
 at \SI{2.0}{\meter} spacing, reference speed
 \SIrange{14.90}{46.02}{\meter\per\second}, minimum corner radius
 \SI{18.7}{\meter} ($|\kappa|_{\max}=\SI{0.0536}{\per\meter}$).
 
 Two of the optimiser's inputs matter for Section~\ref{subsec:negative}. Its
 vehicle configuration assumes a mass of \SI{204}{\kilo\gram} against the
-\SI{269.6}{\kilo\gram} the physics engine simulates, and its \texttt{ggv}
+\SI{240.0}{\kilo\gram} the physics engine simulates, and its \texttt{ggv}
 envelope declares a \emph{constant} lateral capability of
 \SI{12.0}{\meter\per\second\squared} at every speed. The resulting profile
 saturates that envelope exactly---peak demand $\max(v_{x}^{2}|\kappa|)$ over
@@ -62,9 +62,9 @@ coefficient---the distinction of Section~\ref{subsec:platform}.
 \centering
 \includegraphics[width=\textwidth]{raceline.pdf}
 \caption{The optimised raceline used for every experiment, generated with the
-TUM \texttt{global\_racetrajectory\_optimization} package~\cite{tumracetraj}
+TUM global race trajectory optimization package~\cite{tumracetraj}
 under its minimum-curvature formulation~\cite{heilmeier2020} from a recorded
-centreline of the CARLA \texttt{silverstone} circuit. (a) Track layout,
+centreline of the CARLA silverstone circuit. (a) Track layout,
 coloured by reference speed; the marked corner ($R=\SI{18.7}{\meter}$) sets the
 feasibility limit. (b) Reference speed profile,
 \SIrange{14.90}{46.02}{\meter\per\second}. (c) Lateral demand
@@ -187,25 +187,29 @@ that the extent of the modification is unambiguous.}
 Axis & Baseline~\cite{ontrack2024} & This work\\
 \midrule
 Platform & 1:10, \SI{3.7}{\kilo\gram}, $L=\SI{0.32}{\meter}$ &
-Full scale, \SI{269.6}{\kilo\gram}, $L=\SI{1.53}{\meter}$\\
+Full scale, \SI{240.0}{\kilo\gram}, $L=\SI{1.53}{\meter}$\\
 Rollout speed & $\mathrm{clip}(\overline{v_{x}},2,4)\,\si{\meter\per\second}$ &
 From the measured lap, floored at \SI{7}{\meter\per\second}\\
 Reachable $\mu$ & $\approx2.0$ (adequate) & $0.43$ under the baseline clip;
 $\ge1.2$ after correction\\
 Sweep amplitude & Fixed \SI{0.4}{\radian} &
-$\mathrm{clip}(1.5P_{99}(|\delta_{\mathrm{obs}}|),\delta_{\min},\delta_{\max})$\\
+$1.5P_{99}(|\delta_{\mathrm{obs}}|)$, clipped to
+$[\delta_{\min},\delta_{\max}]$\\
 Regularisation & None; each fit is the next start point &
 Tikhonov to a \emph{frozen} prior; start point still tracks\\
 Steering signal & Command & Achieved road-wheel angle\\
 Mass, geometry & Configuration file & Measured static wheel loads\\
-Friction prior & --- & $P_{99}$ of measured $|a|/g$, as a floor\\
+Friction prior & --- & Per-axle brush fit of $(C_{\alpha},\mu)$ from IMU and
+odometry, gated; $P_{99}$ of $|a|/g$ as fallback; always a floor\\
 Solver & Trust-region, single start & Multi-start, plus simplex and global
 options\\
 Output contract & Per-coefficient box constraints & Gates on derived
 quantities at the controller interface\\
 \addlinespace
-Residual model & MLP, 58 parameters & \emph{inherited} (with selectable
-alternatives)\\
+Residual model & MLP, 58 parameters & \emph{inherited} as default; selectable
+wide, physics-augmented, ensemble and S4D temporal alternatives\\
+Residual cost & Not reported & S4D identification \SI{181.4}{\second}
+$\rightarrow$ \SI{20.9}{\second}, exact (Table~\ref{tab:runtime})\\
 Data budget & \SI{30}{\second}, one controller-free lap & \emph{inherited}\\
 Force recovery & Quasi-steady yaw balance & \emph{inherited}\\
 Ground truth & Steady-state manoeuvre in a large space &
@@ -265,39 +269,155 @@ the configured prior &
 \addlinespace
 Front stiffness underestimated &
 Slip angle built from the steering \emph{setpoint} &
-Achieved road-wheel angle from \texttt{feedback/\allowbreak steering\_angle}, with
+Achieved road-wheel angle from feedback/\allowbreak steering angle, with
 fallback &
 $C_{f}$: 13725 $\rightarrow$ 18486 \si{\newton\per\radian} (truth 17198)\\
 \addlinespace
-Normal loads 10--15\% low &
-$m$ copied from the configuration file (240\,kg) against a simulated
-269.6\,kg; $l_{wb}\ne l_{f}+l_{r}$ &
-Measured mass and geometry; $l_{wb}\equiv l_{f}+l_{r}$ enforced by test &
-$F_{z,f}/F_{z,r}$: 1222/1134 $\rightarrow$ 1345.6/1298.9 \si{\newton}\\
-\addlinespace
 Friction prior pinned near 0.4 &
-Median of \emph{utilised} friction over an explicitly \emph{low-slip} mask &
-$P_{99}$ over the whole buffer, applied as a floor on the prior &
-Median 0.044 vs peak 0.46 at \SI{13}{\meter\per\second}\\
+Median of \emph{utilised} friction over an explicitly \emph{low-slip} mask;
+utilisation lower-bounds capability at any quantile &
+$P_{99}$ over the whole buffer as a floor, then a gated per-axle brush fit of
+$(C_{\alpha},\mu)$ (Sec.~\ref{subsec:friction}) &
+Median 0.044 vs peak 0.46 at \SI{13}{\meter\per\second}; brush fit recovers
+$\mu=1.048$ against truth 1.05 at \SI{45}{\percent} utilisation, where the
+bound reads 0.473 (Table~\ref{tab:mu})\\
 \bottomrule
 \end{tabular}
 \end{table*}
 
+\subsection{Peak-friction warm start}
+\label{subsec:mu}
+
+The friction warm start of Section~\ref{subsec:friction} is evaluated on a
+synthetic single-track plant with brush tires rather than in CARLA first,
+because only a synthetic plant supplies a $\mu$ that is known exactly and an
+excitation level that can be swept independently of it. The plant is driven by
+a swept-sine steering input for \SI{40}{\second} at \SI{50}{\hertz} with true
+$\mu=1.05$ and $C_{\alpha}=12.1F_{z}$, and the steering amplitude sets how far
+up the tire curve the manoeuvre reaches. Table~\ref{tab:mu} reports what each
+estimator returns.
+
+\begin{table}[t]
+\caption{Peak friction recovered from a synthetic brush-tire plant (true
+$\mu=1.05$) as a function of excitation. The utilisation estimator tracks the
+grip the manoeuvre \emph{used}; the brush fit of \eqref{eq:brush} recovers the
+peak from the curvature of $F_{y}(\alpha)$ and is therefore flat in
+excitation. Below \SI{40}{\percent} utilisation the brush fit is gated off and
+the utilisation bound is reported instead.}
+\label{tab:mu}
+\centering
+\small
+\begin{tabular}{@{}cccc@{}}
+\toprule
+$\delta$ amplitude & Grip utilisation & Utilisation & Brush fit
+\eqref{eq:brush}\\
+\midrule
+\SI{0.05}{\radian} & \SI{45}{\percent}  & 0.473 & \textbf{1.048}\\
+\SI{0.07}{\radian} & \SI{63}{\percent}  & 0.658 & \textbf{1.048}\\
+\SI{0.09}{\radian} & \SI{80}{\percent}  & 0.834 & \textbf{1.048}\\
+\SI{0.13}{\radian} & \SI{100}{\percent} & 1.045 & \textbf{1.048}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+At \SI{45}{\percent} utilisation---a level an ordinary lap reaches---the
+utilisation bound is \SI{55}{\percent} low while the brush fit is within
+\SI{0.2}{\percent}. Across true $\mu\in\{0.7,1.05,1.4\}$ the fit stays within
+\SI{5}{\percent} and $C_{\alpha}$ within \SI{10}{\percent}; with odometry and
+IMU noise injected, $\mu$ stays within \SI{12}{\percent}. The gate behaves as
+designed: below the \SI{40}{\percent} floor it suppresses the fit and reports
+the bound, so the estimator's failure is visible rather than silent.
+Figures~\ref{fig:mufit}--\ref{fig:mucrosscheck} are the corresponding
+diagnostics on the CARLA plant and are not yet collected.
+
+\subsubsection{Negative result: a confident fit must still not lower $D$}
+\label{subsec:mufloor}
+The estimator was first shipped with the natural policy---replace the prior's
+$D$ when the gate passes, in either direction---and the vehicle became erratic
+within one session. The mechanism is the one anticipated in
+Section~\ref{subsec:frictionfloor}: a $\mu$ estimate slightly below the prior
+lowers $D$, the lowered $D$ becomes the frozen regularisation target of every
+subsequent iteration, and the controller re-derives the reference speed profile
+from the identified grip ceiling on each accepted update, so corner speeds
+collapse and the high-curvature stages lose their steady-state equilibrium.
+Because the warm start is recomputed every cycle, a wandering estimate rewrote
+that reference repeatedly. The confidence gate could not have caught it, for
+the reason given in Section~\ref{subsec:frictionfloor}: $\sigma_{\mu}/\mu$ is
+precision, not accuracy. The policy is now floor-only for every input kind, and
+we report the episode because the failure is a property of the
+identification-to-control interface rather than of the estimator, and any stack
+that lets an online estimate move a reference trajectory inherits it.
+
+\subsection{Identification cost}
+\label{subsec:runtime}
+
+Section~\ref{subsec:s4cost}'s claim is that the temporal residual is affordable
+on the hardware a vehicle carries; Table~\ref{tab:runtime} is the measurement,
+on the same synthetic \SI{30}{\second} lap and the same six co-identification
+iterations throughout. Every step was verified against the implementation it
+replaced before being kept: the convolutional and recurrent paths of
+Fig.~\ref{fig:pipelines4}(c) agree to $<10^{-9}$ in double precision (pinned by
+a regression test), the rewritten physics-informed loss is bit-identical, and
+the full six-iteration loop lands on the same Pacejka coefficients to four
+decimal places---the remaining difference is float32 reordering over
+\num{1200} optimiser steps.
+
+\begin{table}[t]
+\caption{Cost of one S4D identification, measured end to end on a synthetic
+\SI{30}{\second} lap. The optimisations are exact: no epoch count, iteration
+count, early-stopping rule or loss weight was changed, and the identified
+coefficients agree to four decimal places.}
+\label{tab:runtime}
+\centering
+\scriptsize
+\begin{tabular}{@{}p{3.1cm}ccc@{}}
+\toprule
+Stage & Device & Before & After\\
+\midrule
+Training epoch: scan $\to$ kernel \eqref{eq:s4kernel} & GPU &
+\SI{125.7}{\milli\second} & \SI{26.7}{\milli\second}\\
+Training epoch: physics-loss hoist and fusion & GPU &
+\SI{26.7}{\milli\second} & \SI{16.6}{\milli\second}\\
+Stage-2 rollout, 500 sequential steps & GPU $\to$ CPU &
+\SI{898}{\milli\second} & \SI{204}{\milli\second}\\
+\addlinespace
+Identification, 6 iterations & mixed & \SI{181.4}{\second} &
+\SI{20.9}{\second}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two consequences are worth stating. First, at \SI{20.9}{\second} the
+identification fits inside the \SI{30}{\second} re-identification period of
+Section~\ref{subsec:deployment}, so the temporal residual is a deployable
+option rather than an offline one; at \SI{181.4}{\second} it was not. Second,
+the device split is not incidental: the stage-2 rollout is strictly sequential
+and single-sample, so it is \num{4.4}$\times$ \emph{faster} on a CPU, while
+full-batch training over $\approx\num{3000}$ windows remains
+\num{2.4}$\times$ faster on the GPU. A pipeline that pins itself to one device
+pays one of those two penalties.
+
 \subsection{Ablations}
 \label{subsec:ablation}
 
-Two ablation axes are exposed by the implementation and are marked as not yet
+Three ablation axes are exposed by the implementation and are marked as not yet
 run rather than reported with placeholder numbers. The first is the residual
 architecture (\texttt{baseline} MLP, \texttt{wide}, \texttt{physics\_inputs},
 \texttt{ensemble}, \texttt{s4}), scored on one-step and 10-step RMSE and on the
-identified coefficients; the relevant comparison
+identified coefficients (Fig.~\ref{fig:archablation}); the relevant comparison
 is~\cite{visionsysid2026}, which reports a lateral-force RMSE reduction
 exceeding \SI{60}{\percent} for an S4 residual, and we expect a smaller effect
 here because our sequences are short and our residual is dominated by a
 correctable measurement bias rather than by unmodelled temporal dynamics. The
-second is the loss mode (\texttt{mse} versus \texttt{physics\_informed}) on the
-same dataset, comparing one-step metrics, per-iteration coefficient
-trajectories and closed-loop tracking.
+cost objection to running this axis is now removed
+(Section~\ref{subsec:runtime}): the S4D arm costs \SI{20.9}{\second} per
+identification rather than \SI{181.4}{\second}. The second is the loss mode
+(\texttt{mse} versus \texttt{physics\_informed}) on the same dataset, comparing
+one-step metrics, per-iteration coefficient trajectories and closed-loop
+tracking. The third is the input vector: whether the slip-angle augmentation of
+Section~\ref{subsec:physinputs} buys anything once the residual is temporal,
+which is a question about whether $\alpha_{f},\alpha_{r}$ are recoverable from
+a \SI{0.4}{\second} window (Fig.~\ref{fig:physinputs}).
 
 \subsection{Negative result: the raceline, not the model}
 \label{subsec:negative}
@@ -330,7 +450,7 @@ $\sqrt{g\mu/|\kappa|}=\SI{13.5}{\meter\per\second}$ at the measured grip
 \SI{9.05}{\meter\per\second\squared} (\SI{0.92}{\g}), whereas
 \SI{15}{\meter\per\second} returns it to \SI{12.00}{\meter\per\second\squared}.
 Regenerating the raceline for the \emph{measured} vehicle
-($m=\SI{269.6}{\kilo\gram}$, $\mu_{\mathrm{peak}}=1.0$,
+($m=\SI{240.0}{\kilo\gram}$, $\mu_{\mathrm{peak}}=1.0$,
 $v_{\max}\approx\SIrange{13}{14}{\meter\per\second}$) is the prerequisite for
 the closed-loop experiment and is the immediate next step
 (Section~\ref{sec:conclusion}).

@@ -90,7 +90,7 @@ pacejka_solver:
 # adapted from arXiv:2509.15423's model-free friction-from-acceleration idea.
 friction_warm_start:
   enable: true
-  method: friction_ratio       # only implementation for now; reserved key for future alternatives
+  method: brush_axle       # only implementation for now; reserved key for future alternatives
   accel_source: imu    # finite_diff (default, verified working in SIM) | imu (real hardware
                                 # only - f1tenth_simulator's own /imu publisher is an unimplemented
                                 # stub, see node/simulator.cpp::pub_imu(); falls back to finite_diff

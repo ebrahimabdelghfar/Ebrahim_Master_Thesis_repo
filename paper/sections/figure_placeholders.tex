@@ -94,7 +94,7 @@ the measured vehicle, on the same axes as Fig.~\ref{fig:raceline}(c).}{4.0cm}
 \caption{Regenerated speed profile. \textbf{Not yet produced}: the
 demand-versus-grip comparison for the \emph{current} trajectory is
 Fig.~\ref{fig:raceline}(c); this figure is its counterpart after the raceline
-is regenerated for the measured vehicle ($m=\SI{269.6}{\kilo\gram}$,
+is regenerated for the measured vehicle ($m=\SI{240.0}{\kilo\gram}$,
 $\mu_{\mathrm{peak}}=1.0$), which is the prerequisite for the closed-loop
 experiment of Fig.~\ref{fig:closedloop}.}
 \label{fig:demand}
@@ -121,6 +121,120 @@ the raceline.}{3.8cm}
 feasible raceline for the measured vehicle, see
 Section~\ref{subsec:negative}.}
 \label{fig:closedloop}
+\end{figure}
+
+% -----------------------------------------------------------------------------
+% Friction warm-start diagnostics (Section V-F). All pending: to be collected
+% from the CARLA plant. Recipes in paper/figures/README.md, Figs. 15-19.
+% -----------------------------------------------------------------------------
+
+\begin{figure}[t]
+\centering
+\placeholderbox{Pending: two panels (front, rear). $(\alpha,F_{y})$ scatter
+recovered from IMU and odometry, the fitted brush curve, the linear
+extrapolation $C_{\alpha}\tan\alpha$, and the identified $\mu F_{z}$ against
+the plant's measured peak.}{4.4cm}
+\caption{The peak-friction warm start on the CARLA plant.
+\textbf{Not yet produced.} Per axle: the lateral force reconstructed by
+Newton--Euler~\eqref{eq:newtoneuler} against the slip angle, the joint
+$(C_{\alpha},\mu)$ fit of the brush model~\eqref{eq:brush}, and the departure
+from the linear extrapolation that identifies $\mu$
+through~\eqref{eq:brushinv}. The plant's own per-wheel force telemetry
+underlies the scatter as ground truth and is never used by the estimator.}
+\label{fig:mufit}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\placeholderbox{Pending: identified $\mu$ versus grip utilisation, three
+series (truth, utilisation bound, brush fit), with the \SI{40}{\percent} gate
+threshold marked.}{4.2cm}
+\caption{Excitation dependence of the two friction estimators.
+\textbf{Not yet produced}; the synthetic-plant counterpart is
+Table~\ref{tab:mu}. The utilisation bound rises with the grip the manoeuvre
+happens to use; the brush fit is flat in excitation above the gate. The shaded
+region below \SI{40}{\percent} utilisation is where the module refuses to
+answer and reports the bound instead---the boundary reported across the
+lateral-dynamics friction literature~\cite{acosta2017friction}.}
+\label{fig:mugate}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\placeholderbox{Pending: (a) $\sigma_{\mu}/\mu$ versus utilisation with the
+\num{0.15} gate; (b) IMU $a_{y}$ against the odometry-differentiated $a_{y}$,
+with the RMS difference annotated.}{4.2cm}
+\caption{Confidence and consistency diagnostics. \textbf{Not yet produced.}
+(a) The relative precision of the fitted $\mu$ collapses as the tire curve
+stays linear, which is what the gate of Section~\ref{subsec:friction} tests.
+(b) The cross-check between the IMU's lateral acceleration and the same
+quantity differentiated from odometry: a persistent offset here is an IMU bias
+or a mounting offset, both of which bias $\mu$ through
+\eqref{eq:newtoneuler} without widening $\sigma_{\mu}$
+(Section~\ref{subsec:frictionfloor}).}
+\label{fig:mucrosscheck}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\placeholderbox{Pending: $D_{f}$, $D_{r}$, warm-start $\mu$ and the
+utilisation bound versus identification cycle over a multi-lap run, with the
+floor-only and replace policies overlaid.}{4.2cm}
+\caption{Warm start across identification cycles. \textbf{Not yet produced.}
+The identified peak factors and the warm-start inputs published on the
+diagnostic topic of Section~\ref{subsec:deployment} over consecutive cycles.
+The second series is the reverted policy of Section~\ref{subsec:mufloor}, in
+which a confident fit was allowed to lower $D$ and the reference speed profile
+was rewritten under the running controller on every cycle.}
+\label{fig:mucycles}
+\end{figure}
+
+% -----------------------------------------------------------------------------
+% Residual-architecture and cost figures (Sections V-A, VI-G, VI-H). Pending.
+% -----------------------------------------------------------------------------
+
+\begin{figure}[t]
+\centering
+\placeholderbox{Pending: grouped bars, one-step and 10-step RMSE of $v_{y}$
+and $\omega$ across the five residual architectures, with identified $D_{f}$,
+$D_{r}$ annotated per group.}{4.0cm}
+\caption{Residual-architecture ablation. \textbf{Not yet produced};
+Section~\ref{subsec:ablation}. The five selectable architectures
+(\texttt{baseline}, \texttt{wide}, \texttt{physics\_inputs}, \texttt{ensemble},
+\texttt{s4}) on the same recorded lap, scored on held-out one-step and 10-step
+prediction and on the coefficients each one leads the Pacejka fit to. The
+comparison of interest is against the \SI{60}{\percent} lateral-force RMSE
+reduction reported for an S4 residual in~\cite{visionsysid2026}.}
+\label{fig:archablation}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\placeholderbox{Pending: (a) residual RMSE versus window length $W$;
+(b) with and without the slip-angle augmentation, per architecture.}{4.0cm}
+\caption{What the temporal residual and the augmented inputs each buy.
+\textbf{Not yet produced.} (a) Prediction error against the window length of
+Section~\ref{subsec:s4}, whose default $W=20$ (\SI{0.4}{\second}) is set by
+tire-relaxation timescales rather than by a sweep. (b) The slip-angle
+augmentation of Section~\ref{subsec:physinputs} on the MLP and on the S4D
+residual: whether handing the network the arguments of \eqref{eq:mf} still
+helps once it can see \SI{0.4}{\second} of history.}
+\label{fig:physinputs}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\placeholderbox{Pending: stacked runtime bars per identification stage, before
+and after, split by device; inset showing conv-versus-scan agreement in float32
+and float64.}{4.0cm}
+\caption{Where an S4D identification spends its time.
+\textbf{Not yet produced}; the numbers are in Table~\ref{tab:runtime}. The
+stacked bars break the \SI{181.4}{\second} down by stage and device and show
+what each of the three changes of Section~\ref{subsec:s4cost} removes. The
+inset is the equivalence check: the convolutional and recurrent evaluations of
+the same state-space block agree to $<10^{-9}$ in double precision, which is
+what licenses calling the speedup exact.}
+\label{fig:runtime}
 \end{figure}
 
 \begin{figure*}[t]

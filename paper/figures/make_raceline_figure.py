@@ -11,11 +11,11 @@ and renders three panels:
       the grip the optimiser ASSUMED and the grip the
       vehicle actually HAS                                 [one series + 2 refs]
 
-Panel (c) is the point of the figure: even after regeneration at v_max = 15 m/s
-the profile still touches the flat 12.0 m/s^2 envelope it was handed in
-``inputs/veh_dyn_info/ggv.csv``, and that envelope is 1.22 g against a plant
-that measures ~1.0 g. The overshoot is now a single 6 m segment at the tightest
-corner rather than 11.9 % of the lap.
+Panel (c) is the point of the figure: the optimiser was handed a flat
+5.0 m/s^2 envelope in ``inputs/veh_dyn_info/ggv.csv`` (0.51 g) against a plant
+that measures ~1.0 g. The raceline saturates that envelope -- it peaks at
+0.51 g -- but that is only ~51 % of the grip the vehicle actually has, so no
+segment of the lap is infeasible; the conservatism is left on the table.
 
 Panel (a) is coloured by lateral demand, NOT by speed: with v_max binding almost
 everywhere the speed spans 0.09 m/s and a speed colour scale would carry no
@@ -54,7 +54,7 @@ SEQ_STEPS  = ["#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
 SEQ        = LinearSegmentedColormap.from_list("speed", SEQ_STEPS)
 
 G = 9.81
-AY_ASSUMED = 12.0   # inputs/veh_dyn_info/ggv.csv -- flat at every speed
+AY_ASSUMED = 5.0   # inputs/veh_dyn_info/ggv.csv -- flat at every speed
 AY_MEASURED = 9.81  # measured steady-state ceiling of the CARLA asurt_fsai
 
 plt.rcParams.update({
@@ -73,18 +73,6 @@ plt.rcParams.update({
     "axes.labelcolor": INK,
     "figure.dpi": 200,
 })
-
-
-def calmest_point(s_km, ay, lo_frac=0.30, hi_frac=0.62):
-    """Arc length at which a leader line can drop through the trace unobstructed.
-
-    Returns the s of minimum demand inside the given fraction of the lap.
-    Chosen from the data rather than by eye, so it survives a change of track.
-    """
-    span = s_km[-1] - s_km[0]
-    m = (s_km >= s_km[0] + lo_frac * span) & (s_km <= s_km[0] + hi_frac * span)
-    idx = np.flatnonzero(m)
-    return s_km[idx[int(np.argmin(ay[idx]))]]
 
 
 def load(path):
@@ -129,7 +117,7 @@ def main():
                     xytext=(6, -1), fontsize=6, color=INK_2)
     i = int(np.argmax(np.abs(kappa)))
     ax_map.plot(x[i], y[i], "o", ms=3.2, mfc="white", mec=CRITICAL, mew=0.9, zorder=5)
-    ax_map.annotate("only infeasible corner\n"
+    ax_map.annotate("tightest corner, highest demand\n"
                     r"$R=%.1f$ m, %.2f g" % (1 / abs(kappa[i]), ay[i] / G),
                     (x[i], y[i]), textcoords="offset points", xytext=(7, -6),
                     fontsize=6, color=CRITICAL)
@@ -172,42 +160,52 @@ def main():
     ax_a.axhline(AY_ASSUMED, color=CRITICAL, lw=0.9, ls="--", dashes=(4, 2))
     ax_a.axhline(AY_MEASURED, color=INK, lw=0.9, ls=":", dashes=(1, 1.6))
 
-    # direct labels: the two levels must not be distinguished by colour alone
-    ax_a.annotate(r"assumed by the optimiser: 12.0 m/s$^2$ (1.22 g)",
+    # Direct labels: the two levels must not be distinguished by colour alone.
+    # Both texts are formatted from the constants so they cannot drift from the
+    # lines they name. Both sit above their line: below the assumed envelope is
+    # where the trace lives, so a label there gets spikes drawn through it.
+    ax_a.annotate(r"assumed by the optimiser: %.1f m/s$^2$ (%.2f g)"
+                  % (AY_ASSUMED, AY_ASSUMED / G),
                   xy=(0.012, AY_ASSUMED), xycoords=("axes fraction", "data"),
                   xytext=(0, 2.0), textcoords="offset points",
                   fontsize=6, color=CRITICAL, va="bottom")
-    # After regeneration the demand sits well clear of the ceiling for most of
-    # the lap, so this label goes back under its own line at the calmest point
-    # -- no leader needed, and it stays out of the "assumed" label's band.
-    ytop = max(AY_ASSUMED, ay.max()) * 1.22
-    x_pt = calmest_point(s_km, ay)
-    ax_a.annotate(r"measured ceiling: 9.8 m/s$^2$ ($\approx$1.0 g)",
-                  xy=(x_pt, AY_MEASURED), xytext=(0, -2.6),
-                  textcoords="offset points", ha="center", va="top",
+    ax_a.annotate(r"measured ceiling: %.1f m/s$^2$ ($\approx$%.1f g)"
+                  % (AY_MEASURED, AY_MEASURED / G),
+                  xy=(0.012, AY_MEASURED), xycoords=("axes fraction", "data"),
+                  xytext=(0, 2.0), textcoords="offset points", va="bottom",
                   fontsize=6, color=INK)
 
-    # The over-limit stretch is ~6 m of 5830: the shaded band is sub-pixel, so
-    # the single spike is called out explicitly or the reader cannot find it.
+    # The peak is the whole reading of the panel: mark it and state where it
+    # sits relative to both levels. The callout is lifted into the empty band
+    # between the two lines, clear of the trace and of both level labels.
     j = int(np.argmax(ay))
     over = ay > AY_MEASURED
-    seg_m = float(over.sum()) * float(np.median(np.diff(s_km))) * 1000.0
     ax_a.plot(s_km[j], ay[j], "o", ms=3.0, mfc="none", mec=CRITICAL, mew=0.9,
               zorder=6)
-    ax_a.annotate("%.2f g over %.0f m\nof %.0f m (%.1f%%)"
-                  % (ay[j] / G, seg_m, s_km[-1] * 1000.0, 100.0 * over.mean()),
-                  xy=(s_km[j], ay[j]), xytext=(-11, -3),
-                  textcoords="offset points", ha="right", va="top",
+    if over.any():
+        seg_m = float(over.sum()) * float(np.median(np.diff(s_km))) * 1000.0
+        peak_txt = ("peak %.2f g; over the measured ceiling\nfor %.0f m of %.0f m (%.1f%%)"
+                    % (ay[j] / G, seg_m, s_km[-1] * 1000.0, 100.0 * over.mean()))
+    else:
+        peak_txt = ("peak %.2f g (%.1f m/s$^2$) at $s=%.2f$ km: %.0f%% of the\n"
+                    r"assumed envelope, %.0f%% of the measured ceiling"
+                    % (ay[j] / G, ay[j], s_km[j],
+                       100.0 * ay[j] / AY_ASSUMED, 100.0 * ay[j] / AY_MEASURED))
+    y_mid = 0.5 * (AY_ASSUMED + AY_MEASURED)
+    ax_a.annotate(peak_txt,
+                  xy=(s_km[j], ay[j]), xytext=(s_km[j], y_mid),
+                  ha="center", va="center",
                   fontsize=6, color=CRITICAL,
                   arrowprops=dict(arrowstyle="-", lw=0.45, color=CRITICAL,
-                                  shrinkA=1.0, shrinkB=2.0))
+                                  shrinkA=3.0, shrinkB=2.5))
     ax_a.set_ylabel(r"$v_x^2|\kappa|$ [m/s$^2$]")
     ax_a.set_xlabel("arc length $s$ [km]")
     ax_a.set_title("(c) lateral demand against available grip",
                    fontsize=7.5, color=INK, pad=3)
     ax_a.grid(True, lw=0.4, color=GRID)
     ax_a.set_axisbelow(True)
-    ax_a.set_ylim(0, max(AY_ASSUMED, ay.max()) * 1.22)
+    # Both reference levels must stay on-panel whichever of them is higher.
+    ax_a.set_ylim(0, max(AY_ASSUMED, AY_MEASURED, ay.max()) * 1.20)
     ax_a.set_xlim(0, s_km[-1])
     for side in ("top", "right"):
         ax_a.spines[side].set_visible(False)

@@ -2,48 +2,38 @@
 \begin{abstract}
 On-track system identification promises tire models obtained from ordinary
 racing laps instead of dedicated steady-state manoeuvres. This paper studies
-the identifiability of one such pipeline---the residual-network plus
-virtual-steady-state-data method of Dikici \emph{et al.}~\cite{ontrack2024}---at
-full vehicle scale, and reports a corrected and extended identification
-pipeline together with the simulation architecture that makes it verifiable.
-The plant is a Formula Student vehicle simulated in CARLA and driven through a
-purpose-built ROS~2 bridge that exposes the simulator's own per-wheel slip
-angle, normal load and lateral force, so that an on-track estimator can be
-scored against the forces the plant actually generated---a comparison that a
-physical vehicle cannot provide without a force-measuring hub. Transplanted
-unchanged, the pipeline converges on a tire whose peak grip is \SI{0.40}{\g},
-with five of eight Pacejka coefficients resting on their box constraints, for
-a vehicle that measures \SIrange{1.00}{1.05}{\g}. We show that this is neither
-a solver, a bounds nor a tuning failure but a loss of excitation created by the
-pipeline's own virtual-data step: the friction the synthetic rollout can demand
-is $\mu_{\mathrm{reach}}=v^{2}\delta_{\mathrm{sweep}}/(gL)$, a property of the
-rollout configuration and not of the tire, capped at $0.43$ by a rollout speed
-inherited from a 1:10 platform. The paper contributes (i) this identifiability
-bound and an excitation-aware rollout that removes the degeneracy; (ii) an
-extrapolation bound on the synthetic steering sweep together with a
-frozen-prior Tikhonov term, which jointly stop the peak factor from drifting
-across co-identification iterations; (iii) three measurement-side corrections
-(achieved rather than commanded road-wheel angle, measured mass and geometry,
-and a peak-rather-than-median friction warm-start applied as a floor); (iv) a
-ROS~2 simulation architecture that closes the identification loop end to end,
-from data acquisition through fitting to ground-truth force validation; and (v)
-admissibility gates on derived physical quantities, placed at the
-model-to-controller boundary. After correction, three consecutive live
-identifications return no coefficient on a bound, peak friction coefficients of
-\numrange{1.05}{1.18}, axle cornering stiffnesses of
-\SI{21}{\kilo\newton\per\radian} front and \SI{20}{\kilo\newton\per\radian}
-rear against a simulator ground truth of
-\SIrange{17}{19}{\kilo\newton\per\radian}, and one-step prediction $R^{2}$ of
+the identifiability of one such residual-learning pipeline~\cite{ontrack2024}
+at full vehicle scale, on a simulated plant that exposes its own per-wheel slip
+angle, normal load and lateral force, so an on-track estimator can be scored
+against the forces the plant actually generated. Transplanted unchanged from a
+small-scale platform, the pipeline converges on a tire whose peak grip is less
+than half the vehicle's, with most Pacejka coefficients resting on their box
+constraints. We show this is neither a solver, a bounds nor a tuning failure
+but a loss of excitation created by the pipeline's own virtual-data step: the
+friction the synthetic rollout can demand,
+$\mu_{\mathrm{reach}}=v^{2}\delta_{\mathrm{sweep}}/(gL)$, is a property of the
+rollout configuration and not of the tire. We contribute this identifiability
+bound and an excitation-aware rollout; an extrapolation bound and a
+frozen-prior regularisation term that jointly stabilise the peak factor across
+co-identification iterations; measurement-side corrections and a friction warm
+start that recovers the peak from the \emph{curvature} of the axle force curve
+using inertial and odometry data alone, applied only as a floor; admissibility
+gates on derived physical quantities at the model-to-controller boundary; and
+an exact restructuring of the temporal residual's evaluation that takes one
+identification from \SI{181}{\second} to \SI{21}{\second} without moving an
+identified coefficient. After correction, live identifications return no
+coefficient on a bound, peak friction and axle cornering stiffnesses within
+\SI{20}{\percent} of ground truth, and one-step prediction $R^{2}$ of
 \num{0.97} for lateral velocity and \num{0.99} for yaw rate. The corrected
 identifier also makes a negative result visible: the optimised raceline used in
-this study demands \SI{1.22}{\g} and is therefore infeasible for this vehicle,
-and the admissibility gate rejects deployment---correctly.
+this study is infeasible for the vehicle that was measured, and the
+admissibility gate rejects deployment---correctly.
 \end{abstract}
 
 \begin{IEEEkeywords}
 System identification, tire modeling, Pacejka Magic Formula, identifiability,
 persistent excitation, vehicle dynamics, autonomous racing, simulation
-architecture, CARLA, ROS~2.
+architecture.
 \end{IEEEkeywords}
 
 \IEEEpeerreviewmaketitle

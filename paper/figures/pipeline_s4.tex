@@ -1,0 +1,115 @@
+% =============================================================================
+% Fig. 4 -- Stage 1 of Fig. 1 as it stands with the S4D temporal residual and
+% the physics-augmented input vector.
+%
+% Vector TikZ, drawn at the paper's own font sizes. Included by
+% sections/method.tex inside a figure* (full text width).
+%
+% Three panels, left to right:
+%   (a) input construction: raw signals + derived slip angles, windowed.
+%   (b) the S4D residual stack itself.
+%   (c) the two evaluation paths of the SAME LTI system -- the convolutional
+%       path used for training and the recurrent path used for the rollout --
+%       with the device each one runs on and the measured cost.
+% Green marks what changed relative to the baseline MLP residual; the
+% numbers in panel (c) are the measured values reported in Table VIII.
+% =============================================================================
+
+\begin{tikzpicture}[
+  font=\scriptsize,
+  >={Stealth[length=1.7mm,width=1.5mm]},
+  blk/.style     = {draw, rounded corners=1pt, align=flush center, inner sep=2.6pt,
+                    text width=#1, fill=white, line width=0.35pt},
+  sig/.style     = {blk=34mm, fill=black!5},
+  aug/.style     = {blk=34mm, fill=green!12, draw=green!45!black, line width=0.6pt},
+  net/.style     = {blk=48mm, fill=black!3},
+  ssm/.style     = {blk=48mm, fill=green!12, draw=green!45!black, line width=0.6pt},
+  path/.style    = {blk=58mm, fill=white},
+  fast/.style    = {path, fill=green!12, draw=green!45!black, line width=0.6pt},
+  note/.style    = {font=\tiny, align=left, inner sep=1.6pt, text width=58mm},
+  flow/.style    = {->, line width=0.5pt, black!65},
+  eq/.style      = {<->, line width=0.6pt, green!45!black, dashed},
+  lbl/.style     = {font=\tiny, inner sep=1.2pt, fill=white, midway},
+  hdr/.style     = {font=\scriptsize\bfseries, align=center}
+]
+
+\def\vgap{3.4mm}
+
+% ======================= (a) input construction ============================
+\node[sig, anchor=north west] (raw) at (0,0)
+  {\textbf{Measured}\\[1pt] $[v_{x},v_{y},\omega,\delta]_{k}$};
+\node[aug, below=\vgap of raw] (slip)
+  {\textbf{Derived}\\[1pt] $\alpha_{f},\alpha_{r}$ from \eqref{eq:slip}};
+\node[blk=34mm, below=\vgap of slip, fill=black!3] (win)
+  {\textbf{Window}\\[1pt] $W=20$ (\SI{0.4}{\second}); no window crosses the
+   mirrored-copy seam};
+\node[blk=34mm, below=\vgap of win, fill=black!3] (xin)
+  {$X\in\mathbb{R}^{N\times W\times 6}$};
+
+\draw[flow] (raw)  -- (slip);
+\draw[flow] (slip) -- (win);
+\draw[flow] (win)  -- (xin);
+
+\begin{scope}[on background layer]
+  \node[draw, dashed, rounded corners=2pt, inner sep=3.4pt, fill=black!2,
+        fit=(raw)(slip)(win)(xin)] (panela) {};
+\end{scope}
+\node[hdr, above=1.2mm of panela.north] {(a) Input construction};
+
+% ========================== (b) S4D residual ===============================
+\node[net, right=13mm of raw.north east, anchor=north west] (proj)
+  {\textbf{Input projection}\\[1pt] $\mathbb{R}^{6}\!\to\!\mathbb{R}^{H}$,
+   $H=4$, LeakyReLU};
+\node[ssm, below=\vgap of proj] (s4d)
+  {\textbf{S4D block} ($\times L$ layers)\\[1pt]
+   diagonal $A$, S4D-Lin init
+   ($\mathrm{Re}(A_{n})\!=\!-\tfrac12$, $\mathrm{Im}(A_{n})\!=\!\pi n$),
+   $N=4$, learnable $\Delta t$ per channel};
+\node[net, below=\vgap of s4d] (res)
+  {\textbf{Residual + LeakyReLU}};
+\node[net, below=\vgap of res] (out)
+  {\textbf{Output projection}\\[1pt] $\to[e_{v_{y}},e_{\omega}]$,
+   \num{102}--\num{110} parameters};
+
+\draw[flow] (proj) -- (s4d);
+\draw[flow] (s4d)  -- (res);
+\draw[flow] (res)  -- (out);
+\draw[flow] (xin.east) -- ++(3mm,0) |- (proj.west);
+
+\begin{scope}[on background layer]
+  \node[draw, dashed, rounded corners=2pt, inner sep=3.4pt, fill=black!2,
+        fit=(proj)(s4d)(res)(out)] (panelb) {};
+\end{scope}
+\node[hdr, above=1.2mm of panelb.north] {(b) Temporal residual};
+
+% ===================== (c) two evaluation paths ============================
+\node[fast, right=13mm of proj.north east, anchor=north west] (conv)
+  {\textbf{Convolutional path} --- training\\[1pt]
+   $K_{l}=\mathrm{Re}(C\,e^{A\Delta t\,l}\bar B)$ in closed form, so
+   $y=T_{K}u$ is one causal Toeplitz matmul. The last layer contracts $K$
+   reversed onto the window ($y_{W-1}$ only). Full batch, GPU.};
+% 8 mm, not \vgap: the "identical Phi_p" label rides on the arrow between these
+% two boxes and needs a gap taller than itself, or it lands on their borders.
+\node[fast, below=8mm of conv] (rec)
+  {\textbf{Recurrent path} --- rollout\\[1pt]
+   $x_{t}=\bar A x_{t-1}+\bar B u_{t}$, hidden state carried through the
+   500-step sweep. Strictly sequential, so launch-latency bound: it runs on a
+   CPU copy.};
+\node[note, below=\vgap of rec] (cost)
+  {\textbf{Measured (Table~\ref{tab:runtime})}\\[1pt]
+   epoch \SI{125.7}{\milli\second} $\to$ \SI{16.6}{\milli\second};
+   rollout \SI{898}{\milli\second} (GPU) $\to$ \SI{204}{\milli\second}
+   (CPU); 6-iteration loop \SI{181.4}{\second} $\to$ \SI{20.9}{\second}.
+   Same LTI system: the two paths agree to $<10^{-9}$ in float64.};
+
+\draw[eq] (conv) -- node[lbl]{identical $\phip$ to 4 d.p.} (rec);
+\draw[flow] (out.east) -- ++(3mm,0) |- (conv.west);
+\draw[flow] (out.east) -- ++(3mm,0) |- (rec.west);
+
+\begin{scope}[on background layer]
+  \node[draw, dashed, rounded corners=2pt, inner sep=3.4pt, fill=black!2,
+        fit=(conv)(rec)(cost)] (panelc) {};
+\end{scope}
+\node[hdr, above=1.2mm of panelc.north] {(c) Evaluation paths and cost};
+
+\end{tikzpicture}
