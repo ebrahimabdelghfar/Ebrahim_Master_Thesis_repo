@@ -1,33 +1,29 @@
 % === ABSTRACT & KEYWORDS =====================================================
 \begin{abstract}
-On-track system identification promises tire models obtained from ordinary
-racing laps instead of dedicated steady-state manoeuvres. This paper studies
-the identifiability of one such residual-learning pipeline~\cite{ontrack2024}
-at full vehicle scale, on a simulated plant that exposes its own per-wheel slip
-angle, normal load and lateral force, so an on-track estimator can be scored
-against the forces the plant actually generated. Transplanted unchanged from a
-small-scale platform, the pipeline converges on a tire whose peak grip is less
-than half the vehicle's, with most Pacejka coefficients resting on their box
-constraints. We show this is neither a solver, a bounds nor a tuning failure
-but a loss of excitation created by the pipeline's own virtual-data step: the
-friction the synthetic rollout can demand,
-$\mu_{\mathrm{reach}}=v^{2}\delta_{\mathrm{sweep}}/(gL)$, is a property of the
-rollout configuration and not of the tire. We contribute this identifiability
-bound and an excitation-aware rollout; an extrapolation bound and a
-frozen-prior regularisation term that jointly stabilise the peak factor across
-co-identification iterations; measurement-side corrections and a friction warm
-start that recovers the peak from the \emph{curvature} of the axle force curve
-using inertial and odometry data alone, applied only as a floor; admissibility
-gates on derived physical quantities at the model-to-controller boundary; and
-an exact restructuring of the temporal residual's evaluation that takes one
-identification from \SI{181}{\second} to \SI{21}{\second} without moving an
-identified coefficient. After correction, live identifications return no
-coefficient on a bound, peak friction and axle cornering stiffnesses within
-\SI{20}{\percent} of ground truth, and one-step prediction $R^{2}$ of
-\num{0.97} for lateral velocity and \num{0.99} for yaw rate. The corrected
-identifier also makes a negative result visible: the optimised raceline used in
-this study is infeasible for the vehicle that was measured, and the
-admissibility gate rejects deployment---correctly.
+On-track system identification promises to learn tire models from ordinary racing laps
+instead of dedicated steady-state manoeuvres. We study the identifiability of
+one such residual-learning pipeline at full vehicle scale,
+on a simulated plant that publishes its own per-wheel slip angles, loads and
+lateral forces, so the estimator can be scored against the forces the plant
+actually generated. Transplanted unchanged from a small-scale
+platform, the pipeline converges on a tire with less than half the vehicle's
+peak grip and most Pacejka coefficients resting on their box constraints. This
+is not a solver, bounds or tuning failure but a loss of excitation created by
+the pipeline's own virtual-data step: the friction the synthetic rollout can
+demand, $\mu_{\mathrm{reach}}=v^{2}\delta_{\mathrm{sweep}}/(gL)$, is a property
+of the rollout configuration, not of the tire. We contribute this
+identifiability bound and a rollout that sets its speed from the measured lap;
+a bounded steering sweep and a frozen regularisation target, together removing
+a \num{1.01}$\rightarrow$\num{1.87} peak-factor drift over six
+co-identification iterations; measurement corrections---achieved rather than
+commanded road-wheel angle, measured mass and wheelbase---and a friction warm
+start read from the \emph{curvature} of the axle force curve and applied only
+as a floor; admissibility gates on derived physical quantities at the
+model-to-controller boundary; and an exact restructuring of the S4D temporal
+residual---closed-form kernel, hoisted physics-loss terms, rollout on a
+CPU---that cuts one identification from \SI{181}{\second} to \SI{21}{\second}
+without moving a coefficient. After correction, no coefficient rails, peak
+friction and axle cornering stiffnesses land within \SI{20}{\percent} of limits added.
 \end{abstract}
 
 \begin{IEEEkeywords}

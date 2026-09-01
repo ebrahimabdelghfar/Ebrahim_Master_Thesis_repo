@@ -34,9 +34,9 @@ mpc_path_tracking:
 
     # ---------------- Vehicle geometry / mass ----------------
     vehicle:
-      mass: 240.0      # kg     - CARLA physics.mass (see note on 204 below)
-      Iz: 51.1        # kg*m^2 - ESTIMATED, verify
-      l_f: 0.738142      # m, CG to front axle (L/2; 50/50 split ASSUMED)
+      mass: 269.84      # kg     - CARLA physics.mass
+      Iz: 51.1          # kg*m^2  verify
+      l_f: 0.738142     # m, CG to front axle (L/2; 50/50 split ASSUMED)
       l_r: 0.795362      # m, CG to rear axle
       h_cg: 0.31538       # m, CG height - ESTIMATED (reserved for load transfer)
 

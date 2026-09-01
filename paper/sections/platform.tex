@@ -4,7 +4,7 @@
 
 The identification pipeline is exercised end to end inside a single simulation
 architecture: a Formula Student vehicle model in CARLA acting as the plant, a
-C\texttt{++} ROS~2 bridge that drives it and republishes its state, and an
+C\texttt{++} ROS~2 communication layer that drives it and republishes its state, and an
 identification stack that consumes that state. The architecture is described
 here because two of its properties---per-wheel ground truth and
 simulation-time stamping---are what make the identifiability claims of
@@ -21,11 +21,8 @@ Magic Formula reproduces the lateral force the plant actually produced, so the
 simulator must expose per-wheel slip angle, normal load and tire force---not
 only chassis states. CARLA's PhysX wheeled-vehicle solver computes these
 quantities internally and its client API exports them, which is what makes the
-\texttt{feedback/\allowbreak tire\_forces} channel of
-Section~\ref{subsec:bridge} possible. Cone-oriented Formula Student simulators
-built on the AirSim plugin~\cite{fsds2021} publish a sensor-level interface
-(IMU, GNSS, LiDAR, camera) but no per-wheel force telemetry, and on hardware
-the same signal would require force-measuring hubs.
+tire forces feedback channel of Section~\ref{subsec:bridge} possible. 
+Cone-oriented Formula Student simulators.
 
 \emph{Deterministic, simulation-time-stamped execution.} Persistent-excitation
 and residual-learning arguments are only checkable if every sample carries a
@@ -34,13 +31,11 @@ consistent clock. CARLA's synchronous mode with a fixed physics step
 identification data is stamped from the simulation clock
 (Appendix, Section~A7).
 
-\emph{Full-scale vehicle and racing-track support with a native ROS~2 path.}
+\emph{Full-scale vehicle and racing-track support.}
 The target class is a full-scale Formula Student car on a closed circuit.
-CARLA accepts custom vehicle assets---here the Formula AI vehicle---on the
-silverstone map---and offers a C\texttt{++} client that the bridge
-links against directly, avoiding a Python round trip in the control loop.
-Complete Formula Student Driverless stacks have already been built on this
-combination~\cite{carlaros2025}. Surveys of open self-driving simulators place
+CARLA accepts custom vehicle assets here the Formula AI vehicle on the
+silverstone map and offers a client that the bridge links against directly, 
+avoiding a Python round trip in the control loop. Surveys of open self-driving simulators place
 CARLA (with the now-discontinued LGSVL) at the state of the art for end-to-end
 stack testing on exactly these grounds~\cite{kaur2021simsurvey}.
 
@@ -102,12 +97,7 @@ $l_{f}$ / $l_{r}$              & 0.7381 / 0.7953 & \si{\meter}\\
 Yaw inertia $I_{z}$\textsuperscript{a} & 51.1 & \si{\kilo\gram\meter\squared}\\
 Wheel radius                   & 0.25 & \si{\meter}\\
 Max road-wheel angle           & 16.0 & \si{\degree}\\
-PhysX \textbf{tire\_friction}  & 1.5 & ---\\
-Realised peak axle $\mu$       & \textbf{1.00--1.05} & ---\\
-Peak transient $a_{y}$         & 1.50 & \si{\g}\\
-Steady-state $a_{y}$ ceiling   & $\approx$1.0 & \si{\g}\\
-Axle cornering stiffness       & $\approx 12.1\,F_{z}$ & \si{\newton\per\radian}\\
-\quad front / rear             & 17198 / 16516 & \si{\newton\per\radian}\\
+friction coefficient $\mu$ \textbf{default}     & 1.5 & ---\\
 Drag coefficient               & 0.426 & ---\\
 \bottomrule
 \end{tabular}

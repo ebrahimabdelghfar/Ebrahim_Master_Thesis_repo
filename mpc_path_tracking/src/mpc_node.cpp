@@ -440,12 +440,12 @@ private:
       return;
     }
     set_parameter(rclcpp::Parameter(param, estimate));
-    RCLCPP_INFO(
-      get_logger(),
-      "%s %.2f -> %.2f s from %d measured samples of the speed loop "
-      "(was delivering about %.0f%% of the planned acceleration)",
-      param, configured_tau, estimate, samples,
-      100.0 * (control_period_s + configured_tau) / std::max(estimate, 1e-6));
+    // RCLCPP_INFO(
+    //   get_logger(),
+    //   "%s %.2f -> %.2f s from %d measured samples of the speed loop "
+    //   "(was delivering about %.0f%% of the planned acceleration)",
+    //   param, configured_tau, estimate, samples,
+    //   100.0 * (control_period_s + configured_tau) / std::max(estimate, 1e-6));
   }
 
   // Same command, fresh stamp: the plan is still the one computed for the

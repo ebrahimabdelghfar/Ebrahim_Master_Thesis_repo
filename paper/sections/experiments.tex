@@ -6,7 +6,7 @@
 
 All experiments run in simulation on the architecture of
 Section~\ref{sec:platform}: the Formula AI vehicle in CARLA~\cite{carla2017},
-driven through \bridge{} on a ROS~2 Humble workspace, with the CARLA server in
+driven through on a ROS~2 Humble , with the CARLA server in
 synchronous mode at a \SI{0.033}{\second} fixed physics step. Identification
 data is collected over \SI{30}{\second} of pure-pursuit driving at
 \SI{50}{\hertz}, matching the baseline's data budget~\cite{ontrack2024}. Ground
@@ -17,7 +17,7 @@ telemetry.
 \label{subsubsec:raceline}
 Every run follows the same optimised raceline (Fig.~\ref{fig:raceline}),
 produced with the TUM global race trajectory optimization
-package~\cite{tumracetraj} under its minimum-curvature
+~\cite{tumracetraj} under its minimum-curvature
 formulation~\cite{heilmeier2020} on a recorded centreline of the CARLA
 silverstone circuit: a closed \SI{5830}{\meter} lap of 2916 waypoints
 at \SI{2.0}{\meter} spacing, reference speed
@@ -25,38 +25,13 @@ at \SI{2.0}{\meter} spacing, reference speed
 \SI{18.7}{\meter} ($|\kappa|_{\max}=\SI{0.0536}{\per\meter}$).
 
 Two of the optimiser's inputs matter for Section~\ref{subsec:negative}. Its
-vehicle configuration assumes a mass of \SI{204}{\kilo\gram} against the
-\SI{240.0}{\kilo\gram} the physics engine simulates, and its \texttt{ggv}
+vehicle configuration of a mass \SI{240}{\kilo\gram}, and its \texttt{ggv}
 envelope declares a \emph{constant} lateral capability of
-\SI{12.0}{\meter\per\second\squared} at every speed. The resulting profile
+\SI{5.0}{\meter\per\second\squared} at every speed. The resulting profile
 saturates that envelope exactly---peak demand $\max(v_{x}^{2}|\kappa|)$ over
-the lap is \SI{12.00}{\meter\per\second\squared}, i.e.\ \SI{1.22}{\g}---so the
+the lap is \SI{5.00}{\meter\per\second\squared}, i.e.\ \SI{0.56}{\g}---so the
 trajectory is feasible \emph{by construction} for the vehicle the optimiser was
-told about, and only for that vehicle. Against the plant's measured
-steady-state ceiling of $\approx\SI{9.8}{\meter\per\second\squared}$,
-\SI{11.9}{\percent} of the lap is infeasible (Fig.~\ref{fig:raceline}c).
-
-\begin{table}[t]
-\caption{Reference tire model of the plant, obtained by fitting the Magic
-Formula directly to the simulator's per-wheel telemetry over a dedicated
-limit-excitation run reaching $\alpha=\SI{0.37}{\radian}$, axle $\mu=1.05$ and
-\SI{1.50}{\g}. Differential evolution, $E$ constrained to $\ge-2$.}
-\label{tab:ref}
-\centering
-\small
-\begin{tabular}{@{}lccccc@{}}
-\toprule
-Axle & $B$ & $C$ & $D$ & $E$ & RMSE\\
-\midrule
-Front & 7.076 & 1.346 & 1.009 & $-2.000$ & \SI{135}{\newton}\\
-Rear  & 7.873 & 1.383 & 1.002 & $-1.024$ & \SI{85}{\newton}\\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Table~\ref{tab:ref} is the reference against which the on-track identifier is
-scored. Note $D\approx1.0$, not the \num{1.5} of the wheel material
-coefficient---the distinction of Section~\ref{subsec:platform}.
+told about, and only for that vehicle.
 
 \begin{figure*}[t]
 \centering
@@ -418,6 +393,54 @@ tracking. The third is the input vector: whether the slip-angle augmentation of
 Section~\ref{subsec:physinputs} buys anything once the residual is temporal,
 which is a question about whether $\alpha_{f},\alpha_{r}$ are recoverable from
 a \SI{0.4}{\second} window (Fig.~\ref{fig:physinputs}).
+
+\subsection{adaptation to time-varying friction}
+\label{subsec:varyingmu}
+
+The experiments reported above hold the surface fixed and ask whether the tire
+model is recovered correctly. The complementary question---whether the
+identifier tracks a surface that \emph{changes} while the vehicle is on
+it---is evaluated with the three friction schedules introduced by
+LLA-MPC~\cite{llampc2025}, reproduced here on the CARLA plant so that the
+comparison is on the same axes as the adaptive-racing literature. Friction is
+varied by rewriting the per-wheel \texttt{tire\_friction} of the vehicle's
+physics control at the simulator's fixed \SI{0.033}{\second} step, so that the
+schedule is exact and known, while the identifier sees only IMU, odometry and
+steering feedback as before. In every case the plant's own per-wheel telemetry
+supplies the true $\mu(t)$ against which the estimate is scored, and the same
+re-identification period of Section~\ref{subsec:deployment} is used
+throughout.
+
+\subsubsection{Gradual friction decay (Experiment 1)}
+The actual friction coefficient decays linearly at \SI{2}{\percent} per
+second, as in~\cite{llampc2025}. This is the benign case: the surface evolves
+slowly enough that a controller with a stale model degrades gradually rather
+than failing outright, so it measures tracking latency rather than recovery.
+The quantity of interest is the lag between $\mu(t)$ and the identified
+$D(t)$, and whether the floor-only warm-start policy of
+Section~\ref{subsec:mufloor} biases the estimate upward when grip is falling
+monotonically---a case the floor was never designed for, and the one place
+where the policy is expected to cost accuracy.
+
+\subsubsection{Sudden friction drop (Experiment 2)}
+A step reduction of \SI{40}{\percent} in the friction coefficient at the end
+of the first lap, again following~\cite{llampc2025}. Physically this stands
+for a dry-to-wet transition, an oil or debris patch, or a change of surface
+material; none of these leave time for gradual adaptation. The step is placed
+after one completed lap so that every method has a full lap of data before it
+occurs. What is measured is the recovery time---the interval from the step to
+the first identification whose $D$ is within \SI{5}{\percent} of the new
+truth---and the closed-loop cost paid in the interim.
+
+Reporting is on the three metrics used in~\cite{llampc2025}---lap time,
+maximum cross-track error and a violation count---plus the friction-tracking
+error $|\hat{\mu}(t)-\mu(t)|$, which is the identifier-level quantity this
+work is actually about. Figures~\ref{fig:mutracking}
+and~\ref{fig:mutrajectories} are the corresponding diagnostics. All three
+experiments are closed-loop and therefore inherit the prerequisite of
+Section~\ref{subsec:negative}: they are blocked until the raceline is
+regenerated for the measured vehicle, since a trajectory already infeasible at
+nominal grip cannot be driven at \SI{60}{\percent} of it.
 
 \subsection{Negative result: the raceline, not the model}
 \label{subsec:negative}

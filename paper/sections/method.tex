@@ -55,7 +55,7 @@ cost of 16 parameters and no new sensor. This is the same motivation as the
 physics-informed regularisers of \cite{raissi2019pinn,deepdynamics2024} applied
 at the input rather than at the loss, and it is available both on its own
 (\texttt{physics\_inputs}) and combined with the temporal residual
-(\texttt{s4} with \texttt{use\_physics\_inputs}). The augmentation is
+(\textbf{s4} with \texttt{use\_physics\_inputs}). The augmentation is
 rank-agnostic, so the same code path serves a flat batch and a windowed
 sequence batch.
 
@@ -397,13 +397,13 @@ see.
 \subsection{Deployment}
 \label{subsec:deployment}
 
-The identifier runs as a single ROS~2 node at \SI{50}{\hertz} with a rolling
+The identifier runs as a single ROS~2 node at \SI{20}{\hertz} with a rolling
 FIFO buffer of the collected signals, cycling through four states: collect a
 full buffer, train, await the controller's acknowledgement of the submitted
 coefficients, then run---re-identifying every
 $T_{\mathrm{reid}}=\SI{30}{\second}$ from the newest buffer. Three interface
 details matter for reproducing the results. The achieved road-wheel angle is
-used when the platform publishes one and falls back to the \texttt{/drive}
+used when the platform publishes one and falls back to the commanded
 setpoint on staleness, with the substitution logged
 (Section~\ref{subsec:measurement}). The friction warm start is recomputed on
 \emph{every} cycle rather than once at startup, which is safe only because the

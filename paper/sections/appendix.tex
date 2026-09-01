@@ -14,7 +14,7 @@ scales the yaw-rate residual the network is trained on, and it enters the
 stiffness-adaptive sub-stepping of Section~\ref{subsec:gates} through
 $l_{f}^{2}C_{f}+l_{r}^{2}C_{r}$ over $I_{z}$. \emph{How to discharge:} apply a
 known yaw moment (a step steer at constant speed with the resulting axle
-forces read from \texttt{feedback/\allowbreak tire\_forces}) and fit $I_{z}$ from the
+forces read from the force feedback topic) and fit $I_{z}$ from the
 measured $\dot\omega$; or read the value the physics engine is using directly
 from the actor's inertia tensor.
 
@@ -61,29 +61,18 @@ it is not derived.
 \subsection*{A7. Simulator determinism and timing}
 CARLA runs in synchronous mode with a \SI{0.033}{\second} physics step, but
 sim time advances faster than wall time (observed $\approx1.9\times$ on our
-hardware). All identification data is stamped from the simulation clock. We
-assume the physics step is uniform and that dead-reckoned odometry samples
-(disabled here via \texttt{follow\_server\_rate}) do not enter the
-identification buffer.
+hardware). All identification data is stamped from the simulation clock.
 
 \subsection*{A8. Software configuration of record}
 Identification and control workspace: ROS~2 Humble, Python 3.10 (required ---
 ROS~2 Humble ships CPython~3.10 ABI extensions only), PyTorch with CUDA on an
 RTX~2080-class GPU. The bridge is built and sourced as a separate overlay on
 top of that workspace, so that its message packages
-(\texttt{sim\_manager\_\allowbreak msgs}) resolve for the ground-truth topics;
-CARLA server 0.9.16 / Unreal Engine 4.26; \texttt{acados} 0.5.5 with
-partial-condensing HPIPM. Identification runs at \SI{50}{\hertz} with a
+(\texttt{sim\_manager\_\allowbreak msgs}) resolve for the ground-truth forces;
+CARLA server 0.9.16 / Unreal Engine 4.26; \textbf{acados 0.5.5} with
+partial-condensing HPIPM. Identification runs at \SI{20}{\hertz} with a
 \SI{30}{\second} buffer, six co-identification iterations, 200 training
 epochs, full-batch Adam at $5\times10^{-4}$.
-
-\subsection*{A9. Regression tests}
-Eight tests pin the identifiability signature (no fitted coefficient on a
-bound; $l_{wb}\equiv l_{f}+l_{r}$; the rollout speed derivation) and run under
-\texttt{colcon test}, so that the degenerate-fit signature cannot return
-silently. This is a reproducibility mechanism rather than a scientific
-result, but it is the mechanism that would catch a regression of the paper's
-central finding.
 
 \section{Reference Implementation}
 

@@ -190,6 +190,48 @@ was rewritten under the running controller on every cycle.}
 \end{figure}
 
 % -----------------------------------------------------------------------------
+% Time-varying friction experiments (Section VI-I). All pending: blocked on the
+% regenerated raceline, see Section VI-J.
+% -----------------------------------------------------------------------------
+
+\begin{figure}[t]
+\centering
+\placeholderbox{Pending: three stacked panels sharing a time axis, one per
+friction schedule; true $\mu(t)$ against the identified $D(t)$ and the
+warm-start estimate, with lap boundaries and the change instant
+marked.}{5.0cm}
+\caption{Friction tracking under the three schedules of
+Section~\ref{subsec:varyingmu}. \textbf{Not yet produced.} (a) Linear decay at
+\SI{2}{\percent} per second; (b) a \SI{40}{\percent} step at the end of the
+first lap; (c) the same step within the first lap. Each panel shows the
+simulator's commanded $\mu(t)$ as ground truth, the identified peak factor
+$D(t)$ published on the diagnostic topic of
+Section~\ref{subsec:deployment}, and the warm-start input that seeds it
+(Section~\ref{subsec:friction}). The quantities read off are the tracking lag
+in (a) and the recovery time in (b) and (c); the schedules follow
+LLA-MPC~\cite{llampc2025} so that the axes match the adaptive-racing
+literature.}
+\label{fig:mutracking}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\placeholderbox{Pending: driven paths over the raceline for the three
+schedules, coloured by speed, with off-track excursions and gate rejections
+annotated.}{4.6cm}
+\caption{Closed-loop consequence of a changing surface. \textbf{Not yet
+produced}; blocked on the regenerated raceline of
+Section~\ref{subsec:negative}. The driven path under each of the three
+friction schedules against the reference, coloured by speed, with the instant
+of the change marked and every admissibility-gate rejection
+(Section~\ref{sec:integration}) annotated on the lap. Experiment 3 is the
+adversarial case: the step arrives before a full identification buffer exists,
+and the gate should reject rather than let the controller pursue a trajectory
+the surface no longer supports.}
+\label{fig:mutrajectories}
+\end{figure}
+
+% -----------------------------------------------------------------------------
 % Residual-architecture and cost figures (Sections V-A, VI-G, VI-H). Pending.
 % -----------------------------------------------------------------------------
 

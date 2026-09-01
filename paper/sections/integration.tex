@@ -3,8 +3,8 @@
 \label{sec:integration}
 
 The identified model leaves the pipeline through one interface. A nonlinear MPC
-path-tracking controller (\texttt{acados}~\cite{acados2022}, partial-condensing
-HPIPM~\cite{hpipm2020}, horizon $N=100$ at a \SI{50}{\hertz} control period)
+path-tracking controller (acados~\cite{acados2022}, partial-condensing
+HPIPM~\cite{hpipm2020}, horizon $N=20$ at a \SI{20}{\hertz} control period)
 carries the same single-track model as the identifier and consumes $\phip$
 directly: the eight Pacejka coefficients enter the prediction model's axle
 forces through \eqref{eq:mf}, and nothing else about the controller changes
