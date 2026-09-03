@@ -60,6 +60,7 @@ TireForces = _stub_sim_manager_msgs().TireForces
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from tire_force_benchmark import tire_force_benchmark_node as node_module  # noqa: E402
 from tire_force_benchmark.tire_force_benchmark_node import TireForceBenchmarkNode  # noqa: E402
 
 
@@ -122,10 +123,11 @@ class NodeUnderTest:
         return False
 
 
-def _make_tire_msg(index, fy=None, fz=10.0, slip_angle=0.01):
+def _make_tire_msg(index, fy=None, fz=10.0, slip_angle=0.01, tire_friction=1.05):
     msg = TireForces()
     msg.stamp.sec = index
     msg.stamp.nanosec = 0
+    msg.tire_friction = [float(tire_friction)] * 4
     value = float(index) if fy is None else float(fy)
     msg.lateral_force = [value] * 4
     msg.normal_load = [float(fz)] * 4
@@ -337,6 +339,54 @@ def test_plot_export_creates_expected_files(tmp_path):
         f = plot_dir / name
         assert f.exists(), f'missing {name}'
         assert f.stat().st_size > 0
+
+
+# --- CARLA PhysX nominal curve ---
+
+def test_physx_lateral_force_matches_the_simulators_own_model():
+    # PxVehicleComputeTireForceDefault at zero long. slip / camber, with
+    # CARLA's asurt_fsai wheel values: saturates at exactly mu*Fz once
+    # K = latStiff*|tan(alpha)|/(mu*Fz) reaches 3, and its initial slope is
+    # latStiff = Fz * lat_stiff_value * S1(3/lat_stiff_max_load).
+    mu, fz = 1.05, 650.0
+    lat_stiff = fz * 17.0 * (1.5 - 1.5 ** 2 / 3.0 + 1.5 ** 3 / 27.0)
+
+    slope = float(
+        node_module.physx_lateral_force(1e-4, fz, mu, 17.0, 2.0) / 1e-4
+    )
+    assert slope == pytest.approx(lat_stiff, rel=1e-3)
+
+    alpha_peak = math.atan(3.0 * mu * fz / lat_stiff)
+    peak = float(node_module.physx_lateral_force(alpha_peak, fz, mu, 17.0, 2.0))
+    assert peak == pytest.approx(mu * fz, rel=1e-3)
+    # No falloff past the peak - this is what a Magic Formula cannot reproduce.
+    beyond = float(node_module.physx_lateral_force(2.0 * alpha_peak, fz, mu, 17.0, 2.0))
+    assert beyond == pytest.approx(mu * fz, rel=1e-3)
+
+    assert node_module.physx_lateral_force(-0.05, fz, mu, 17.0, 2.0) == pytest.approx(
+        -node_module.physx_lateral_force(0.05, fz, mu, 17.0, 2.0)
+    )
+
+
+def test_nominal_plot_uses_measured_friction_and_needs_no_prior_model(tmp_path):
+    # nominal_source 'carla_physx' must not depend on nominal_model_file, and
+    # must take mu from the telemetry rather than a configured value.
+    plot_dir = tmp_path / 'plots'
+    with NodeUnderTest({
+        'min_fz_threshold': 1.0,
+        'plot_output_dir': str(plot_dir),
+        'm': 3.5, 'I_z': 0.0627, 'l_f': 0.17, 'l_r': 0.155, 'l_wb': 0.325,
+        'c_pf': [6.63, 1.1052, 0.4316, 0.5193],
+        'c_pr': [7.8594, 1.5468, 0.3589, 0.5631],
+    }) as node:
+        assert node.nominal_source == 'carla_physx'
+        assert node.nominal_c_pf is None
+        for i in range(5):
+            node.tire_forces_callback(_make_tire_msg(i, fy=1.0 + 0.1 * i, tire_friction=0.8))
+        assert node._nominal_friction('front') == pytest.approx(0.8)
+
+    f = plot_dir / 'pacejka_identified_vs_nominal.png'
+    assert f.exists() and f.stat().st_size > 0
 
 
 # --- identified-params service gating (no hardcoded c_pf/c_pr) ---

@@ -34,6 +34,31 @@ tire_force_benchmark_node:
     # to actually produce the plot.
     nominal_model_file: "/home/ebrahim/Ebrahim_Master_Thesis_repo/On-Track-SysID/params/pacejka_params.yaml"
 
+    # What the "Nominal Model" curve in pacejka_identified_vs_nominal.png is:
+    #   carla_physx (default) - CARLA's own tire curve, rebuilt from
+    #     PxVehicleComputeTireForceDefault at zero longitudinal slip and zero
+    #     camber: Fy = mu*Fz*S1(latStiff*|tan(alpha)|/(mu*Fz)), which saturates
+    #     at mu*Fz and does NOT fall off past the peak. This is the plant, so
+    #     it is the only honest reference for "how far off was the prior".
+    #   model_file - the previous behaviour: the Magic Formula set in
+    #     nominal_model_file. Note that On-Track-SysID writes its identified
+    #     coefficients back into pacejka_params.yaml, so C_Pf_ref there can be
+    #     a copy of the identified set and the two curves then coincide.
+    nominal_source: carla_physx
+
+    # CARLA WheelPhysicsControl lat_stiff_value / lat_stiff_max_load (PhysX
+    # mLatStiffY / mLatStiffX). These are vehicle.vehicle.asurt_fsai's values,
+    # read back from the running server with Vehicle.get_physics_control();
+    # re-read them if the blueprint or config/carla_interface_config.yaml
+    # changes.
+    carla_lat_stiff_value: 17.0
+    carla_lat_stiff_max_load: 2.0
+    # Peak friction of the nominal curve. <= 0 takes it from the tire_friction
+    # field of /sim/feedback/tire_forces, which is the road-multiplied value
+    # the physics step actually uses (~1.05 against the 1.5 configured on this
+    # map) rather than the configured one.
+    carla_tire_friction: 0.0
+
     # c_pf/c_pr have NO default - leave them unset (as below) to have the node
     # wait for freshly-identified params pushed via identified_params_service
     # (see adaptive_controller_manager's benchmark_update_params_enable/

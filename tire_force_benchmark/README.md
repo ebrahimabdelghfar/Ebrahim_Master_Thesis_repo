@@ -140,7 +140,7 @@ If `plot_output_dir` is set, on node shutdown the following PNGs are written (ma
 - `tire_forces_error_hist.png` / `vehicle_states_error_hist.png` — error distribution histograms, with the zero-error line and mean bias marked.
 - `tire_forces_parity.png` / `vehicle_states_parity.png` — estimate-vs-ground-truth parity (regression) scatter with a y=x reference line and RMSE/R² annotated, one subplot per signal — the standard model-validation figure in this field (cf. Dikici et al. 2024, Fig. 5/6-style validation).
 - `pacejka_curve_validation.png` — measured Fy vs. slip angle scatter overlaid with the identified Magic Formula curve, front/rear axle side by side at their nominal static loads (`internal_pacejka` mode only, once a model has been identified) — the canonical Pacejka-model validation plot (Bakker/Nyborg/Pacejka SAE 870421; Pacejka & Bakker 1992).
-- `pacejka_identified_vs_nominal.png` — the identified model vs. a nominal/prior reference model (`nominal_model_file`), swept analytically over a fixed slip-angle range, front/rear stacked — "how much did identification actually change the model," requires both a live identified model and `nominal_model_file` set.
+- `pacejka_identified_vs_nominal.png` — the identified model vs. the nominal curve, swept analytically over a fixed slip-angle range, front/rear stacked. With `nominal_source: carla_physx` (default) the nominal curve is CARLA's own PhysX tire model at the friction the telemetry reports, so it needs a live identified model and at least one tire-forces message; with `nominal_source: model_file` it is the prior `C_Pf`/`C_Pr` from `nominal_model_file` instead. See `docs/tire_force_benchmark.md`.
 - `metrics_summary.png` — a table of RMSE/MAE/NRMSE/MaxAE/Bias/StdDev/R² for every signal.
 
 History is kept in a bounded-memory buffer (`plot_max_points`, logarithmic decimation) so long runs don't grow memory unbounded.
@@ -184,6 +184,10 @@ See `config/benchmark_config.yaml` for the full, documented, canonical list. Sum
 | `external_max_queue_size` | `2000` | `external_topic` only |
 | `model_file` | `''` | `C_Pf`/`C_Pr` (+ optionally `m`/`I_z`/`l_f`/`l_r`/`l_wb`) |
 | `nominal_model_file` | `''` | reference `C_Pf`/`C_Pr` for `pacejka_identified_vs_nominal.png` only — never seeds the live benchmark model |
+| `nominal_source` | `carla_physx` | `carla_physx`: draw CARLA's own tire curve as the nominal one; `model_file`: draw `nominal_model_file`'s Magic Formula instead |
+| `carla_lat_stiff_value` | `17.0` | CARLA `WheelPhysicsControl.lat_stiff_value` (PhysX `mLatStiffY`), read back with `Vehicle.get_physics_control()` |
+| `carla_lat_stiff_max_load` | `2.0` | CARLA `WheelPhysicsControl.lat_stiff_max_load` (PhysX `mLatStiffX`) |
+| `carla_tire_friction` | `0.0` | peak friction of the nominal curve; `<= 0` takes it from the telemetry's `tire_friction` field (the road-multiplied value the physics step uses) |
 | `c_pf` / `c_pr` | **none** | optional startup override; otherwise wait for `identified_params_service` |
 | `identified_params_service` | `/benchmark/update_params` | `adaptive_controller_interfaces/srv/IdentifiedParam` server |
 | `min_fz_threshold` | **none — mandatory** | see "Configuration" above |

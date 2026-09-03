@@ -38,6 +38,31 @@ Implemented identically (and verified byte-for-byte consistent) in `tire_force_b
 
 On shutdown (`plot_output_dir` set), `pacejka_curve_validation.png` renders this curve directly — measured `(α, Fy)` scatter per axle against the model swept over the observed slip-angle range at the nominal static axle load, mirroring the field's standard validation figure (Bakker/Nyborg/Pacejka SAE 870421; Pacejka & Bakker 1992; Fig. 6-style plots in Dikici et al. 2024). The parity plots (`*_parity.png`) provide the complementary estimate-vs-ground-truth regression view used for the RMSE-based validation in the same references. See `tire_force_benchmark/README.md`'s "Academic plot export" section for the full plot list.
 
+## The nominal curve: CARLA's tire model is not a Magic Formula
+
+`pacejka_identified_vs_nominal.png` compares the identified model against a *nominal* one. Until 2026-09-03 that nominal came from `nominal_model_file` (`On-Track-SysID/params/pacejka_params.yaml`), whose `C_Pf_ref`/`C_Pr_ref` the identification pipeline overwrites with its own result — so the plot drew one curve on top of another, and even when it does not, a stored Magic Formula prior is not what CARLA simulates.
+
+The plant is PhysX's default tire model (`PxVehicleComputeTireForceDefault`, PhysX 3.4 `PxVehicleUpdate.cpp`). At zero longitudinal slip and zero camber it reduces to
+
+$$
+F_y(\alpha) = \operatorname{sign}(\alpha)\,\mu F_z\, S_1(K), \qquad K = \frac{C_{\text{lat}}\,|\tan\alpha|}{\mu F_z}, \qquad C_{\text{lat}} = F_z^{\text{rest}}\, \texttt{mLatStiffY}\; S_1\!\Big(\frac{3\,\bar F_z}{\texttt{mLatStiffX}}\Big)
+$$
+
+with $\bar F_z = F_z / F_z^{\text{rest}}$ and CarSimEd's smoothing function $S_1(K) = \min(1,\, K - K^2/3 + K^3/27)$. It saturates at $\mu F_z$ (first reached at $K = 3$) and **never falls off past the peak**, so a Magic Formula can only match it up to the peak.
+
+`nominal_source: carla_physx` (the default) draws that curve, via `physx_lateral_force()`. Its inputs are the simulator's, not a prior: `carla_lat_stiff_value` / `carla_lat_stiff_max_load` are CARLA's `WheelPhysicsControl` fields read back with `Vehicle.get_physics_control()` (17.0 and 2.0 on `vehicle.vehicle.asurt_fsai`), and $\mu$ comes from the `tire_friction` field of `/sim/feedback/tire_forces` — the road-multiplied 1.05 the physics step actually uses, not the 1.5 configured in the bridge. `nominal_source: model_file` restores the old prior-model comparison.
+
+Validated against 1804 ground-truth wheel samples recorded from `/sim/feedback/tire_forces` on a live lap (|α| p99 = 3.66°), predicting each sample from its own measured α, $F_z$ and μ:
+
+| | R² | RMSE | bias |
+|---|---|---|---|
+| PhysX model, front | 0.99 | 16.1 N | +2.0 N |
+| PhysX model, rear | 0.99 | 14.7 N | +0.8 N |
+| identified Magic Formula, front | 0.96 | 34.6 N | −7.5 N |
+| identified Magic Formula, rear | 0.98 | 21.3 N | −5.2 N |
+
+At the static axle loads this gives an initial stiffness of 14.80 per unit $F_z$ per rad and a peak at 11.5° of slip. The measured `Fy/(α·F_z)` regression slope over a lap is ≈11.5 /rad — lower only because that data already includes the curve's own falloff toward saturation.
+
 ## One-step vehicle-state prediction (as implemented)
 
 Front/rear slip angles from the standard bicycle-model kinematics:

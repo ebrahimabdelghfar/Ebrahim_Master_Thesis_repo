@@ -73,6 +73,37 @@ def pacejka_formula(params, alpha, fz):
     return fz * d * np.sin(c * np.arctan(b * alpha - e * (b * alpha - np.arctan(b * alpha))))
 
 
+# PhysX's own constants in smoothingFunction1 (PxVehicleUpdate.cpp), kept
+# literal rather than 1/3 and 1/27 so this reproduces the simulator's curve.
+_PHYSX_ONE_THIRD = 0.33333
+_PHYSX_ONE_TWENTYSEVENTH = 0.037037
+
+
+def _physx_smoothing1(k):
+    # smoothingFunction1, CarSimEd manual Appendix F eq. 20: rises like sqrt(k)
+    # and is clamped at 1.0, which it first reaches at k = 3.
+    k = np.asarray(k, dtype=float)
+    return np.minimum(1.0, k - _PHYSX_ONE_THIRD * k * k + _PHYSX_ONE_TWENTYSEVENTH * k * k * k)
+
+
+def physx_lateral_force(alpha, fz, mu, lat_stiff_value, lat_stiff_max_load, normalized_load=1.0):
+    # CARLA's actual tire model: PxVehicleComputeTireForceDefault with zero
+    # longitudinal slip and zero camber, where the whole expression collapses
+    # to |Fy| = mu*Fz*smoothingFunction1(K), K = latStiff*|tan(alpha)|/(mu*Fz).
+    # It saturates at mu*Fz and never falls off past the peak, so it is NOT a
+    # Magic Formula curve. lat_stiff_value/lat_stiff_max_load are CARLA's
+    # WheelPhysicsControl fields (PhysX mLatStiffY/mLatStiffX); fz is the load
+    # the curve is drawn at and normalized_load is fz/restLoad.
+    alpha = np.asarray(alpha, dtype=float)
+    rest_load = fz / normalized_load
+    lat_stiff = rest_load * lat_stiff_value * float(
+        _physx_smoothing1(3.0 * normalized_load / lat_stiff_max_load)
+    )
+    t_eff = np.tan(alpha)
+    k = lat_stiff * np.abs(t_eff) / (mu * fz)
+    return np.sign(t_eff) * mu * fz * _physx_smoothing1(k)
+
+
 class TireForceBenchmarkNode(Node):
     def __init__(self):
         super().__init__('tire_force_benchmark_node')
@@ -102,6 +133,23 @@ class TireForceBenchmarkNode(Node):
         # *_pacejka.txt) without contaminating the live benchmark it's compared
         # against.
         self.declare_parameter('nominal_model_file', '')
+        # Which curve pacejka_identified_vs_nominal.png draws as "nominal":
+        # 'carla_physx' rebuilds CARLA's own tire model (see
+        # physx_lateral_force) from the simulator's wheel parameters and the
+        # friction the /sim/feedback/tire_forces telemetry reports, i.e. the
+        # plant's true curve; 'model_file' keeps the prior Magic Formula set
+        # from nominal_model_file.
+        self.declare_parameter('nominal_source', 'carla_physx')
+        # CARLA WheelPhysicsControl lat_stiff_value / lat_stiff_max_load
+        # (PhysX mLatStiffY / mLatStiffX). Defaults are this vehicle's
+        # measured values, read back from the running server with
+        # Vehicle.get_physics_control().
+        self.declare_parameter('carla_lat_stiff_value', 17.0)
+        self.declare_parameter('carla_lat_stiff_max_load', 2.0)
+        # <= 0 means "use the friction the tire telemetry reports", which is
+        # the road-surface-multiplied value the physics step actually uses -
+        # not vehicle.physics.wheels[].tire_friction.
+        self.declare_parameter('carla_tire_friction', 0.0)
         self.declare_parameter('csv_output_path', '')
 
         self.declare_parameter('enable_state_benchmarking', True)
@@ -164,6 +212,15 @@ class TireForceBenchmarkNode(Node):
         model_file = str(self.get_parameter('model_file').value)
         if model_file != '':
             self._load_model_if_available(model_file)
+
+        self.nominal_source = str(self.get_parameter('nominal_source').value).strip()
+        self.carla_lat_stiff_value = float(self.get_parameter('carla_lat_stiff_value').value)
+        self.carla_lat_stiff_max_load = float(self.get_parameter('carla_lat_stiff_max_load').value)
+        self.carla_tire_friction = float(self.get_parameter('carla_tire_friction').value)
+        # Running mean of the per-axle tire_friction the telemetry reports,
+        # used as mu of the CARLA nominal curve when carla_tire_friction <= 0.
+        self.mu_sum = {'front': 0.0, 'rear': 0.0}
+        self.mu_count = {'front': 0, 'rear': 0}
 
         self.nominal_c_pf = None
         self.nominal_c_pr = None
@@ -468,6 +525,12 @@ class TireForceBenchmarkNode(Node):
         # through as (alpha=0, Fy=0) samples that flatter every metric.
         if all(a == 0.0 and f == 0.0 for a, f in zip(alpha, fy)):
             return
+
+        mu = [float(msg.tire_friction[i]) for i in order]
+        self.mu_sum['front'] += mu[0] + mu[1]
+        self.mu_count['front'] += 2
+        self.mu_sum['rear'] += mu[2] + mu[3]
+        self.mu_count['rear'] += 2
 
         fl_fy, fr_fy, rl_fy, rr_fy = fy
         front_gt = fl_fy + fr_fy
@@ -958,6 +1021,16 @@ class TireForceBenchmarkNode(Node):
         fig.savefig(save_path)
         plt.close(fig)
 
+    def _nominal_friction(self, axle_key):
+        # The friction the physics step reports for that axle, not the
+        # configured tire_friction: the server multiplies it by the road
+        # surface's own coefficient.
+        if self.carla_tire_friction > 0.0:
+            return self.carla_tire_friction
+        if self.mu_count[axle_key] == 0:
+            return None
+        return self.mu_sum[axle_key] / self.mu_count[axle_key]
+
     def _plot_identified_vs_nominal(self, plt, save_path):
         # Model-vs-model comparison (no data scatter): the freshly identified
         # Magic Formula against a nominal/prior reference model
@@ -967,7 +1040,10 @@ class TireForceBenchmarkNode(Node):
         # measured data) with "how much did identification actually change
         # the model" - the other comparison this literature reports (Pacejka
         # & Bakker 1992; Dikici et al. 2024).
-        if not self.have_identified_params or self.nominal_c_pf is None or self.nominal_c_pr is None:
+        use_physx = self.nominal_source == 'carla_physx'
+        if not self.have_identified_params:
+            return
+        if not use_physx and (self.nominal_c_pf is None or self.nominal_c_pr is None):
             return
 
         if self.m <= 0.0 or self.l_wb <= 0.0:
@@ -981,16 +1057,34 @@ class TireForceBenchmarkNode(Node):
         fzr = self.m * G * self.l_f / self.l_wb
         alpha_sweep = np.linspace(-0.20, 0.20, 200)
         axle_specs = [
-            ('Front Tires', self.c_pf, self.nominal_c_pf, fzf, r'$F_{yf}$ [N]', r'$\alpha_f$ [rad]'),
-            ('Rear Tires', self.c_pr, self.nominal_c_pr, fzr, r'$F_{yr}$ [N]', r'$\alpha_r$ [rad]'),
+            ('front', 'Front Tires', self.c_pf, self.nominal_c_pf, fzf, r'$F_{yf}$ [N]', r'$\alpha_f$ [rad]'),
+            ('rear', 'Rear Tires', self.c_pr, self.nominal_c_pr, fzr, r'$F_{yr}$ [N]', r'$\alpha_r$ [rad]'),
         ]
 
         fig, axes = plt.subplots(2, 1, figsize=(7, 7))
-        for ax, (title, identified_params, nominal_params, fz, ylabel, xlabel) in zip(axes, axle_specs):
+        for ax, (key, title, identified_params, nominal_params, fz, ylabel, xlabel) in zip(axes, axle_specs):
             fy_identified = pacejka_formula(identified_params, alpha_sweep, fz)
-            fy_nominal = pacejka_formula(nominal_params, alpha_sweep, fz)
+            if use_physx:
+                mu = self._nominal_friction(key)
+                if mu is None:
+                    plt.close(fig)
+                    self.get_logger().debug(
+                        'Skipping pacejka_identified_vs_nominal.png - nominal_source is '
+                        "'carla_physx' but no tire_friction has been received on the tire "
+                        'forces topic and carla_tire_friction is not set.'
+                    )
+                    return
+                # Per wheel at half the axle load, then summed back to the axle.
+                fy_nominal = 2.0 * physx_lateral_force(
+                    alpha_sweep, 0.5 * fz, mu,
+                    self.carla_lat_stiff_value, self.carla_lat_stiff_max_load,
+                )
+                nominal_label = f'Nominal Model (CARLA PhysX, $\\mu$={mu:.2f})'
+            else:
+                fy_nominal = pacejka_formula(nominal_params, alpha_sweep, fz)
+                nominal_label = 'Nominal Model'
             ax.plot(alpha_sweep, fy_identified, color=COLOR_EST, linewidth=2.0, label='Identified Model')
-            ax.plot(alpha_sweep, fy_nominal, color=COLOR_NOMINAL, linewidth=2.0, label='Nominal Model')
+            ax.plot(alpha_sweep, fy_nominal, color=COLOR_NOMINAL, linewidth=2.0, label=nominal_label)
             ax.set_title(title)
             ax.set_xlabel(xlabel)
             ax.set_ylabel(ylabel)
