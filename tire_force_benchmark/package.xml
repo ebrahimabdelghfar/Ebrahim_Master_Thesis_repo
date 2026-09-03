@@ -3,7 +3,7 @@
 <package format="3">
   <name>tire_force_benchmark</name>
   <version>0.1.0</version>
-  <description>ROS2 node to benchmark estimated tire forces against IPG CarMaker ground truth.</description>
+  <description>ROS2 node to benchmark estimated tire forces against the simulator's ground-truth wheel telemetry.</description>
 
   <maintainer email="ebrahim@example.com">Ebrahim</maintainer>
   <license>MIT</license>
@@ -12,7 +12,7 @@
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>std_msgs</exec_depend>
-  <exec_depend>hellocm_msgs</exec_depend>
+  <exec_depend>sim_manager_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>ackermann_msgs</exec_depend>
   <exec_depend>adaptive_controller_interfaces</exec_depend>

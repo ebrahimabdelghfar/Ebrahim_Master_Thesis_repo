@@ -1,19 +1,19 @@
 # tire_force_benchmark
 
-ROS2 package to benchmark **estimated lateral tire forces** and **estimated vehicle states** against IPG CarMaker ground truth from `/tire_forces` (`hellocm_msgs/TireForcesArray`) and `/odom` (`nav_msgs/Odometry`).
+ROS2 package to benchmark **estimated lateral tire forces** and **estimated vehicle states** against the simulator's ground truth from `/sim/feedback/tire_forces` (`sim_manager_msgs/TireForces`) and `/odom` (`nav_msgs/Odometry`).
 
-> **Ground truth caveat:** `/tire_forces` is IPG CarMaker's own simulated Pacejka tire model output, not physically-measured sensor data. See `docs/tire_force_benchmark.md` for details on what this does and doesn't validate.
+> **Ground truth caveat:** `/sim/feedback/tire_forces` is CARLA's own per-wheel telemetry (PhysX contact-patch forces), not physically-measured sensor data. See `docs/tire_force_benchmark.md` for details on what this does and doesn't validate.
 
 This package supports two Fy-benchmarking modes:
 
 1. **internal_pacejka**
    - Uses Pacejka coefficients (`C_Pf`, `C_Pr`) to estimate per-wheel lateral force $F_y$.
-   - Compares internal estimate vs CarMaker ground truth.
+   - Compares internal estimate vs simulator ground truth.
 
 2. **external_topic**
    - Subscribes to your estimator output topic (`std_msgs/Float64MultiArray`) with wheel order:
      - `[FL, FR, RL, RR]`
-   - Compares your external estimates vs CarMaker ground truth.
+   - Compares your external estimates vs simulator ground truth.
 
 In addition, it independently benchmarks a one-step-ahead **vehicle-state prediction** (lateral velocity $v_y$, yaw rate $\omega$) computed internally from the same nominal bicycle-model + Pacejka tire model, against odometry (see "Vehicle-state benchmarking" below).
 
@@ -37,7 +37,7 @@ All parameters live in `config/benchmark_config.yaml` (loaded by the launch file
 flowchart TD
   A[Start node\nTireForceBenchmarkNode] --> B[Load config_file + params\nmode, topics, filters, model/c_pf/c_pr, vehicle constants]
   B --> FE{enable_force_benchmarking}
-  FE -->|true| C[Subscribe /tire_forces\nhellocm_msgs/TireForcesArray]
+  FE -->|true| C[Subscribe /sim/feedback/tire_forces\nsim_manager_msgs/TireForces]
   B --> Z[Create identified_params_service\nIdentifiedParam server]
   FE -->|true| D{benchmark_mode}
   B --> S{enable_state_benchmarking}
@@ -46,7 +46,7 @@ flowchart TD
   ZP -.unblocks.-> E
   ZP -.unblocks.-> U
 
-  D -->|internal_pacejka| E[On /tire_forces callback\nvalidate sample + have_identified_params?]
+  D -->|internal_pacejka| E[On tire_forces callback\nvalidate sample + have_identified_params?]
   E --> F[Compute Fy_est per wheel\nPacejka(C_Pf/C_Pr, slip_angle, Fz)]
   F --> G[Benchmark GT Fy vs Est Fy\nFL FR RL RR + axle sums + total]
   G --> H[Publish /benchmarking/tire_force_fy_estimate\nFloat64MultiArray]
@@ -56,7 +56,7 @@ flowchart TD
   J -->|no| L[Wait next sample]
 
   D -->|external_topic| M[Subscribe estimated_fy_topic\nFloat64MultiArray [FL FR RL RR]]
-  C --> N[On /tire_forces callback\nvalidate + queue GT Fy]
+  C --> N[On tire_forces callback\nvalidate + queue GT Fy]
   M --> O[On external estimate callback\ncheck len(data)>=4, queue estimate]
   N --> O
   O --> P[Slide GT queue by 1 per estimate\npair estimate[k] with ground_truth[k+lead]]
@@ -75,17 +75,17 @@ flowchart TD
 
 ### Ground truth input
 
-- `/tire_forces` (`hellocm_msgs/TireForcesArray`), per wheel: `fy` (lateral force GT), `fz` (normal load), `slip_angle`, `on_road`.
+- `/sim/feedback/tire_forces` (`sim_manager_msgs/TireForces`), `float64[4]` arrays in `wheel_names` order (`FL, FR, RL, RR`): `lateral_force` (Fy GT), `normal_load` (Fz), `slip_angle`. `lateral_force` is already sign-flipped into the ROS body frame to match `slip_angle`, so it compares directly against the Pacejka evaluation.
 - `/odom` (`nav_msgs/Odometry`): `twist.twist.linear.x/y`, `twist.twist.angular.z` — used as $v_x, v_y, \omega$ ground truth for state benchmarking.
 - `/drive` (`ackermann_msgs/AckermannDriveStamped`): `drive.steering_angle` — used as $\delta$.
 
 ### Valid Fy sample filtering
 
-Each `/tire_forces` sample is used only if:
+Each tire-forces sample is used only if:
 
-- `on_road == true` (when `require_on_road` is enabled)
-- `|fz| >= min_fz_threshold`
-- `slip_angle` and `fz` are valid numbers
+- `|normal_load| >= min_fz_threshold` on all four wheels
+- `slip_angle` and `normal_load` are valid numbers
+- the frame is not a standstill frame: below 0.5 m/s the publisher zeroes `slip_angle` and both forces while `normal_load` stays live, so an all-zero slip/Fy frame is dropped
 
 ### Fy estimation path by mode
 
@@ -151,7 +151,7 @@ History is kept in a bounded-memory buffer (`plot_max_points`, logarithmic decim
 
 ### Subscriptions
 
-- `/tire_forces` (`hellocm_msgs/TireForcesArray`) — only if `enable_force_benchmarking`
+- `/sim/feedback/tire_forces` (`sim_manager_msgs/TireForces`) — only if `enable_force_benchmarking`
 - `estimated_fy_topic` (`std_msgs/Float64MultiArray`) — only if `enable_force_benchmarking` and `external_topic` mode
 - `odom_topic` (`nav_msgs/Odometry`) — only if `enable_state_benchmarking`
 - `ackermann_cmd_topic` (`ackermann_msgs/AckermannDriveStamped`) — only if `enable_state_benchmarking`
@@ -176,9 +176,9 @@ See `config/benchmark_config.yaml` for the full, documented, canonical list. Sum
 
 | Parameter | Default | Notes |
 |---|---|---|
-| `enable_force_benchmarking` | `true` | false: no `/tire_forces`/`estimated_fy_topic` subscription at all, no Fy metrics |
+| `enable_force_benchmarking` | `true` | false: no tire-forces/`estimated_fy_topic` subscription at all, no Fy metrics |
 | `benchmark_mode` | `internal_pacejka` | `internal_pacejka` or `external_topic` |
-| `tire_forces_topic` | `/tire_forces` | |
+| `tire_forces_topic` | `/sim/feedback/tire_forces` | `sim_manager_msgs/TireForces`, from the CARLA bridge workspace |
 | `estimated_fy_topic` | `/estimated_tire_force_fy` | `external_topic` only |
 | `external_prediction_lead_samples` | `1` | `external_topic` only |
 | `external_max_queue_size` | `2000` | `external_topic` only |
@@ -187,7 +187,6 @@ See `config/benchmark_config.yaml` for the full, documented, canonical list. Sum
 | `c_pf` / `c_pr` | **none** | optional startup override; otherwise wait for `identified_params_service` |
 | `identified_params_service` | `/benchmark/update_params` | `adaptive_controller_interfaces/srv/IdentifiedParam` server |
 | `min_fz_threshold` | **none — mandatory** | see "Configuration" above |
-| `require_on_road` | `true` | |
 | `log_interval` | `200` | |
 | `csv_output_path` | `''` | also writes a sibling `*_states.csv` if state benchmarking is enabled |
 | `enable_state_benchmarking` | `true` | auto-disables with a warning if vehicle constants are missing |

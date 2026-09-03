@@ -1,9 +1,13 @@
 tire_force_benchmark_node:
   ros__parameters:
     # --- Tire-force (Fy) benchmarking ---
-    enable_force_benchmarking: false   # false: no /tire_forces (or estimated_fy_topic) subscription at all
+    enable_force_benchmarking: true    # false: no tire_forces_topic (or estimated_fy_topic) subscription at all
     benchmark_mode: internal_pacejka   # internal_pacejka | external_topic
-    tire_forces_topic: /tire_forces
+    # CARLA's own per-wheel telemetry (sim_manager_msgs/TireForces) - the same
+    # ground truth pacejka_identification collects from. lateral_force is already
+    # sign-flipped into the ROS body frame to match slip_angle, so it compares
+    # directly against pacejka_formula(c_p*, slip_angle, normal_load).
+    tire_forces_topic: /sim/feedback/tire_forces
     estimated_fy_topic: /estimated_tire_force_fy
     external_prediction_lead_samples: 1   # compare estimate[k] with ground_truth[k+lead]
     external_max_queue_size: 2000
@@ -14,11 +18,11 @@ tire_force_benchmark_node:
     # your vehicle's static per-wheel load (mass*9.81/4 N), just enough to filter
     # near-zero/airborne-wheel samples.
     #
-    # This value (1.0 N) is derived from the lightest vehicle tracked in this repo
-    # (On-Track-SysID/models/NUC5, m=3.5kg -> static per-wheel load ~8.6N) with a
-    # comfortable margin below it. RECOMPUTE THIS for your own vehicle's mass.
-    min_fz_threshold: 1.0
-    require_on_road: true
+    # This value (50.0 N) matches pacejka_identification's data-collection gate for
+    # the CARLA vehicle (per-wheel normal_load runs in the hundreds of N).
+    # RECOMPUTE THIS for your own vehicle's mass - e.g. a 3.5kg NUC5 (static
+    # per-wheel load ~8.6N) needs ~1.0 instead.
+    min_fz_threshold: 50.0
 
     model_file: ""   # path to a C_Pf/C_Pr(+m/I_z/l_f/l_r/l_wb) yaml, e.g. an
                       # On-Track-SysID models/<car>/<car>_pacejka.txt file

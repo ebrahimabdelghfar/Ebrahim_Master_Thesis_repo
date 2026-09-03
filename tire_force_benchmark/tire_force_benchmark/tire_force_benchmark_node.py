@@ -21,19 +21,23 @@ from adaptive_controller_interfaces.srv import IdentifiedParam
 from nav_msgs.msg import Odometry
 
 try:
-    # hellocm_msgs is IPG CarMaker's own message package - only present in a
-    # CarMaker-based workspace, not e.g. an f1tenth_simulator one. Imported
-    # lazily so a workspace without it can still run this node with
-    # enable_force_benchmarking:=false (state-only benchmarking) instead of
-    # crashing on import before parameters are even read.
-    from hellocm_msgs.msg import TireForcesArray
-    _HELLOCM_MSGS_AVAILABLE = True
+    # sim_manager_msgs lives in the CARLA bridge workspace
+    # (/home/ebrahim/Carla_ASU_Bridge), which must be sourced AFTER this
+    # workspace's overlay. Imported lazily so a workspace without it can
+    # still run this node with enable_force_benchmarking:=false
+    # (state-only benchmarking) instead of crashing on import before
+    # parameters are even read.
+    from sim_manager_msgs.msg import TireForces
+    _TIRE_FORCES_MSG_AVAILABLE = True
 except ImportError:
-    TireForcesArray = None
-    _HELLOCM_MSGS_AVAILABLE = False
+    TireForces = None
+    _TIRE_FORCES_MSG_AVAILABLE = False
 
 from tire_force_benchmark.online_metrics import HistoryBuffer
 from tire_force_benchmark.online_metrics import OnlineBenchmark
+
+# Wheel order of every float64[4] array in sim_manager_msgs/TireForces.
+WHEEL_ORDER = ('FL', 'FR', 'RL', 'RR')
 
 FORCE_SIGNALS = [
     ('fl_fy', 'FL Fy', 'N'),
@@ -75,7 +79,7 @@ class TireForceBenchmarkNode(Node):
 
         self.declare_parameter('enable_force_benchmarking', True)
         self.declare_parameter('benchmark_mode', 'internal_pacejka')
-        self.declare_parameter('tire_forces_topic', '/tire_forces')
+        self.declare_parameter('tire_forces_topic', '/sim/feedback/tire_forces')
         self.declare_parameter('estimated_fy_topic', '/estimated_tire_force_fy')
         self.declare_parameter('external_prediction_lead_samples', 1)
         self.declare_parameter('external_max_queue_size', 2000)
@@ -83,7 +87,6 @@ class TireForceBenchmarkNode(Node):
         # No default: a wrong-for-this-vehicle default would silently reject
         # every sample (see docs/tire_force_benchmark.md). Must be set explicitly.
         self.declare_parameter('min_fz_threshold', Parameter.Type.DOUBLE)
-        self.declare_parameter('require_on_road', True)
         self.declare_parameter('model_file', '')
         # No default: benchmarking a hardcoded/arbitrary Pacejka model isn't
         # meaningful. c_pf/c_pr come from model_file (below) or from the
@@ -125,7 +128,6 @@ class TireForceBenchmarkNode(Node):
         )
         self.external_max_queue_size = max(10, int(self.get_parameter('external_max_queue_size').value))
         self.log_interval = int(self.get_parameter('log_interval').value)
-        self.require_on_road = bool(self.get_parameter('require_on_road').value)
         self.csv_output_path = str(self.get_parameter('csv_output_path').value)
         self.plot_output_dir = str(self.get_parameter('plot_output_dir').value)
         self.plot_max_points = int(self.get_parameter('plot_max_points').value)
@@ -223,11 +225,12 @@ class TireForceBenchmarkNode(Node):
 
         self.summary_pub = self.create_publisher(String, '/benchmarking/tire_force_summary', 10)
 
-        if self.enable_force_benchmarking and not _HELLOCM_MSGS_AVAILABLE:
+        if self.enable_force_benchmarking and not _TIRE_FORCES_MSG_AVAILABLE:
             self.get_logger().debug(
-                'enable_force_benchmarking requested but hellocm_msgs (IPG CarMaker\'s tire '
-                'forces message package) is not available in this workspace - disabling Fy '
-                'benchmarking. State benchmarking (v_y, omega) is unaffected.'
+                'enable_force_benchmarking requested but sim_manager_msgs (the CARLA bridge\'s '
+                'tire telemetry message package) is not available in this workspace - source '
+                'the bridge\'s setup.bash after this workspace\'s overlay. Disabling Fy '
+                'benchmarking; state benchmarking (v_y, omega) is unaffected.'
             )
             self.enable_force_benchmarking = False
 
@@ -239,7 +242,7 @@ class TireForceBenchmarkNode(Node):
                 Float64MultiArray, '/benchmarking/tire_force_fy_estimate', 10
             )
             self.sub = self.create_subscription(
-                TireForcesArray,
+                TireForces,
                 tire_forces_topic,
                 self.tire_forces_callback,
                 10,
@@ -432,31 +435,45 @@ class TireForceBenchmarkNode(Node):
             self.state_csv_writer.writerow(['stamp_sec', 'v_y_gt', 'v_y_est', 'omega_gt', 'omega_est'])
             self.get_logger().debug(f'State CSV logging enabled: {state_csv_path}')
 
-    def _use_sample(self, tire_msg) -> bool:
-        if self.require_on_road and not tire_msg.on_road:
+    def _use_sample(self, slip_angle: float, fz: float) -> bool:
+        if abs(fz) < self.min_fz:
             return False
-        if abs(tire_msg.fz) < self.min_fz:
-            return False
-        if math.isnan(tire_msg.slip_angle) or math.isnan(tire_msg.fz):
+        if math.isnan(slip_angle) or math.isnan(fz):
             return False
         return True
 
-    def tire_forces_callback(self, msg: TireForcesArray):
+    @staticmethod
+    def _wheel_indices(msg) -> list:
+        # wheel_names is documented as ["FL", "FR", "RL", "RR"], but read it
+        # rather than assume it, so a reordered publisher can't silently swap
+        # the front/rear Pacejka model applied to each wheel.
+        names = list(msg.wheel_names)
+        if len(names) == 4 and all(w in names for w in WHEEL_ORDER):
+            return [names.index(w) for w in WHEEL_ORDER]
+        return [0, 1, 2, 3]
+
+    def tire_forces_callback(self, msg: TireForces):
         if not self.enable_force_benchmarking:
             return
-        fl = msg.front_left
-        fr = msg.front_right
-        rl = msg.rear_left
-        rr = msg.rear_right
 
-        tires = [fl, fr, rl, rr]
-        if not all(self._use_sample(t) for t in tires):
+        order = self._wheel_indices(msg)
+        alpha = [float(msg.slip_angle[i]) for i in order]
+        fz = [float(msg.normal_load[i]) for i in order]
+        fy = [float(msg.lateral_force[i]) for i in order]
+
+        if not all(self._use_sample(a, z) for a, z in zip(alpha, fz)):
+            return
+        # Below 0.5 m/s the publisher zeroes slip_angle and both forces while
+        # normal_load stays live, so the Fz gate alone lets standstill frames
+        # through as (alpha=0, Fy=0) samples that flatter every metric.
+        if all(a == 0.0 and f == 0.0 for a, f in zip(alpha, fy)):
             return
 
-        front_gt = fl.fy + fr.fy
-        rear_gt = rl.fy + rr.fy
+        fl_fy, fr_fy, rl_fy, rr_fy = fy
+        front_gt = fl_fy + fr_fy
+        rear_gt = rl_fy + rr_fy
         total_gt = front_gt + rear_gt
-        stamp_sec = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        stamp_sec = msg.stamp.sec + msg.stamp.nanosec * 1e-9
 
         if self.benchmark_mode == 'internal_pacejka':
             if not self.have_identified_params:
@@ -467,18 +484,18 @@ class TireForceBenchmarkNode(Node):
                     )
                     self._logged_waiting_for_params = True
                 return
-            fl_est = float(pacejka_formula(self.c_pf, fl.slip_angle, fl.fz))
-            fr_est = float(pacejka_formula(self.c_pf, fr.slip_angle, fr.fz))
-            rl_est = float(pacejka_formula(self.c_pr, rl.slip_angle, rl.fz))
-            rr_est = float(pacejka_formula(self.c_pr, rr.slip_angle, rr.fz))
+            fl_est = float(pacejka_formula(self.c_pf, alpha[0], fz[0]))
+            fr_est = float(pacejka_formula(self.c_pf, alpha[1], fz[1]))
+            rl_est = float(pacejka_formula(self.c_pr, alpha[2], fz[2]))
+            rr_est = float(pacejka_formula(self.c_pr, alpha[3], fz[3]))
             if self.plot_output_dir:
-                self.slip_history['front'].add(fl.slip_angle, fl.fy, fl_est)
-                self.slip_history['front'].add(fr.slip_angle, fr.fy, fr_est)
-                self.slip_history['rear'].add(rl.slip_angle, rl.fy, rl_est)
-                self.slip_history['rear'].add(rr.slip_angle, rr.fy, rr_est)
+                self.slip_history['front'].add(alpha[0], fl_fy, fl_est)
+                self.slip_history['front'].add(alpha[1], fr_fy, fr_est)
+                self.slip_history['rear'].add(alpha[2], rl_fy, rl_est)
+                self.slip_history['rear'].add(alpha[3], rr_fy, rr_est)
             self._benchmark_and_publish(
                 stamp_sec,
-                [fl.fy, fr.fy, rl.fy, rr.fy],
+                fy,
                 [fl_est, fr_est, rl_est, rr_est],
                 publish_estimate=True,
             )
@@ -486,7 +503,7 @@ class TireForceBenchmarkNode(Node):
 
         self.latest_gt = {
             'stamp_sec': stamp_sec,
-            'fy': [fl.fy, fr.fy, rl.fy, rr.fy],
+            'fy': fy,
             'front_gt': front_gt,
             'rear_gt': rear_gt,
             'total_gt': total_gt,

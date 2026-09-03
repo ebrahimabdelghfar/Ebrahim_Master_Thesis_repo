@@ -36,8 +36,8 @@ def generate_launch_description():
     )
     tire_forces_topic_arg = DeclareLaunchArgument(
         'tire_forces_topic',
-        default_value='/tire_forces',
-        description='IPG tire forces topic (hellocm_msgs/TireForcesArray)',
+        default_value='/sim/feedback/tire_forces',
+        description='Ground-truth per-wheel tire telemetry topic (sim_manager_msgs/TireForces)',
     )
     estimated_fy_topic_arg = DeclareLaunchArgument(
         'estimated_fy_topic',

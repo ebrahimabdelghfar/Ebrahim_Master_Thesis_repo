@@ -1,11 +1,12 @@
 """Regression tests for tire_force_benchmark_node.py.
 
-hellocm_msgs (the CarMaker-side TireForcesArray message package) is not built
-in this dev environment, so it's stubbed into sys.modules before importing
-the node module. Node.create_subscription/create_publisher are monkeypatched
-so tests can construct the node and drive its callbacks directly without a
-live ROS graph. adaptive_controller_interfaces IS a real, built workspace
-package (unlike hellocm_msgs) - run these tests with the workspace sourced,
+sim_manager_msgs (the CARLA bridge's TireForces message package) lives in a
+separate workspace that is not sourced in this dev environment, so it's
+stubbed into sys.modules before importing the node module.
+Node.create_subscription/create_publisher are monkeypatched so tests can
+construct the node and drive its callbacks directly without a live ROS graph.
+adaptive_controller_interfaces IS a real, built workspace package (unlike
+sim_manager_msgs) - run these tests with the workspace sourced,
 e.g. `source install/setup.bash` before `pytest`, or `IdentifiedParam` import
 below will fail.
 """
@@ -23,47 +24,39 @@ from rclpy.node import Node
 from std_msgs.msg import Float64MultiArray
 
 
-def _stub_hellocm_msgs():
-    if 'hellocm_msgs.msg' in sys.modules:
-        return sys.modules['hellocm_msgs.msg']
+def _stub_sim_manager_msgs():
+    if 'sim_manager_msgs.msg' in sys.modules:
+        return sys.modules['sim_manager_msgs.msg']
 
-    hellocm_msgs = types.ModuleType('hellocm_msgs')
-    hellocm_msgs_msg = types.ModuleType('hellocm_msgs.msg')
-
-    class TireForces:
-        def __init__(self):
-            self.fy = 0.0
-            self.fz = 0.0
-            self.slip_angle = 0.0
-            self.on_road = True
+    sim_manager_msgs = types.ModuleType('sim_manager_msgs')
+    sim_manager_msgs_msg = types.ModuleType('sim_manager_msgs.msg')
 
     class _Stamp:
         def __init__(self):
             self.sec = 0
             self.nanosec = 0
 
-    class _Header:
+    class TireForces:
         def __init__(self):
             self.stamp = _Stamp()
+            self.wheel_names = ['FL', 'FR', 'RL', 'RR']
+            self.slip_angle = [0.0] * 4
+            self.tire_friction = [0.0] * 4
+            self.wheel_speed = [0.0] * 4
+            self.slip_ratio = [0.0] * 4
+            self.normal_load = [0.0] * 4
+            self.lateral_force = [0.0] * 4
+            self.longitudinal_force = [0.0] * 4
+            self.wheel_torque = [0.0] * 4
 
-    class TireForcesArray:
-        def __init__(self):
-            self.header = _Header()
-            self.front_left = TireForces()
-            self.front_right = TireForces()
-            self.rear_left = TireForces()
-            self.rear_right = TireForces()
-
-    hellocm_msgs_msg.TireForces = TireForces
-    hellocm_msgs_msg.TireForcesArray = TireForcesArray
-    hellocm_msgs.msg = hellocm_msgs_msg
-    sys.modules['hellocm_msgs'] = hellocm_msgs
-    sys.modules['hellocm_msgs.msg'] = hellocm_msgs_msg
-    return hellocm_msgs_msg
+    sim_manager_msgs_msg.TireForces = TireForces
+    sim_manager_msgs.msg = sim_manager_msgs_msg
+    sys.modules['sim_manager_msgs'] = sim_manager_msgs
+    sys.modules['sim_manager_msgs.msg'] = sim_manager_msgs_msg
+    return sim_manager_msgs_msg
 
 
-_hellocm_msg = _stub_hellocm_msgs()
-TireForcesArray = _hellocm_msg.TireForcesArray
+TireForces = _stub_sim_manager_msgs().TireForces
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -129,16 +122,14 @@ class NodeUnderTest:
         return False
 
 
-def _make_tire_msg(index, fy=None, fz=10.0, on_road=True, slip_angle=0.01):
-    msg = TireForcesArray()
-    msg.header.stamp.sec = index
-    msg.header.stamp.nanosec = 0
+def _make_tire_msg(index, fy=None, fz=10.0, slip_angle=0.01):
+    msg = TireForces()
+    msg.stamp.sec = index
+    msg.stamp.nanosec = 0
     value = float(index) if fy is None else float(fy)
-    for wheel in (msg.front_left, msg.front_right, msg.rear_left, msg.rear_right):
-        wheel.fy = value
-        wheel.fz = fz
-        wheel.slip_angle = slip_angle
-        wheel.on_road = on_road
+    msg.lateral_force = [value] * 4
+    msg.normal_load = [float(fz)] * 4
+    msg.slip_angle = [float(slip_angle)] * 4
     return msg
 
 
@@ -176,10 +167,26 @@ def test_min_fz_threshold_present_constructs_and_filters():
     with NodeUnderTest({'min_fz_threshold': 5.0}) as node:
         assert node.min_fz == pytest.approx(5.0)
 
-        below = _make_tire_msg(0, fz=4.9)
-        above = _make_tire_msg(0, fz=5.1)
-        assert node._use_sample(below.front_left) is False
-        assert node._use_sample(above.front_left) is True
+        assert node._use_sample(0.01, 4.9) is False
+        assert node._use_sample(0.01, 5.1) is True
+
+
+# --- standstill frames (slip and forces published as exactly 0) ---
+
+def test_standstill_samples_are_dropped():
+    with NodeUnderTest({
+        'min_fz_threshold': 1.0,
+        'enable_state_benchmarking': False,
+        'c_pf': [6.63, 1.1052, 0.4316, 0.5193],
+        'c_pr': [7.8594, 1.5468, 0.3589, 0.5631],
+    }) as node:
+        # normal_load stays live at rest, so only the all-zero slip/force
+        # pattern distinguishes a parked frame from a real one.
+        node.tire_forces_callback(_make_tire_msg(0, fy=0.0, fz=700.0, slip_angle=0.0))
+        assert node.metrics['fl_fy'].metrics()['n_samples'] == 0
+
+        node.tire_forces_callback(_make_tire_msg(1, fy=120.0, fz=700.0, slip_angle=0.02))
+        assert node.metrics['fl_fy'].metrics()['n_samples'] == 1
 
 
 # --- enable_force_benchmarking toggle ---

@@ -57,11 +57,12 @@ launch_on_track_sys_id:
 	ros2 launch on_track_sys_id sys_id.launch.py
 launch_on_track_sys_id_with_graph:
 	@source /opt/ros/humble/setup.bash && source ${WORKSPACE}/install/setup.bash && \
+	source $(CARLA_BRIDGE_SETUP) && \
 	ros2 launch on_track_sys_id sys_id.launch.py  \
 	enable_tire_force_benchmark:=true \
 	benchmark_update_params_enable:=true \
 	tire_force_benchmark_plot_output_dir:=/home/ebrahim/Ebrahim_Master_Thesis_repo/graphs/identification/identification_with_friction_warm_start_base_line
-launch_adaptive_controll:
+launch_adaptive_control:
 	@source /opt/ros/humble/setup.bash && source ${WORKSPACE}/install/setup.bash && \
 	ros2 launch adaptive_controller_manager adaptive_stack.launch.py
 launch_adaptive_control_with_graph:

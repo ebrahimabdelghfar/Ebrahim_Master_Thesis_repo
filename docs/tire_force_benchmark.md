@@ -1,6 +1,6 @@
 # tire_force_benchmark
 
-Benchmarks a nominal Pacejka tire model — identified by `On-Track-SysID` (indirect, NN-assisted, on-track) or `pacejka_identification` (direct, offline, from simulated ground truth) — against IPG CarMaker's simulated tire forces, and separately benchmarks a one-step vehicle-state (v_y, ω) prediction built from that same nominal model against odometry. See package README (`tire_force_benchmark/README.md`) for parameters, topics, and run instructions; this document covers the underlying model, what's actually being validated, and the bugs found/fixed while reviewing the implementation.
+Benchmarks a nominal Pacejka tire model — identified by `On-Track-SysID` (indirect, NN-assisted, on-track) or `pacejka_identification` (direct, offline, from simulated ground truth) — against CARLA's simulated per-wheel tire forces, and separately benchmarks a one-step vehicle-state (v_y, ω) prediction built from that same nominal model against odometry. See package README (`tire_force_benchmark/README.md`) for parameters, topics, and run instructions; this document covers the underlying model, what's actually being validated, and the bugs found/fixed while reviewing the implementation.
 
 ## Notation
 
@@ -22,7 +22,11 @@ Benchmarks a nominal Pacejka tire model — identified by `On-Track-SysID` (indi
 
 ## What "ground truth" actually is
 
-`/tire_forces` (`hellocm_msgs/TireForcesArray`) is published by IPG CarMaker's own internal Pacejka tire model (via the `tTireIF` interface), **not** measured from physical sensors. Running the package's own bundled example — benchmarking `On-Track-SysID/models/SIM/SIM_pacejka.txt` (itself typically fit from the same CarMaker simulation) against `/tire_forces` — is closer to an in-sample self-check than a sim-to-real validation. A genuine "nominal model learned on real hardware, validated in simulation" experiment requires benchmarking one of the physical-car models (`NUC2`/`NUC5`/`NUC6`/`NUC7`, all fit from real on-track data via `On-Track-SysID`) against the CarMaker feed instead. The odometry/steering path used for vehicle-state benchmarking (`/odom`, `/drive`) is agnostic to this distinction — it will benchmark against whatever those topics actually carry (real state estimator or simulated).
+`/sim/feedback/tire_forces` (`sim_manager_msgs/TireForces`) is CARLA's own per-wheel telemetry (`Vehicle::GetTelemetryData`), i.e. PhysX's contact-patch state, **not** measured from physical sensors. Of its fields only `lateral_force` is usable as force ground truth: it tracks `m·a_y` in steady cornering (corr +0.95 to +0.97), while `longitudinal_force` behaves as a friction-capacity report (pinned at `tire_friction·normal_load`, corr +0.04 with `m·a_x`) — see the field-by-field caveats in `sim_manager_msgs/msg/TireForces.msg`. `lateral_force` is published sign-flipped into the ROS body frame so it shares its sign convention with `slip_angle`, matching this repo's Pacejka convention (`Fy = pacejka(α)` with `α = δ - atan((v_y + l_f·ω)/v_x)` at the front).
+
+Benchmarking a model that was itself fit from the same simulator (`On-Track-SysID/models/SIM/SIM_pacejka.txt`, or a `pacejka_identification` run on this same topic) is closer to an in-sample self-check than a sim-to-real validation. A genuine "nominal model learned on real hardware, validated in simulation" experiment requires benchmarking one of the physical-car models (`NUC2`/`NUC5`/`NUC6`/`NUC7`, all fit from real on-track data via `On-Track-SysID`) against the CARLA feed instead. The odometry/steering path used for vehicle-state benchmarking (`/odom`, `/drive`) is agnostic to this distinction — it will benchmark against whatever those topics actually carry (real state estimator or simulated).
+
+Two sample gates follow from the message's own documented behaviour: `|normal_load| >= min_fz_threshold` per wheel, and a standstill drop — below 0.5 m/s the publisher zeroes `slip_angle` and both forces while `normal_load` stays live, so an all-zero slip/`lateral_force` frame is rejected rather than scored as a perfect (0, 0) sample.
 
 ## Pacejka Magic Formula (as implemented)
 
