@@ -17,7 +17,7 @@ setup(
     zip_safe=True,
     maintainer='Ebrahim',
     maintainer_email='ebrahim@local',
-    description='Direct Pacejka Magic Formula coefficient identification from CarMaker ground-truth tire data.',
+    description='Direct Pacejka Magic Formula coefficient identification from CARLA ground-truth per-wheel tire telemetry.',
     license='MIT',
     tests_require=['pytest'],
     entry_points={

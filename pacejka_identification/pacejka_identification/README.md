@@ -10,13 +10,14 @@ This directory contains the core Python modules that implement the Pacejka Magic
 |--------|---------|
 | `magic_formula.py` | Pure-math Pacejka equations (no ROS2 dependency) |
 | `coefficient_identifier.py` | Optimisation engine with 8 methods (incl. Bayesian SVI) + built-in GA/JADE |
-| `data_collector_node.py` | ROS2 node — subscribes to `/tire_forces`, filters & buffers data |
+| `data_collector_node.py` | ROS2 node — subscribes to `/sim/feedback/tire_forces`, filters & buffers data |
 | `identification_node.py` | ROS2 node — orchestrates collect → identify → publish → export |
 
 ```
                     ┌──────────────────────┐
-                    │  /tire_forces topic  │
-                    │  (hellocm_msgs)      │
+                    │ /sim/feedback/       │
+                    │      tire_forces     │
+                    │ (sim_manager_msgs)   │
                     └─────────┬────────────┘
                               │
                     ┌─────────▼────────────┐
@@ -84,8 +85,8 @@ Main class for coefficient identification.
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `method` | `'dual'` | Optimiser: `trust_region`, `differential_evolution`, `dual`, `genetic_algorithm`, `ga_trust_region`, `adaptive_de`, `adaptive_de_trust_region`, `bayesian_svi` |
-| `identification_mode` | `'sequential'` | `sequential` (fix C and D, fit B,E) or `simultaneous` (fit all 4) |
-| `fixed_C` | `None` | Override default C values, e.g. `{'fy': 1.3}` |
+| `identification_mode` | `'sequential'` | `sequential` (fix D to the data peak, fit B,C,E) or `simultaneous` (fit all 4) |
+| `fixed_C` | `None` | MAP prior mean / sequential C seed, e.g. `{'fy': 1.3}` |
 | `lower_bounds` | `[0.1, 0.1, 0.01, -2.0]` | Lower bounds for [B, C, D, E] |
 | `upper_bounds` | `[50.0, 5.0, 5.0, 2.0]` | Upper bounds for [B, C, D, E] |
 | `regularization` | `'none'` | Simultaneous-mode only: `'none'` or `'map'` (literature bounds + Gaussian prior on C) |
@@ -124,16 +125,19 @@ A custom real-coded Genetic Algorithm for global optimisation.
 
 #### Sequential Mode *(recommended for ground truth)*
 
-Fixes C to a physics-based literature value, fixes D to the (bounds-clipped)
-99th-percentile peak estimate read directly off the data, seeds B from the
-cornering-stiffness slope (BCD/(C·D)) near the origin, then fits only B and
-E. Fixing both C **and** D (not just C) is what actually breaks the Magic
-Formula's parameter degeneracy — leaving D free to float (as a prior version
-of this code did) reopens a B-D correlation that a "sequential" fit is
-specifically meant to close.
+Fixes D — the friction coefficient μ — to the (bounds-clipped) binned peak
+estimate read directly off the data, seeds B from the cornering-stiffness
+slope (BCD/(C·D)) near the origin, then fits B, C and E. Fixing D is what
+breaks the dominant part of the Magic Formula's parameter degeneracy —
+leaving D free to float (as a prior version of this code did) reopens a B-D
+correlation that a "sequential" fit is specifically meant to close. C is left
+free, so a residual B-C-E correlation remains.
 
-| Channel | Fixed C | Literature Range |
-|---------|---------|------------------|
+C's seed comes from the configured initial guess, falling back to the
+channel's literature value:
+
+| Channel | C seed | Literature Range |
+|---------|--------|------------------|
 | Fy (lateral) | 1.30 | 1.1 – 1.8 |
 | Fx (longitudinal) | 1.65 | 1.4 – 1.8 |
 | Mz (self-aligning) | 2.40 | 2.0 – 3.0 |
@@ -189,7 +193,7 @@ dominating the fit at the expense of the sparser near-peak region.
 
 ## `data_collector_node.py`
 
-Standalone ROS2 node that subscribes to `/tire_forces` and collects filtered data.
+Standalone ROS2 node that subscribes to `/sim/feedback/tire_forces` and collects filtered data.
 
 ### Class: `DataCollectorNode(Node)`
 
@@ -197,10 +201,10 @@ Standalone ROS2 node that subscribes to `/tire_forces` and collects filtered dat
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `tire_forces_topic` | `/tire_forces` | Input topic |
-| `duration_seconds` | `60` | Collection window (seconds) |
-| `min_velocity` | `0.5` | Min belt velocity filter (m/s) |
-| `require_on_road` | `True` | Discard samples when tire is airborne |
+| `tire_forces_topic` | `/sim/feedback/tire_forces` | Input topic (`sim_manager_msgs/TireForces`) |
+| `duration_seconds` | `60` | Collection window (seconds of wall clock from the first message) |
+| `odom_topic` | `/odom` | Speed source for the standstill gate (`''` disables it) |
+| `min_speed` | `2.0` | Min speed to accept a sample (m/s); `0.0` disables the gate |
 | `min_fz_threshold` | `50.0` | Min normal force filter (N) |
 | `csv_export` | `True` | Auto-export dataset on completion |
 | `csv_path` | `''` | Output path (auto-generated if empty) |
@@ -208,14 +212,15 @@ Standalone ROS2 node that subscribes to `/tire_forces` and collects filtered dat
 **Data Filtering:**
 
 Each incoming sample is checked against:
-1. `on_road` flag (if `require_on_road` is True)
+1. Vehicle speed from `odom_topic` ≥ `min_speed` (per message, not per wheel)
 2. `|Fz|` ≥ `min_fz_threshold`
-3. `belt_velocity` ≥ `min_velocity`
-4. No NaN values in key fields
+3. Not a standstill sample — the publisher zeroes slip and both forces below
+   0.5 m/s while `normal_load` stays live, so filter 2 does not catch them
+4. No NaN/inf values in any field
 
 **Stored Data (per wheel: FL, FR, RL, RR):**
 
-`slip_angle`, `long_slip`, `fz`, `fy`, `fx`, `mz`, `inclination_angle`, `mu_road`
+`slip_angle`, `slip_ratio`, `fz`, `fy`, `fx`, `wheel_torque`, `tire_friction`, `wheel_speed`
 
 **Data Access Methods:**
 
@@ -238,7 +243,7 @@ Main ROS2 node that orchestrates the full coefficient identification pipeline.
 Operates in three sequential phases:
 
 ```
-Phase 1: COLLECTING    → subscribe to /tire_forces, buffer per-wheel data
+Phase 1: COLLECTING    → subscribe to /sim/feedback/tire_forces, buffer per-wheel data
 Phase 2: IDENTIFYING   → run CoefficientIdentifier for each formula × group
 Phase 3: DONE          → publish results (latched), export YAML + CSV
 ```
@@ -251,11 +256,10 @@ All parameters from `DataCollectorNode` plus:
 |-----------|---------|-------------|
 | `method` | `'dual'` | Optimisation method |
 | `identification_mode` | `'sequential'` | `sequential` or `simultaneous` |
-| `formulas` | `[lateral_fy, longitudinal_fx, self_aligning_mz]` | Which channels to identify |
+| `formulas` | `[lateral_fy]` | Which channels to identify (`self_aligning_mz` is unavailable — the message has no Mz) |
 | `axle_grouping` | `'per_axle'` | `per_wheel`, `per_axle`, or `combined` |
 | `initial_guess_fy` | `[10, 1.5, 1.0, 0.5]` | Starting point for Fy |
 | `initial_guess_fx` | `[10, 1.65, 1.0, 0.5]` | Starting point for Fx |
-| `initial_guess_mz` | `[10, 1.5, 0.1, 0.5]` | Starting point for Mz |
 | `lower_bounds` | `[0.1, 0.1, 0.01, -2.0]` | Parameter lower bounds |
 | `upper_bounds` | `[50.0, 5.0, 5.0, 2.0]` | Parameter upper bounds |
 | `yaml_export` | `True` | Export coefficients to YAML |
@@ -281,7 +285,8 @@ All parameters from `DataCollectorNode` plus:
 
 | Topic | Type | Description |
 |-------|------|-------------|
-| `/tire_forces` | `TireForcesArray` | Ground truth from CarMaker |
+| `/sim/feedback/tire_forces` | `sim_manager_msgs/TireForces` | Ground-truth per-wheel telemetry from CARLA |
+| `/odom` | `nav_msgs/Odometry` | Speed for the standstill gate (only if `min_speed > 0`) |
 
 **Exported Files:**
 

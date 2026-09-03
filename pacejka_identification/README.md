@@ -2,9 +2,25 @@
 
 ## Overview
 
-This ROS2 package performs **direct identification** of Pacejka Magic Formula tire model coefficients using ground-truth tire force data from the CarMaker simulation (published on `/tire_forces`).
+This ROS2 package performs **direct identification** of Pacejka Magic Formula tire model coefficients using ground-truth tire force data from the CARLA bridge, published on `/sim/feedback/tire_forces` (`sim_manager_msgs/TireForces`).
 
-The identified coefficients serve as **ground truth** for benchmarking other identification methods (e.g., the indirect NN-based approach in `On-Track-SysID`).
+Every field of that message is CARLA's own `WheelTelemetryData` — slip angle, slip ratio, normal load, lateral force, effective friction coefficient and wheel angular velocity straight out of the simulator, with no analytic tire model in between — so the coefficients fitted here cannot disagree with the physics the vehicle is actually driven by. They serve as **ground truth** for benchmarking other identification methods (e.g. the indirect NN-based approach in `On-Track-SysID`).
+
+The message type lives in the CARLA bridge workspace, so source it *after* this workspace's overlay:
+
+```bash
+source ~/Ebrahim_Master_Thesis_repo/install/setup.bash
+source ~/Carla_ASU_Bridge/install/ros_apps/setup.bash
+```
+
+### What the source message can and cannot identify
+
+| Channel | Available? | Why |
+|---|---|---|
+| `lateral_fy` | **Yes — ground truth** | `lateral_force` is a validated contact-patch force (sum tracks `m·a_y`, corr +0.95, slope 0.95–1.08), already sign-flipped into the ROS body frame to match `slip_angle`. |
+| `longitudinal_fx` | Selectable, **not** ground truth | `longitudinal_force` is not the force the chassis receives: it behaves as a friction-capacity report, sitting above `0.80 · tire_friction · normal_load` half the time and exactly on that limit 15 % of the time, while `corr(sum, m·a_x)` is +0.04. A Pacejka fit against it recovers the capacity envelope, not a tire curve. `wheel_torque` is exactly `-longitudinal_force · wheel_radius`, so it adds nothing. Off by default; the node warns and reports the saturated fraction if you enable it. |
+| `self_aligning_mz` | **No** | `TireForces` carries no self-aligning torque. Requesting it logs an error and drops it. |
+| `tire_friction` | Cross-check | The effective μ the physics step uses (the configured wheel friction already multiplied by the road surface — 1.05 published against 1.5 configured). The node logs it per group and warns when the identified `D` exceeds it by more than 5 %. |
 
 ### Magic Formula
 
@@ -15,7 +31,7 @@ Y(x) = Fz · D · sin(C · arctan(B·x − E·(B·x − arctan(B·x))))
 ```
 
 Where:
-- **x** = slip variable (slip angle α for Fy/Mz, slip ratio κ for Fx)
+- **x** = slip variable (slip angle α for Fy, slip ratio κ for Fx)
 - **Fz** = vertical (normal) load
 - **B** = stiffness factor
 - **C** = shape factor
@@ -26,7 +42,7 @@ Where:
 
 | Feature | Description |
 |---------|-------------|
-| 3 force channels | Fy (lateral), Fx (longitudinal), Mz (self-aligning torque) |
+| 2 force channels | Fy (lateral, ground truth) and Fx (longitudinal, drivetrain effort — see above) |
 | 8 identification methods | Trust-Region, Differential Evolution, Dual (DE→TR), GA, GA→TR, JADE (adaptive DE), JADE→TR, Bayesian SVI |
 | 3 grouping modes | per_wheel, per_axle, combined |
 | MAP regularization | Literature bounds + Gaussian prior on C (simultaneous mode) |
@@ -54,11 +70,11 @@ ros2 run pacejka_identification identification_node
 
 ### With Launch File
 
+The launch file takes no arguments — every setting is read from
+`config/identification_config.yaml`. Edit that file, rebuild, then run:
+
 ```bash
-ros2 launch pacejka_identification pacejka_identification.launch.py \
-    duration_seconds:=90 \
-    method:=dual \
-    axle_grouping:=per_axle
+ros2 launch pacejka_identification pacejka_identification.launch.py
 ```
 
 ### Monitor Progress
@@ -82,12 +98,23 @@ All parameters can be set via launch arguments or `config/identification_config.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `duration_seconds` | 60 | Data collection duration |
-| `min_velocity` | 0.5 | Min belt velocity filter (m/s) |
+| `duration_seconds` | 60 | Collection window, in seconds of wall clock from the first message (the topic rate is not fixed, so samples are not counted) |
+| `odom_topic` | `/odom` | Speed source for the standstill gate (`""` disables the gate) |
+| `min_speed` | 2.0 | Reject samples below this speed (m/s); `0.0` disables the gate. Replaces the old `min_velocity` — `TireForces` has no per-wheel belt velocity |
 | `min_fz_threshold` | 50.0 | Min normal force filter (N) |
 | `method` | `dual` | See **Identification Methods** below |
 | `axle_grouping` | `per_axle` | `per_wheel`, `per_axle`, `combined` |
-| `formulas` | all 3 | `lateral_fy`, `longitudinal_fx`, `self_aligning_mz` |
+| `formulas` | `[lateral_fy]` | `lateral_fy`, `longitudinal_fx` |
+
+The standstill gate matters. The publisher itself zeroes `slip_angle`, `slip_ratio`,
+`lateral_force`, `longitudinal_force` and `wheel_torque` below 0.5 m/s — PhysX sleeps a
+parked vehicle and the telemetry then repeats byte for byte — while `normal_load`,
+`tire_friction` and `wheel_speed` stay live, so the `min_fz_threshold` filter alone would
+let those empty samples through. Both nodes drop them unconditionally, and `min_speed`
+raises the floor further: a few thousand near-zero-slip samples pin the fit to the linear
+region and make `D` meaningless. The node also logs `p99|alpha|` and the peak `|Fy|/Fz` per group,
+and warns when slip stays under 0.03 rad — below that only the product `B·C·D` is
+identifiable, so a reported `D` is not a friction measurement.
 
 ### Algorithm Hyperparameters
 
@@ -132,7 +159,8 @@ Each optimizer has specific hyperparameters exposed in `config/identification_co
 
 | Topic | Type | Description |
 |-------|------|-------------|
-| `/tire_forces` | `TireForcesArray` | Ground truth tire data from CarMaker |
+| `/sim/feedback/tire_forces` | `sim_manager_msgs/TireForces` | Ground-truth per-wheel tire telemetry from CARLA |
+| `/odom` | `nav_msgs/Odometry` | Speed for the standstill gate (only if `min_speed > 0`) |
 
 ## Output Files
 
@@ -146,8 +174,12 @@ After identification completes, two files are exported to `~/`:
 ```yaml
 identification:
   method: dual
-  formulas: [lateral_fy, longitudinal_fx, self_aligning_mz]
+  formulas: [lateral_fy]
   axle_grouping: per_axle
+  source_topic: /sim/feedback/tire_forces
+  source_msg: sim_manager_msgs/TireForces
+  messages_received: 5981
+  messages_kept: 5402
 coefficients:
   front:
     Fy:
@@ -171,7 +203,7 @@ coefficients:
 
 ## Identification Methods
 
-The `method` parameter allows you to select the backend optimization solver. The sequential mode fixes both C and D (breaking the Magic Formula's B-C-D-E coefficient parameter degeneracy), and these solvers find the optimal curve fit:
+The `method` parameter allows you to select the backend optimization solver. The sequential mode fixes D — the friction coefficient μ — to the measured peak (breaking the dominant part of the Magic Formula's B-C-D-E parameter degeneracy) and these solvers fit B, C and E:
 
 ### 1. Trust-Region-Reflective (`trust_region`)
 Local optimizer (TRF). Extremely fast but requires a good initial guess. Fails if the starting parameters are too far from the true curve. Best suited for clean, predictable data.
@@ -228,10 +260,11 @@ config, and combinable):
 identification_node
     │
     ├── Phase 1: Data Collection
-    │   └── Subscribe to /tire_forces → buffer per-wheel arrays
+    │   └── Subscribe to /sim/feedback/tire_forces → buffer per-wheel arrays
+    │       (gated on /odom speed and |Fz|, for duration_seconds of wall clock)
     │
     ├── Phase 2: Identification
-    │   └── CoefficientIdentifier.identify_fy/fx/mz()
+    │   └── CoefficientIdentifier.identify_fy/fx()
     │       └── scipy.optimize.differential_evolution → least_squares
     │
     └── Phase 3: Publication & Export

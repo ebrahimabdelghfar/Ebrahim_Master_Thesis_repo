@@ -31,7 +31,7 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from pacejka_identification.magic_formula import pacejka_fy, pacejka_fx, pacejka_mz
-from pacejka_identification.coefficient_identifier import CoefficientIdentifier, DEFAULT_C
+from pacejka_identification.coefficient_identifier import CoefficientIdentifier
 
 
 def run_sequential_case(formula_name, pacejka_fn, true_params, slip, fz, initial_guess,
@@ -39,9 +39,11 @@ def run_sequential_case(formula_name, pacejka_fn, true_params, slip, fz, initial
     """
     Run sequential identification mode on synthetic data.
 
-    In sequential mode, C is fixed to a physics-based literature value and D
-    is fixed to the (bounds-clipped) peak estimate from the data. We verify
-    that B, D, E are recovered within tolerance.
+    In sequential mode only D is fixed — to the (bounds-clipped) peak estimate
+    from the data — while B, C and E are fitted. Fixing the peak pins down D
+    (= mu) but leaves the classic B-C-E degeneracy: several shape triples give
+    near-identical curves, so those are checked as a *curve* rather than
+    parameter-by-parameter (the individual errors are printed for reference).
 
     Parameters
     ----------
@@ -52,7 +54,7 @@ def run_sequential_case(formula_name, pacejka_fn, true_params, slip, fz, initial
     fz           : ndarray - normal load
     initial_guess: list    - starting [B, C, D, E] for the optimizer
     method       : str     - identification method name
-    force_type   : str     - 'fy', 'fx', or 'mz' (selects the fixed C value)
+    force_type   : str     - 'fy', 'fx', or 'mz' (channel label)
     ci_kwargs    : dict or None - extra CoefficientIdentifier constructor args
 
     Returns
@@ -60,11 +62,7 @@ def run_sequential_case(formula_name, pacejka_fn, true_params, slip, fz, initial
     bool - True if test passed.
     """
     B_true, C_true, D_true, E_true = true_params
-    C_fixed = DEFAULT_C[force_type]
-
-    # Generate data using the FIXED C so the sequential identifier can recover B,D,E
-    true_with_fixed_C = [B_true, C_fixed, D_true, E_true]
-    y_clean = pacejka_fn(true_with_fixed_C, slip, fz)
+    y_clean = pacejka_fn(true_params, slip, fz)
 
     # Add small Gaussian noise (0.5 % of peak force)
     noise_std = 0.005 * np.max(np.abs(y_clean))
@@ -78,29 +76,33 @@ def run_sequential_case(formula_name, pacejka_fn, true_params, slip, fz, initial
 
     B_est, C_est, D_est, E_est = coeffs
 
-    # Check C is exactly the fixed value
-    c_match = abs(C_est - C_fixed) < 1e-6
+    # Ground-truth mu: peak of the true curve, which the data peak estimates.
+    mu_true = np.max(np.abs(y_clean / fz))
 
-    # Compute relative errors for B, D, E
     errors = {}
-    for name, true_val, est_val in [('B', B_true, B_est), ('D', D_true, D_est), ('E', E_true, E_est)]:
+    for name, true_val, est_val in [('B', B_true, B_est), ('C', C_true, C_est),
+                                    ('D', D_true, D_est), ('E', E_true, E_est),
+                                    ('mu', mu_true, metrics['mu_data'])]:
         if abs(true_val) > 1e-6:
             errors[name] = abs(est_val - true_val) / abs(true_val) * 100
         else:
             errors[name] = abs(est_val - true_val) * 100
 
-    # Stochastic methods (GA, JADE, SVI) get relaxed tolerance (10 %)
-    stochastic = 'genetic' in method or 'ga_' in method or 'adaptive' in method or 'bayesian_svi' in method
-    tol = 10.0 if stochastic else 5.0
-    passed = c_match and all(e < tol for e in errors.values()) and metrics['R2'] > 0.999
+    # Curve fidelity against the noise-free truth (degeneracy-proof check)
+    curve_err = np.max(np.abs(pacejka_fn(coeffs, slip, fz) - y_clean)) / np.max(np.abs(y_clean)) * 100
+
+    passed = (errors['D'] < 2.0 and errors['mu'] < 2.0
+              and curve_err < 2.0 and metrics['R2'] > 0.999)
 
     print(f"\n{'='*65}")
     print(f"  SEQUENTIAL | {formula_name} | method={method}")
     print(f"{'='*65}")
-    print(f"  True   [B,C,D,E]: {true_with_fixed_C}")
+    print(f"  True   [B,C,D,E]: {true_params}")
     print(f"  Found  [B,C,D,E]: {coeffs}")
-    print(f"  C fixed={C_fixed:.2f}  C_match={c_match}")
-    print(f"  Rel errors: B={errors['B']:.3f}%  D={errors['D']:.3f}%  E={errors['E']:.3f}%")
+    print(f"  Rel errors: B={errors['B']:.3f}%  C={errors['C']:.3f}%  "
+          f"D={errors['D']:.3f}%  E={errors['E']:.3f}%  mu={errors['mu']:.3f}%")
+    print(f"  Max curve deviation vs truth: {curve_err:.3f}%")
+    print(f"  mu: true={mu_true:.4f}  data={metrics['mu_data']:.4f}  model={metrics['mu_model']:.4f}")
     print(f"  R²={metrics['R2']:.6f}  RMSE={metrics['RMSE']:.4f}  n={metrics['n_samples']}")
     print(f"  RESULT: {'PASS' if passed else 'FAIL'}")
 
@@ -214,7 +216,7 @@ def main():
 
     # -- Simultaneous bayesian_svi (correlated posterior) --
     # The 4-parameter joint posterior converges more slowly than the
-    # 2-parameter (B,E) sequential case, so it gets more SVI steps here.
+    # 3-parameter (B,C,E) sequential case, so it gets more SVI steps here.
     results.append(run_simultaneous_case(
         'Fy (bayesian_svi simult.)', pacejka_fy, [7.17, 1.56, 0.69, 0.53],
         alpha, fz_const, [10.0, 1.5, 1.0, 0.5], 'bayesian_svi',

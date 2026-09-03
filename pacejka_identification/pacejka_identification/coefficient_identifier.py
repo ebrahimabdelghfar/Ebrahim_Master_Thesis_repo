@@ -4,14 +4,19 @@ Pacejka Magic Formula coefficient identifier.
 
 Provides two identification strategies:
   1. simultaneous  – fit all [B, C, D, E] at once (fast, but B/C/E are correlated)
-  2. sequential    – physics-grounded: fix C, fix D from the data peak, fit B & E
-                     (breaks parameter degeneracy → unique, physically meaningful coefficients)
+  2. sequential    – physics-grounded: fix D to the data peak, fit B, C & E
+                     (breaks the D↔B/C/E trade-off that makes the peak ambiguous)
 
 For ground-truth identification the *sequential* method is recommended: it
-constrains C to a physically meaningful value, reads D directly off the
-measured peak, and only leaves B (stiffness) and E (curvature) free. This
-avoids the well-known parameter non-uniqueness problem of the Magic Formula
-where different (B, C, D, E) combinations produce nearly identical curves.
+reads D — the friction coefficient μ — directly off the measured peak instead
+of letting the optimiser trade it against the curve-shape parameters, and
+leaves B (stiffness), C (shape) and E (curvature) free. This removes the main
+source of the Magic Formula's parameter non-uniqueness, where different
+(B, C, D, E) combinations produce nearly identical curves.
+
+Both modes report the friction coefficient alongside the fit metrics:
+`mu_data` (peak |Y|/Fz read off the measured data) and `mu_model` (peak of
+the fitted curve over the observed slip range).
 
 Supported optimisers for the fitting step:
   - trust_region             (scipy.optimize.least_squares, TRF)
@@ -366,15 +371,15 @@ def _cost(params, slip, fz, y_meas):
     return float(np.sum(_residuals(params, slip, fz, y_meas) ** 2))
 
 
-def _residuals_BE(be_params, C, D, slip, fz, y_meas):
-    """Residual with C and D fixed; only B and E are free."""
-    B, E = be_params
+def _residuals_BCE(bce_params, D, slip, fz, y_meas):
+    """Residual with D fixed; B, C and E are free."""
+    B, C, E = bce_params
     return pacejka_formula([B, C, D, E], slip, fz) - y_meas
 
 
-def _cost_BE(be_params, C, D, slip, fz, y_meas):
-    """Scalar cost with C and D fixed."""
-    return float(np.sum(_residuals_BE(be_params, C, D, slip, fz, y_meas) ** 2))
+def _cost_BCE(bce_params, D, slip, fz, y_meas):
+    """Scalar cost with D fixed."""
+    return float(np.sum(_residuals_BCE(bce_params, D, slip, fz, y_meas) ** 2))
 
 
 def _residuals_reg(params, slip, fz, y_meas, C_lit, lambda_C, sigma_C):
@@ -417,7 +422,20 @@ def _metrics(params, slip, fz, y_meas):
         'MaxAE': round(float(max_ae), 4),
         'n_samples': int(n),
         'residual_norm': round(float(np.sqrt(ss_res)), 4),
+        'mu_data': round(_estimate_D_from_peak(slip, fz, y_meas), 6) if n else float('nan'),
+        'mu_model': round(_model_peak_mu(params, slip), 6) if n else float('nan'),
     }
+
+
+def _model_peak_mu(params, slip):
+    """
+    Friction coefficient of the fitted curve: peak |Y|/Fz over the observed
+    slip range. Equals D only when the curve actually reaches its saturation
+    plateau within that range (needs C > 1 and enough slip), so it is the
+    honest model-side counterpart of the measured `mu_data`.
+    """
+    grid = np.linspace(float(np.min(slip)), float(np.max(slip)), 2001)
+    return float(np.max(np.abs(pacejka_formula(params, grid, np.ones_like(grid)))))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -426,15 +444,16 @@ def _metrics(params, slip, fz, y_meas):
 
 def _estimate_D_from_peak(slip, fz, y_meas, n_bins=50):
     """
-    Estimate the peak factor D from data.
+    Estimate the peak factor D — i.e. the friction coefficient μ — from data.
 
     D ≈ max|Y / Fz|  (the normalised peak force/torque). A raw per-sample
     percentile inherits the full measurement-noise variance of whichever
     single point happens to rank highest, which the "sequential" fit is
-    especially sensitive to: since D is now *fixed* rather than floated
+    especially sensitive to: since D is *fixed* rather than floated
     (breaking the B-C-D-E degeneracy — see `_sequential`), any offset in D
-    gets absorbed almost entirely by E during the B,E fit (empirically,
-    ~15-20x amplification for this Magic Formula shape near the peak).
+    is absorbed by the free shape parameters during the B,C,E fit
+    (empirically, ~15-20x amplification in E for this Magic Formula shape
+    near the peak).
     So instead of ranking raw samples, bin the slip range and take the peak
     of the *bin means* — this averages out per-sample noise before the peak
     is read off, at the cost of a small, well-controlled window-averaging
@@ -545,12 +564,16 @@ class CoefficientIdentifier:
         'genetic_algorithm', 'ga_trust_region', 'adaptive_de',
         'adaptive_de_trust_region', or 'bayesian_svi'.
     identification_mode : str
-        'sequential' (recommended, fixes C and D) or 'simultaneous' (fits all 4).
+        'sequential' (recommended, fixes D to the data peak) or
+        'simultaneous' (fits all 4).
     fixed_C : dict or None
         Override default C values, e.g. {'fy': 1.3, 'fx': 1.65, 'mz': 2.4}.
+        Used as the MAP prior mean and as the sequential C seed (fallback
+        only — sequential fits C rather than fixing it).
     lower_bounds / upper_bounds : list
         Bounds for [B, C, D, E] (simultaneous, when regularization='none')
-        or [B, D, E] (sequential — only lb/ub[0]/[2]/[3] are used).
+        or [B, C, E] (sequential — only lb/ub[0]/[1]/[3] are used; lb/ub[2]
+        still clips the peak-derived D).
     tr_params : dict or None
         Trust-Region hyperparameters: {max_nfev}.
     de_params : dict or None
@@ -657,7 +680,7 @@ class CoefficientIdentifier:
         if self.svi['seed'] == -1:
             self.svi['seed'] = None
 
-        # Set by _svi_all/_svi_be for the current identify() call, merged
+        # Set by _svi_all/_svi_bce for the current identify() call, merged
         # into the returned metrics dict as *_std uncertainty fields.
         self._last_uncertainty = None
 
@@ -717,7 +740,7 @@ class CoefficientIdentifier:
         return np.array(lb, dtype=np.float64), np.array(ub, dtype=np.float64)
 
     # ──────────────────────────────────────────────────────────────────
-    # Generic optimiser back-ends (shared by sequential's [B,E] fit and
+    # Generic optimiser back-ends (shared by sequential's [B,C,E] fit and
     # simultaneous's [B,C,D,E] fit — the only difference is which
     # residuals/cost function and bounds are passed in).
     # ──────────────────────────────────────────────────────────────────
@@ -780,23 +803,22 @@ class CoefficientIdentifier:
     def _sequential(self, slip, fz, y_meas, x0, label):
         """
         Physics-grounded sequential identification:
-          1. Fix C to a literature-based value for the force channel.
-          2. Fix D to the (bounds-clipped) 99th-percentile peak estimate
-             from the data — not merely seed it, so it can't trade off
-             against B/E during optimisation.
-          3. Seed B from the cornering-stiffness slope BCD/(C·D) near the
+          1. Fix D to the (bounds-clipped) peak estimate read off the data —
+             not merely seed it, so the friction level can't trade off
+             against the curve-shape parameters during optimisation.
+          2. Seed B from the cornering-stiffness slope BCD/(C·D) near the
              origin.
-          4. Fit only B, E (with C, D fixed) using the chosen optimiser.
-        This breaks the Magic Formula's parameter degeneracy and produces
-        unique, physically meaningful coefficients.
+          3. Fit B, C, E (with D fixed) using the chosen optimiser.
+        Fixing the peak removes the dominant degeneracy of the Magic Formula
+        while still letting the data choose the shape factor C.
         """
         channel = self._channel_from_label(label)
-        C = self.C_values[channel]
 
-        B0, D0, E0 = x0[0], x0[2], x0[3]
+        B0, C0, D0, E0 = x0[0], x0[1], x0[2], x0[3]
+        if not np.isfinite(C0) or C0 <= 0:
+            C0 = self.C_values[channel]
 
-        # Fix D from the data peak (clipped to the configured D bounds,
-        # not the unrelated 0.001/10.0 window used previously).
+        # Fix D from the data peak (clipped to the configured D bounds).
         D_est = _estimate_D_from_peak(slip, fz, y_meas)
         D_lb, D_ub = float(self.lb[2]), float(self.ub[2])
         if D_est is not None and np.isfinite(D_est):
@@ -805,36 +827,37 @@ class CoefficientIdentifier:
 
         # Seed B from the cornering-stiffness slope near the origin.
         bcd_est = _estimate_cornering_stiffness(slip, fz, y_meas)
-        if bcd_est is not None and C * D > 1e-9:
-            B0 = abs(bcd_est) / (C * D)
+        if bcd_est is not None and C0 * D > 1e-9:
+            B0 = abs(bcd_est) / (C0 * D)
         B0 = float(np.clip(B0, self.lb[0], self.ub[0]))
+        C0 = float(np.clip(C0, self.lb[1], self.ub[1]))
 
-        lb_be = np.array([self.lb[0], self.lb[3]])
-        ub_be = np.array([self.ub[0], self.ub[3]])
-        be0 = np.array([B0, E0])
-        args = (C, D, slip, fz, y_meas)
+        lb_bce = np.array([self.lb[0], self.lb[1], self.lb[3]])
+        ub_bce = np.array([self.ub[0], self.ub[1], self.ub[3]])
+        bce0 = np.array([B0, C0, E0])
+        args = (D, slip, fz, y_meas)
 
         if self.method == 'trust_region':
-            be = self._tr_fit(_residuals_BE, be0, args, lb_be, ub_be)
+            bce = self._tr_fit(_residuals_BCE, bce0, args, lb_bce, ub_bce)
         elif self.method == 'differential_evolution':
-            be = self._de_fit(_cost_BE, args, lb_be, ub_be)
+            bce = self._de_fit(_cost_BCE, args, lb_bce, ub_bce)
         elif self.method == 'genetic_algorithm':
-            be = self._ga_fit(_cost_BE, args, lb_be, ub_be)
+            bce = self._ga_fit(_cost_BCE, args, lb_bce, ub_bce)
         elif self.method == 'ga_trust_region':
-            be_ga = self._ga_fit(_cost_BE, args, lb_be, ub_be)
-            be = self._tr_fit(_residuals_BE, be_ga, args, lb_be, ub_be)
+            bce_ga = self._ga_fit(_cost_BCE, args, lb_bce, ub_bce)
+            bce = self._tr_fit(_residuals_BCE, bce_ga, args, lb_bce, ub_bce)
         elif self.method == 'adaptive_de':
-            be = self._jade_fit(_cost_BE, args, lb_be, ub_be)
+            bce = self._jade_fit(_cost_BCE, args, lb_bce, ub_bce)
         elif self.method == 'adaptive_de_trust_region':
-            be_jade = self._jade_fit(_cost_BE, args, lb_be, ub_be)
-            be = self._tr_fit(_residuals_BE, be_jade, args, lb_be, ub_be)
+            bce_jade = self._jade_fit(_cost_BCE, args, lb_bce, ub_bce)
+            bce = self._tr_fit(_residuals_BCE, bce_jade, args, lb_bce, ub_bce)
         elif self.method == 'bayesian_svi':
-            be = self._svi_be(C, D, lb_be, ub_be, be0, slip, fz, y_meas)
+            bce = self._svi_bce(D, lb_bce, ub_bce, bce0, slip, fz, y_meas)
         else:  # dual (DE → TR)
-            be_global = self._de_fit(_cost_BE, args, lb_be, ub_be)
-            be = self._tr_fit(_residuals_BE, be_global, args, lb_be, ub_be)
+            bce_global = self._de_fit(_cost_BCE, args, lb_bce, ub_bce)
+            bce = self._tr_fit(_residuals_BCE, bce_global, args, lb_bce, ub_bce)
 
-        B, E = be
+        B, C, E = bce
         return np.array([B, C, D, E])
 
     # ──────────────────────────────────────────────────────────────────
@@ -926,7 +949,7 @@ class CoefficientIdentifier:
         self._last_uncertainty = {f'{n}_std': stds[n] for n in names}
         return result
 
-    def _svi_be(self, C, D, lb_be, ub_be, x0_be, slip, fz, y_meas):
+    def _svi_bce(self, D, lb_bce, ub_bce, x0_bce, slip, fz, y_meas):
         import torch
         import pyro
         import pyro.distributions as dist
@@ -935,17 +958,19 @@ class CoefficientIdentifier:
         fz_t = torch.as_tensor(fz, dtype=torch.float32)
         y_t = torch.as_tensor(y_meas, dtype=torch.float32)
 
-        B0, E0 = x0_be
-        ranges = np.asarray(ub_be, dtype=np.float64) - np.asarray(lb_be, dtype=np.float64)
-        loc = {'B': float(B0), 'E': float(E0)}
+        B0, C0, E0 = x0_bce
+        ranges = np.asarray(ub_bce, dtype=np.float64) - np.asarray(lb_bce, dtype=np.float64)
+        loc = {'B': float(B0), 'C': float(C0), 'E': float(E0)}
         scale = {
             'B': max(ranges[0] / 4.0, 1e-3),
-            'E': max(ranges[1] / 4.0, 1e-3),
+            'C': max(ranges[1] / 4.0, 1e-3),
+            'E': max(ranges[2] / 4.0, 1e-3),
         }
-        names = ['B', 'E']
+        names = ['B', 'C', 'E']
 
         def model():
             B = pyro.sample('B', dist.Normal(loc['B'], scale['B']))
+            C = pyro.sample('C', dist.Normal(loc['C'], scale['C']))
             E = pyro.sample('E', dist.Normal(loc['E'], scale['E']))
             sigma_obs = pyro.sample('sigma_obs', dist.HalfNormal(50.0))
             x = B * slip_t
@@ -955,8 +980,9 @@ class CoefficientIdentifier:
 
         means, stds = self._run_svi(model, names)
         result = np.array([
-            np.clip(means['B'], lb_be[0], ub_be[0]),
-            np.clip(means['E'], lb_be[1], ub_be[1]),
+            np.clip(means['B'], lb_bce[0], ub_bce[0]),
+            np.clip(means['C'], lb_bce[1], ub_bce[1]),
+            np.clip(means['E'], lb_bce[2], ub_bce[2]),
         ])
         self._last_uncertainty = {f'{n}_std': stds[n] for n in names}
         return result

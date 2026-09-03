@@ -53,23 +53,34 @@ Three ROS2 nodes/entry points:
 
 Implements the classical Magic-Formula degeneracy-breaking procedure (Bakker/Pacejka-style):
 
-1. **Fix `C`** to the literature value for the channel (`DEFAULT_C[fy|fx|mz]`).
-2. **Fix `D`** — not merely seed it — to a peak estimate read directly off the
-   data: bin the slip range, average `|y/Fz|` within each bin (to cancel
-   per-sample noise), then take the max of the bin means. A raw per-sample
-   99th-percentile estimate was tried first and rejected: any residual noise
-   in a fixed `D` gets absorbed almost entirely by `E` during the fit
-   (empirically ~15-20x amplification for this formula's shape near the
-   peak), so `D`'s estimator has to be noise-robust, not just "reasonable".
-3. **Seed `B`** from the cornering-stiffness slope `BCD/(C*D)` estimated by
+1. **Fix `D`** — the friction coefficient `μ`, not merely a seed — to a peak
+   estimate read directly off the data: bin the slip range, average `|y/Fz|`
+   within each bin (to cancel per-sample noise), then take the max of the bin
+   means. A raw per-sample 99th-percentile estimate was tried first and
+   rejected: any residual noise in a fixed `D` gets absorbed by the free shape
+   parameters during the fit (empirically ~15-20x amplification in `E` for
+   this formula's shape near the peak), so `D`'s estimator has to be
+   noise-robust, not just "reasonable".
+2. **Seed `B`** from the cornering-stiffness slope `BCD/(C*D)` estimated by
    linear regression of `y/Fz` vs. slip within a small window around
-   `slip=0` — only an initial guess, not fixed.
-4. **Fit only `[B, E]`** (`C`, `D` held fixed) with the chosen optimizer.
+   `slip=0` — only an initial guess, not fixed. `C`'s seed is the configured
+   initial guess, falling back to the literature value
+   (`DEFAULT_C[fy|fx|mz]`).
+3. **Fit `[B, C, E]`** (`D` held fixed) with the chosen optimizer.
 
-Fixing *both* `C` and `D` (not just `C`) is what actually breaks the Magic
-Formula's parameter non-uniqueness — leaving `D` free to float, as an earlier
-version of this code did, reopens a `B`-`D` correlation that a "sequential"
-fit exists specifically to close.
+Fixing `D` is what breaks the dominant part of the Magic Formula's parameter
+non-uniqueness — leaving `D` free to float, as an earlier version of this code
+did, reopens a `B`-`D` correlation that a "sequential" fit exists specifically
+to close. `C` is *not* fixed: the shape factor is left to the data, so a
+residual `B`-`C`-`E` correlation remains (different shape triples produce
+near-identical curves), which is why the synthetic test validates the
+sequential fit on `μ` and on curve fidelity rather than parameter-by-parameter.
+
+Both modes report the friction coefficient with the fit metrics:
+`mu_data` (peak `|Y|/Fz` measured in the data) and `mu_model` (peak of the
+fitted curve over the observed slip range). They differ when the drive never
+reaches saturation, so a gap between them flags a `D` that the data does not
+actually support.
 
 ## 2. Simultaneous identification
 
@@ -90,7 +101,7 @@ Estimation for Real-World Data"*, TUM, arXiv:2504.20863 (IEEE, 2025):
   Pyro: an `AutoMultivariateNormal` guide over the free parameters, trained
   against the ELBO, returning a point estimate (posterior mean) plus a
   `*_std` uncertainty for each parameter. Usable in both sequential mode
-  (uncertainty on `B`,`E` only, since `C`,`D` are fixed constants) and
+  (uncertainty on `B`,`C`,`E` only, since `D` is a fixed constant) and
   simultaneous mode (uncertainty on all four, and their correlations are
   what the paper's method actually captures). Requires the optional
   `pyro-ppl` dependency; slower than the other methods (default 2000 SVI
@@ -167,12 +178,12 @@ or launch arguments; full defaults live in that file.
 | Parameter | Default | Description |
 |---|---|---|
 | `identification.method` | `dual` | One of the 8 optimizer back-ends (§3) |
-| `identification.identification_mode` | `sequential` | `sequential` (fix C,D; fit B,E) or `simultaneous` (fit all 4) |
+| `identification.identification_mode` | `sequential` | `sequential` (fix D to the data peak; fit B,C,E) or `simultaneous` (fit all 4) |
 | `identification.regularization` | `none` | Simultaneous-mode only: `none` or `map` (§2) |
 | `identification.formulas` | `[lateral_fy, longitudinal_fx, self_aligning_mz]` | Which channels to identify |
 | `identification.axle_grouping` | `per_wheel` | `per_wheel` (FL,FR,RL,RR separately) / `per_axle` (front, rear pooled) / `combined` (all four pooled) |
 | `identification.initial_guess_fy/_fx/_mz` | `[10.0,1.5,1.0,0.5]` / `[10.0,1.65,1.0,0.5]` / `[10.0,1.5,0.1,0.5]` | Starting `[B,C,D,E]` (trust_region, and seed for `dual`) |
-| `identification.lower_bounds` / `upper_bounds` | `[0.1,0.1,0.01,-2.0]` / `[50.0,5.0,5.0,2.0]` | Bounds for `[B,C,D,E]` (simultaneous, `regularization="none"`) or effectively `[B,_,D,E]` (sequential — only indices 0,2,3 are used) |
+| `identification.lower_bounds` / `upper_bounds` | `[0.1,0.1,0.01,-2.0]` / `[50.0,5.0,5.0,2.0]` | Bounds for `[B,C,D,E]` (simultaneous, `regularization="none"`) or effectively `[B,C,_,E]` (sequential — indices 0,1,3 bound the fit; index 2 clips the peak-derived `D`) |
 
 ### Optimizer hyperparameters
 
@@ -239,16 +250,14 @@ ros2 run pacejka_identification identification_node
 ### With the launch file (recommended — loads `config/identification_config.yaml`)
 
 ```bash
-ros2 launch pacejka_identification pacejka_identification.launch.py \
-    tire_forces_topic:=/tire_forces \
-    duration_seconds:=90 \
-    method:=dual \
-    axle_grouping:=per_axle
+ros2 launch pacejka_identification pacejka_identification.launch.py
 ```
 
-Options not exposed as launch arguments (`regularization`, `map_regularization`,
-`bayesian_svi`, `data_balancing`, per-channel initial guesses/bounds) are set
-directly in `config/identification_config.yaml`.
+The launch file exposes no arguments: every option (`tire_forces_topic`,
+`duration_seconds`, `method`, `axle_grouping`, `regularization`,
+`map_regularization`, `bayesian_svi`, `data_balancing`, per-channel initial
+guesses/bounds, output paths) is set in `config/identification_config.yaml`.
+Rebuild after editing so the installed copy under `share/` is refreshed.
 
 ### Standalone data collection only (no fitting)
 
@@ -274,7 +283,8 @@ python3 -m pytest test/test_identification.py -v   # if your pytest/plugin versi
 
 Validates all 8 methods × both modes (+ `regularization="map"` and
 `bayesian_svi` cases) against synthetic Pacejka data with known `[B,C,D,E]`,
-checking parameter recovery (sequential) or curve-fit quality (simultaneous).
+checking `μ`/`D` recovery plus curve fidelity (sequential) or curve-fit
+quality (simultaneous).
 
 ### Output files
 

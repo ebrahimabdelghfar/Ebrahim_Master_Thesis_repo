@@ -3,7 +3,7 @@
 <package format="3">
   <name>pacejka_identification</name>
   <version>0.1.0</version>
-  <description>ROS2 package for direct Pacejka Magic Formula coefficient identification using ground-truth tire force data from CarMaker.</description>
+  <description>ROS2 package for direct Pacejka Magic Formula coefficient identification using ground-truth per-wheel tire force telemetry from the CARLA bridge (/sim/feedback/tire_forces).</description>
 
   <maintainer email="ebrahim@local.com">Ebrahim</maintainer>
   <license>MIT</license>
@@ -12,7 +12,8 @@
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>std_msgs</exec_depend>
-  <exec_depend>hellocm_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sim_manager_msgs</exec_depend>
 
   <exec_depend>pyro-ppl</exec_depend>
 

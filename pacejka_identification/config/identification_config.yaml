@@ -5,10 +5,15 @@
     # =============================================================================
 
     # ---- Data Collection ----
+    # Source: /sim/feedback/tire_forces (sim_manager_msgs/TireForces) — CARLA's
+    # own per-wheel telemetry, no analytic tire model in between.
+    # The publisher already zeroes slip and both forces below 0.5 m/s (PhysX
+    # sleeps a parked vehicle and the telemetry then repeats byte for byte);
+    # those samples are dropped regardless of the gate below.
     data_collection:
-      duration_seconds: 60          # How long to collect data (seconds)
-      min_velocity: 0.5             # Minimum belt_velocity to accept a sample (m/s)
-      require_on_road: true         # Only keep samples where the tire contacts the road
+      duration_seconds: 400          # Wall-clock collection window from the first message (s)
+      odom_topic: "/odom"           # Speed source for the standstill gate ("" = no gate)
+      min_speed: 2.0                # Reject samples below this |v| (m/s); 0.0 disables the gate
       min_fz_threshold: 50.0        # Minimum |Fz| to accept a sample (N)
 
     # ---- Identification Settings ----
@@ -25,14 +30,14 @@
       method: "dual"
 
       # Identification mode:
-      # sequential   (recommended) → fixes C to a physics-based value and D to
-      #                               the data peak, fits only B, E
+      # sequential   (recommended) → fixes D (= friction coefficient μ) to the
+      #                               data peak, fits B, C, E
       #                               breaks known parameter degeneracy
       # simultaneous → fits all [B, C, D, E] at once (B/C/E may be correlated)
       identification_mode: "sequential"
 
       # Regularization for simultaneous mode only (sequential already fixes
-      # C and D, so there is nothing to regularize there):
+      # D from the data peak, which is what pins the curve down there):
       #   none → plain least squares over the configured lower/upper_bounds
       #   map  → literature-consistent bounds (LITERATURE_BOUNDS) + a
       #          Gaussian-prior penalty anchoring C toward its literature
@@ -42,26 +47,29 @@
       # setting (its own priors are independent of this option).
       regularization: "none"
 
-      # Which Pacejka relationships to identify
+      # Which Pacejka relationships to identify.
+      # Only lateral_fy is ground truth: TireForces.lateral_force is a validated
+      # contact-patch force, while longitudinal_force is a friction-capacity
+      # report (pinned at tire_friction * normal_load, corr +0.04 with m*a_x)
+      # rather than a delivered force, and there is no self-aligning torque in
+      # the message at all (self_aligning_mz is unavailable).
       formulas:
         - lateral_fy               # Fy = f(slip_angle, Fz)
-        - longitudinal_fx          # Fx = f(long_slip, Fz)
-        - self_aligning_mz         # Mz = f(slip_angle, Fz)
+        # - longitudinal_fx        # Fx = f(slip_ratio, Fz) — see caveat above
 
       # How to group wheels for identification
       # per_wheel  → FL, FR, RL, RR fitted independently
       # per_axle   → front wheels pooled, rear wheels pooled
       # combined   → all four wheels pooled into one fit
-      axle_grouping: "per_wheel"
+      axle_grouping: "per_axle"
 
       # Initial guesses for [B, C, D, E]  (used by trust_region and as seed for dual)
       initial_guess_fy: [10.0, 1.5, 1.0, 0.5]
       initial_guess_fx: [10.0, 1.65, 1.0, 0.5]
-      initial_guess_mz: [10.0, 1.5, 0.1, 0.5]
 
       # Parameter bounds for [B, C, D, E]
-      lower_bounds: [0.1, 0.1, 0.01, -2.0]
-      upper_bounds: [50.0, 5.0, 5.0, 2.0]
+      lower_bounds: [0.1, 0.1, 0.01, -5.0]
+      upper_bounds: [50.0, 5.0, 5.0, 5.0]
 
     # ---- Algorithm Hyperparameters ----
     # These control the internal behaviour of each optimiser.
@@ -74,7 +82,7 @@
 
     differential_evolution:
       # Maximum number of DE generations
-      maxiter: 1000
+      maxiter: 10000
       # Convergence tolerance — solver stops early if relative improvement < tol
       tol: 1.0e-12
       # Random seed for reproducibility (set to -1 for non-deterministic)
@@ -105,9 +113,9 @@
       # Self-adapts mutation factor F and crossover rate CR per individual.
       # Uses "current-to-pbest/1" mutation and an external archive.
       # Population size
-      pop_size: 100
+      pop_size: 1000
       # Maximum number of generations
-      n_generations: 400
+      n_generations: 600
       # Top-p fraction for pbest selection (0 < p ≤ 1)
       # Smaller p → more exploitation (greedy), larger p → more exploration
       p: 0.1

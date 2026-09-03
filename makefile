@@ -19,6 +19,14 @@ PUBLISH_INITIAL_POSE?=true
 # which is already in the ROS convention.
 PSI_OFFSET_RAD?=1.5707963268
 ENV_NAME?=identification_env
+# The installed node entrypoints carry a /usr/bin/python3 shebang, which has no
+# torch/pyro. identification method "bayesian_svi" needs both, so append the
+# conda env's site-packages instead of rebuilding under conda python. Appended
+# (not prepended) so the ROS overlay paths keep priority.
+ENV_SITE_PACKAGES?=$(HOME)/anaconda3/envs/$(ENV_NAME)/lib/python3.10/site-packages
+# sim_manager_msgs/TireForces (/sim/feedback/tire_forces) lives in the CARLA
+# bridge workspace and must be sourced AFTER this workspace's overlay.
+CARLA_BRIDGE_SETUP?=/home/ebrahim/Carla_ASU_Bridge/install/ros_apps/setup.bash
 setup_conda_env:
 	@echo -e "${green}Setting up conda environment: $(ENV_NAME)${reset}"
 	@conda env create -f environment.yml -n $(ENV_NAME) || conda env update -f environment.yml -n $(ENV_NAME)
@@ -61,6 +69,11 @@ launch_adaptive_control_with_graph:
 	ros2 launch adaptive_controller_manager adaptive_stack.launch.py  \
 	enable_controller_benchmark:=true \
 	controller_benchmark_plot_output_dir:=/home/ebrahim/Ebrahim_Master_Thesis_repo/graphs/control/control_with_friction_warm_start_base_line
+launch_pacejka_identification:
+	@source /opt/ros/humble/setup.bash && source ${WORKSPACE}/install/setup.bash && \
+	source $(CARLA_BRIDGE_SETUP) && \
+	PYTHONPATH=$$PYTHONPATH:$(ENV_SITE_PACKAGES) \
+	ros2 launch pacejka_identification pacejka_identification.launch.py
 setup_ros2_workspace:
 	@source /opt/ros/humble/setup.bash && \
 	bash ${WORKSPACE}/scripts/colcon_build.sh
