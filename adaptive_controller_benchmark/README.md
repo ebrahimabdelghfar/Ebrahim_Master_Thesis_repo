@@ -10,7 +10,7 @@ See `docs/adaptive_controller_benchmark.md` (repo root `docs/`) for the metric d
 
 - **Tracking error** — `e_y` (lateral) and heading error, split by active controller (`RUNNING_PP` vs `RUNNING_MPC`): RMS, max, and ITAE (integral of time-weighted absolute error) — the same metric set used by Demeter et al. 2025 (arXiv:2504.18439) to compare Pure Pursuit / Stanley / a combined switching controller.
 - **Switching behavior** — dwell time per FSM state, transition counts, per-episode handover speed-ramp traces and steering-jump magnitude — grounded in Hespanha & Morse's switched-controller theory (Automatica 38(11), 2002).
-- **Lap time** — derived from `/raceline_waypoints`' arc-length (`s_m`) wraparound against the nearest waypoint to `/odom`'s position; no lap-completion topic exists elsewhere in the repo, so this re-derives it standalone.
+- **Lap time** — derived from `/raceline_waypoints`' arc-length (`s_m`) wraparound against the nearest waypoint to `/odom`'s position; no lap-completion topic exists elsewhere in the repo, so this re-derives it standalone. Everything before the **first** wraparound is an untimed out-lap (`lap_idx` 0): the car spawns wherever the simulator puts it, which here is behind the raceline's `s = 0`, so timing from the first odometry sample reported the ~9 s drive up to the start line as "lap 1". Lap 1 is now the first full `s = 0` → `s = 0` lap, and the out-lap is excluded from `lap_times.png` and the per-lap track plots (it still counts towards the overall tracking-error metrics, which are not lap-scoped).
 - **Compute cost** — MPC's per-solve wall-clock time (`/mpc/debug/solve_time_ms`) vs. Pure Pursuit's O(1) closed-form geometry.
 - **Safety incidents** — `EMERGENCY_HALT` occurrence count and total duration.
 
@@ -45,7 +45,7 @@ If `plot_output_dir` is set, the following PNGs are written when the node is clo
 - `tracking_error_boxplot_by_controller.png` — `|e_y|`/`|heading error|` distributions, `RUNNING_PP` vs `RUNNING_MPC`.
 - `speed_and_compute_cost.png` — `v_x(t)` vs. MPC `solve_time_ms(t)` on a twin axis.
 - `handover_transient.png` — per-switch-episode speed ramp overlay + steering-jump magnitude.
-- `lap_times.png` — lap-wise lap time bar chart (only written if ≥1 lap was detected).
+- `lap_times.png` — lap-wise lap time bar chart (only written if ≥1 *completed* lap was detected; the out-lap is not one).
 - `metrics_summary_table.png` — tracking-error metrics table + switching/dwell/lap/compute-cost summary.
 
 History is kept in a bounded-memory buffer (`plot_max_points`, logarithmic decimation), same strategy as `tire_force_benchmark`'s `HistoryBuffer`.

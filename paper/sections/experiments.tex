@@ -24,9 +24,10 @@ at \SI{2.0}{\meter} spacing, reference speed
 \SIrange{14.90}{46.02}{\meter\per\second}, minimum corner radius
 \SI{18.7}{\meter} ($|\kappa|_{\max}=\SI{0.0536}{\per\meter}$).
 
-Two of the optimiser's inputs matter for Section~\ref{subsec:negative}. Its
-vehicle configuration of a mass \SI{240}{\kilo\gram}, and its \texttt{ggv}
-envelope declares a \emph{constant} lateral capability of
+Two of the optimiser's inputs matter for Section~\ref{subsec:negative}. It was
+given a vehicle mass of \SI{240}{\kilo\gram}---the configured body mass, not
+the \SI{269.8}{\kilo\gram} the wheels carry (Table~\ref{tab:vehicle})---and its
+\texttt{ggv} envelope declares a \emph{constant} lateral capability of
 \SI{5.0}{\meter\per\second\squared} at every speed. The resulting profile
 saturates that envelope exactly---peak demand $\max(v_{x}^{2}|\kappa|)$ over
 the lap is \SI{5.00}{\meter\per\second\squared}, i.e.\ \SI{0.56}{\g}---so the
@@ -162,7 +163,7 @@ that the extent of the modification is unambiguous.}
 Axis & Baseline~\cite{ontrack2024} & This work\\
 \midrule
 Platform & 1:10, \SI{3.7}{\kilo\gram}, $L=\SI{0.32}{\meter}$ &
-Full scale, \SI{240.0}{\kilo\gram}, $L=\SI{1.53}{\meter}$\\
+Full scale, \SI{269.8}{\kilo\gram}, $L=\SI{1.53}{\meter}$\\
 Rollout speed & $\mathrm{clip}(\overline{v_{x}},2,4)\,\si{\meter\per\second}$ &
 From the measured lap, floored at \SI{7}{\meter\per\second}\\
 Reachable $\mu$ & $\approx2.0$ (adequate) & $0.43$ under the baseline clip;
@@ -208,7 +209,23 @@ plant; and one-step prediction on held-out data gives $R^{2}=\num{0.97}$ for
 $v_{y}$ and $R^{2}=\num{0.99}$ for $\omega$. The peak-friction drift across the
 six co-identification iterations is removed: where the unbounded sweep walked
 $D$ from \num{1.01} to \num{1.87}, the bounded sweep with a frozen prior
-settles inside $[1.05,1.18]$.
+settles inside $[1.05,1.18]$. That band brackets the plant's own effective
+friction coefficient of \num{1.05} (Table~\ref{tab:ref}), which is the quantity
+$D$ is supposed to recover---and not the \num{1.5} written in the vehicle
+configuration, against which the same result would read \SI{30}{\percent} low.
+
+Because the plant's curve is known in closed form
+(Section~\ref{subsec:planttire}), the residual error of the identified model
+can be separated into the error of the fit and the error of the model family.
+On the same 1804 ground-truth wheel samples, \eqref{eq:physx} evaluated at each
+sample's measured $(\alpha,F_{z},\mu)$ gives $R^{2}=\num{0.99}$ with
+\SI{16.1}{\newton}/\SI{14.7}{\newton} RMSE front/rear, while the identified
+Magic Formula gives \num{0.96}/\SI{34.6}{\newton} and
+\num{0.98}/\SI{21.3}{\newton}. The gap is therefore not a failure of the
+identification: over a slip range reaching $P_{99}=\SI{3.66}{\degree}$ the
+identified curve is within roughly \SI{20}{\newton} RMS of a tire whose shape
+it cannot represent exactly, and the remaining error is the price of the model
+form the controller requires.
 
 \begin{table*}[t]
 \caption{Defects identified, corrected and regression-tested in this work. The
@@ -473,7 +490,7 @@ $\sqrt{g\mu/|\kappa|}=\SI{13.5}{\meter\per\second}$ at the measured grip
 \SI{9.05}{\meter\per\second\squared} (\SI{0.92}{\g}), whereas
 \SI{15}{\meter\per\second} returns it to \SI{12.00}{\meter\per\second\squared}.
 Regenerating the raceline for the \emph{measured} vehicle
-($m=\SI{240.0}{\kilo\gram}$, $\mu_{\mathrm{peak}}=1.0$,
+($m=\SI{269.8}{\kilo\gram}$, $\mu_{\mathrm{peak}}=1.0$,
 $v_{\max}\approx\SIrange{13}{14}{\meter\per\second}$) is the prerequisite for
 the closed-loop experiment and is the immediate next step
 (Section~\ref{sec:conclusion}).

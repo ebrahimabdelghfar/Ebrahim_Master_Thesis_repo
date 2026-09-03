@@ -88,10 +88,11 @@ have not previously been stated.
 
 CARLA~\cite{carla2017} is the standard open simulator for autonomous-driving
 research and supplies the sensor and scenario infrastructure used here. Its
-native dynamics come from the underlying PhysX wheeled-vehicle model---a
-rigid-body model with per-wheel tire friction rather than an empirical Magic
-Formula fit to measured data---which is why this study treats the simulator as
-a well-instrumented \emph{plant} to be identified and not as a source of
+native dynamics come from the underlying PhysX wheeled-vehicle
+model~\cite{physxvehicle}---a saturating friction-and-stiffness tire law
+(Section~\ref{subsec:planttire}) rather than an empirical Magic Formula fit to
+measured data---which is why this study treats the simulator as a
+well-instrumented \emph{plant} to be identified and not as a source of
 ground-truth Pacejka coefficients. Recent work addresses that fidelity gap
 directly: R-CARLA~\cite{rcarla2025} makes the dynamics model interchangeable
 while retaining CARLA's sensor simulation, and Sagmeister \emph{et

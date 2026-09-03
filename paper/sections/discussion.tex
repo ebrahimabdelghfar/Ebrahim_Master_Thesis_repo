@@ -38,10 +38,13 @@ where this study operates, and R-CARLA~\cite{rcarla2025} exists because CARLA's
 native dynamics are a known weak point for racing-grade work; hardware
 replication is therefore necessary before any claim about identification
 accuracy on a real vehicle. Second, the gap between configured wheel friction
-(\num{1.5}) and realised peak axle friction (\numrange{1.00}{1.05}) is a
-property of how the PhysX solver composes friction with load and slip; we
-report it only because an identifier tuned to converge on the number in the
-configuration file will converge on the wrong number. Third, the \num{0.76}
+(\num{1.5}) and realised peak axle friction (\numrange{1.00}{1.05}) is an
+artefact of the server multiplying the configured wheel coefficient by the road
+surface's own, a measured constant \num{0.70} on this map; we report it only
+because an identifier---or a reviewer---tuned to converge on the number in the
+configuration file will converge on the wrong number, and because the
+simulator publishes the effective value per wheel, so nothing forces that
+mistake. Third, the \num{0.76}
 achieved/commanded steering ratio arises from CARLA's Ackermann controller and
 this vehicle's steering configuration---the lesson, identify against the
 achieved actuator state, is general and standard practice; the magnitude is

@@ -250,13 +250,15 @@ class LapTracker:
         # A lap boundary is a large *decrease* in arc-length (wrapping from near the
         # track length back to ~0) - anything less than half the track length is
         # ordinary forward progress, never a wraparound.
+        #
+        # Everything before the FIRST wraparound is an out-lap (lap index 0, not
+        # timed): the car spawns wherever the simulator puts it, which in this
+        # repo is behind the raceline's s=0, so timing from the first sample
+        # reports the few seconds it takes to reach the start line as lap 1.
         if self._last_s is not None and self._track_length > 0.0:
             if (self._last_s - s) > 0.5 * self._track_length:
                 if self._lap_start_t is not None:
                     self.lap_times.append(t - self._lap_start_t)
                 self._lap_start_t = t
                 self.current_lap += 1
-        if self._lap_start_t is None:
-            self._lap_start_t = t
-            self.current_lap = 1
         self._last_s = s

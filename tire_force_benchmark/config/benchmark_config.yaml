@@ -87,6 +87,14 @@ tire_force_benchmark_node:
     state_sensor_topic: /benchmarking/state_sensor
     state_error_topic: /benchmarking/state_error
 
+    # Minimum v_x for a state-benchmark sample. Slip angle is atan(v_y/v_x), so
+    # below ~1 m/s the one-step prediction saturates the tire curve and reports
+    # yaw rates of several rad/s against a ground truth of a few tenths - which
+    # is the whole low-speed bootstrap phase, and it dominated both the metrics
+    # and the head of vehicle_states_timeseries.png. 1.0 matches
+    # on_track_sys_id.collect_data()'s own v_x > 1 identification-data gate.
+    state_min_speed_mps: 1.0
+
     # Vehicle model constants (m [kg], I_z [kg.m^2], l_f/l_r/l_wb [m]) - only needed
     # if model_file doesn't already provide them. Leave at 0.0 (disables state
     # benchmarking with a warning) unless you set them or a model_file.

@@ -90,8 +90,30 @@ def test_lap_tracker_detects_wraparound():
     tracker.update(t=3.0, x=3.0, y=0.0)
     assert tracker.lap_times == []
 
+    # First wraparound only starts the clock - the segment before it is the out-lap.
     tracker.update(t=4.0, x=0.0, y=0.0)
+    assert tracker.lap_times == []
+    assert tracker.current_lap_index() == 1
+
+    tracker.update(t=5.0, x=1.0, y=0.0)
+    tracker.update(t=6.0, x=2.0, y=0.0)
+    tracker.update(t=7.0, x=3.0, y=0.0)
+    tracker.update(t=8.0, x=0.0, y=0.0)
     assert tracker.lap_times == [4.0]
+    assert tracker.current_lap_index() == 2
+
+
+def test_lap_tracker_out_lap_is_not_timed():
+    """Car spawned behind s=0 reaches the start line almost immediately - that
+    short first segment must not be reported as a lap (it was, as a 9 s 'lap 1')."""
+    tracker = LapTracker()
+    tracker.set_waypoints(x_m=[0.0, 1.0, 2.0, 3.0], y_m=[0.0, 0.0, 0.0, 0.0], s_m=[0.0, 1.0, 2.0, 3.0])
+
+    tracker.update(t=0.0, x=3.0, y=0.0)   # spawn just before the start line
+    assert tracker.current_lap_index() == 0
+    tracker.update(t=0.5, x=0.0, y=0.0)   # crosses it 0.5 s later
+    assert tracker.lap_times == []
+    assert tracker.current_lap_index() == 1
 
 
 def test_lap_tracker_not_ready_without_waypoints():

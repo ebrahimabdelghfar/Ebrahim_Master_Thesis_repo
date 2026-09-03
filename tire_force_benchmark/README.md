@@ -121,7 +121,7 @@ Independently of the Fy benchmarking above, if `enable_state_benchmarking` is tr
 2. On each new odometry sample, computes a one-step-ahead prediction of $v_y, \omega$ from the *previous* real state using the same bicycle-model + Pacejka tire forces (front/rear slip angles, `pacejka_formula`, lateral/yaw dynamics, Euler-integrated over the real inter-sample `dt`), reusing the same math already validated in `On-Track-SysID/src/on_track_sys_id.py`.
 3. Compares the prediction against the *current* real $v_y, \omega$ (one-step-ahead delayed comparison), updates `v_y`/`omega` online metrics, and publishes `state_estimate_topic`/`state_sensor_topic`/`state_error_topic`.
 
-Predictions are skipped (previous state just re-cached) when the timestep is non-monotonic, when the inter-sample gap is too large to trust an Euler step (`dt > 0.2s`), or while the car is nearly stopped (`v_x < 0.1 m/s`, since the slip-angle formula divides by $v_x$).
+Predictions are skipped (previous state just re-cached) when the timestep is non-monotonic, when the inter-sample gap is too large to trust an Euler step (`dt > 0.2s`), or while the car is slower than `state_min_speed_mps` (default `1.0`). The speed gate is not just a divide-by-zero guard: slip angle is $\arctan(v_y/v_x)$, so at a few tenths of a m/s a millimetre of lateral drift saturates the tire curve and the predicted yaw rate reaches several rad/s against a ground truth of a few tenths. That is the entire low-speed bootstrap phase, and at the old `0.1 m/s` gate it dominated both the state metrics and the head of `vehicle_states_timeseries.png`. `1.0` matches `on_track_sys_id.collect_data()`'s own `v_x > 1` gate, so the benchmark scores the operating region the identification was actually fitted on.
 
 If `m`/`I_z`/`l_f`/`l_r`/`l_wb` aren't available, state benchmarking is disabled with a warning rather than the node crashing.
 
@@ -198,6 +198,7 @@ See `config/benchmark_config.yaml` for the full, documented, canonical list. Sum
 | `odom_topic` | `/odom` | |
 | `ackermann_cmd_topic` | `/drive` | |
 | `state_estimate_topic` / `state_sensor_topic` / `state_error_topic` | see yaml | |
+| `state_min_speed_mps` | `1.0` | minimum $v_x$ for a state-benchmark sample; see "Vehicle-state benchmarking" |
 | `m` / `I_z` / `l_f` / `l_r` / `l_wb` | `0.0` | vehicle constants, fallback if not in `model_file` |
 | `plot_output_dir` | `''` | set to enable PNG export on shutdown |
 | `plot_max_points` | `5000` | history buffer size per signal before decimation |

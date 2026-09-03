@@ -162,6 +162,7 @@ class TireForceBenchmarkNode(Node):
         self.declare_parameter('state_estimate_topic', '/benchmarking/state_estimate')
         self.declare_parameter('state_sensor_topic', '/benchmarking/state_sensor')
         self.declare_parameter('state_error_topic', '/benchmarking/state_error')
+        self.declare_parameter('state_min_speed_mps', 1.0)
         self.declare_parameter('m', 0.0)
         self.declare_parameter('I_z', 0.0)
         self.declare_parameter('l_f', 0.0)
@@ -244,6 +245,13 @@ class TireForceBenchmarkNode(Node):
 
         self._logged_waiting_for_params = False
 
+        # Slip angle is atan(v_y/v_x), so the one-step prediction below blows up
+        # as v_x approaches zero: at 0.1 m/s a millimetre of lateral drift is a
+        # saturating slip angle and the predicted yaw rate reaches several rad/s
+        # against a ground truth of a few tenths. Default matches
+        # on_track_sys_id.collect_data()'s own v_x > 1 gate, so the benchmark
+        # scores the same operating region the identification was fitted on.
+        self.state_min_speed = max(0.0, float(self.get_parameter('state_min_speed_mps').value))
         self.enable_state_benchmarking = bool(self.get_parameter('enable_state_benchmarking').value)
         if self.enable_state_benchmarking:
             if self.m <= 0.0 or self.I_z <= 0.0 or self.l_f <= 0.0 or self.l_r <= 0.0 or self.l_wb <= 0.0:
@@ -744,9 +752,10 @@ class TireForceBenchmarkNode(Node):
 
         # Same guards as On-Track-SysID's on_track_sys_id.py:publish_estimates -
         # first sample / non-monotonic stamp (dt is None or <=0), a timing gap
-        # (dt too large to trust a one-step Euler prediction), or the car
-        # being effectively stopped (slip-angle formula divides by v_x).
-        if dt is None or dt <= 1e-5 or dt > 0.2 or v_x < 0.1 or not self.have_identified_params:
+        # (dt too large to trust a one-step Euler prediction), or the car being
+        # too slow for the slip-angle formula (see state_min_speed_mps).
+        if (dt is None or dt <= 1e-5 or dt > 0.2 or v_x < self.state_min_speed
+                or not self.have_identified_params):
             self.prev_v_y = v_y_real
             self.prev_omega = omega_real
             return

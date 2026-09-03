@@ -165,10 +165,14 @@ class OnTrackSysId(Node):
         self.benchmark_update_params_cli = self.create_client(
             IdentifiedParam, benchmark_update_params_service)
 
-        # Online benchmarking accumulators
+        # Online benchmarking accumulators. Armed only once an identification
+        # has been ACCEPTED (acked by adaptive_controller_manager) - scoring a
+        # model the manager rejected, or one it has not taken yet, measures a
+        # model the car never drove on.
         self.bench_vy = OnlineBenchmark(name='v_y (lateral velocity)')
         self.bench_omega = OnlineBenchmark(name='omega (yaw rate)')
         self.bench_sample_count = 0
+        self.bench_armed = False
 
         # Load model parameters for estimation
         try:
@@ -209,6 +213,7 @@ class OnTrackSysId(Node):
         
         self.phase = 'COLLECTING'
         self.pending_update_future = None
+        self.pending_benchmark_params = None
         self.next_reid_time = None
         self.pbar = None
 
@@ -600,6 +605,8 @@ class OnTrackSysId(Node):
         self.error_pub.publish(err_msg)
 
         # --- Academic Benchmarking ---
+        if not self.bench_armed:
+            return
         self.bench_vy.update(v_y_real, v_y_pred)
         self.bench_omega.update(omega_real, omega_pred)
         self.bench_sample_count += 1
@@ -683,6 +690,9 @@ class OnTrackSysId(Node):
         request.param_values = [float(v) for v in self.C_Pf_model] + \
             [float(v) for v in self.C_Pr_model]
         self.pending_update_future = self.update_params_cli.call_async(request)
+        # Forwarded to the benchmark only once this set is acked, see
+        # handle_pending_ack.
+        self.pending_benchmark_params = [float(v) for v in request.param_values]
         self.phase = 'AWAITING_ACK'
         self.get_logger().info(
             "Submitted identified params via sysid/update_params, awaiting ack...")
@@ -691,16 +701,14 @@ class OnTrackSysId(Node):
         # on every subsequent re-identification cycle too.
         self.first_run_pub.publish(Bool(data=False))
 
-        if self.benchmark_update_params_enable:
-            self.forward_to_benchmark(request.param_values)
-
     def forward_to_benchmark(self, param_values):
         """
-        Best-effort forward of a freshly-identified tire param set to a
-        passive benchmarking node (tire_force_benchmark), independent of the
-        adaptive_controller_manager arming FSM - unlike sysid/update_params,
-        this consumer isn't actuating anything, so it should see every
-        identification immediately rather than wait for a handover window.
+        Best-effort forward of an ACCEPTED tire param set to a passive
+        benchmarking node (tire_force_benchmark). Called only after
+        adaptive_controller_manager acks the same set, so the benchmark
+        starts collecting on the model the car is actually driving on and
+        never scores a rejected identification (nor the seconds between
+        training and the ack).
         Fire-and-forget: no ack means just a warning, no retry (the next
         re-identification cycle naturally resends anyway).
         """
@@ -740,6 +748,8 @@ class OnTrackSysId(Node):
 
         future = self.pending_update_future
         self.pending_update_future = None
+        params = self.pending_benchmark_params
+        self.pending_benchmark_params = None
         try:
             response = future.result()
             ack = bool(response.ack) if response is not None else False
@@ -752,6 +762,9 @@ class OnTrackSysId(Node):
 
         if ack:
             self.get_logger().info("Identified params acked by adaptive_controller_manager.")
+            self.bench_armed = True
+            if self.benchmark_update_params_enable and params is not None:
+                self.forward_to_benchmark(params)
         else:
             # Manager rejected the submission (implausible values) or the
             # call itself failed. Keep the previous (already-applied)

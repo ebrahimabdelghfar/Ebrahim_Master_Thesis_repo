@@ -28,7 +28,31 @@ ros2 bag record -o sysid_run \
 
 ---
 
-## Fig. 3 — `pipeline.tex` — Identification pipeline  ✅ DONE
+## `frames.tex` — Frame and sign conventions  ✅ DONE
+
+**Type:** three-panel convention diagram. Vector TikZ, `\input` by
+`sections/platform.tex` inside a `figure*` at `\textwidth`.
+
+(a) CARLA/Unreal's left-handed world (X east, Y south, Z up, yaw CW) against
+ROS 2's right-handed ENU (REP-103), with the map between them. (b) The vehicle
+body frame every identification quantity is written in: FLU, `ω`/`δ` positive
+counter-clockwise, `α` and `Fy` positive to the left. (c) The per-channel
+conversion `Carla_ASU_Bridge` applies — including the one channel
+(`tire_forces` slip angle) that needs no sign change, because the frame flip
+and CARLA's own convention cancel.
+
+**If it is edited:** panel boxes are fitted to explicit corner coordinates
+(`pa1/pa2`, `pb1/pb2`, `pc1/pc2`), not to their content, so the three panels
+keep the same height under `\resizebox`. `fit=` cannot take a raw `(-4mm,-6mm)`
+coordinate — TikZ parses the minus sign and fails; name the coordinate first.
+
+**Note:** this figure took number 3, so every later figure shifted by one
+relative to the headings below. The authoritative numbering is
+`grep newlabel ../main.aux`, not these headings.
+
+---
+
+## Fig. 4 — `pipeline.tex` — Identification pipeline  ✅ DONE
 
 **Type:** block diagram with a feedback loop. Vector TikZ, `\input` by
 `sections/method.tex` inside a `figure*` at `0.98\textwidth`.

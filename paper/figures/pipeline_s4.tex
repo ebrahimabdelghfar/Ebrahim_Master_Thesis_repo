@@ -74,13 +74,16 @@
 \draw[flow] (proj) -- (s4d);
 \draw[flow] (s4d)  -- (res);
 \draw[flow] (res)  -- (out);
-\draw[flow] (xin.east) -- ++(3mm,0) |- (proj.west);
 
 \begin{scope}[on background layer]
   \node[draw, dashed, rounded corners=2pt, inner sep=3.4pt, fill=black!2,
         fit=(proj)(s4d)(res)(out)] (panelb) {};
 \end{scope}
 \node[hdr, above=1.2mm of panelb.north] {(b) Temporal residual};
+
+% Panel-to-panel link: anchored on the dashed borders and turned inside the
+% gap, so it never crosses either box.
+\draw[flow] (panela.east|-xin) -- ++(5mm,0) |- (panelb.west|-proj);
 
 % ===================== (c) two evaluation paths ============================
 \node[fast, right=13mm of proj.north east, anchor=north west] (conv)
@@ -103,13 +106,14 @@
    Same LTI system: the two paths agree to $<10^{-9}$ in float64.};
 
 \draw[eq] (conv) -- node[lbl]{identical $\phip$ to 4 d.p.} (rec);
-\draw[flow] (out.east) -- ++(3mm,0) |- (conv.west);
-\draw[flow] (out.east) -- ++(3mm,0) |- (rec.west);
 
 \begin{scope}[on background layer]
   \node[draw, dashed, rounded corners=2pt, inner sep=3.4pt, fill=black!2,
         fit=(conv)(rec)(cost)] (panelc) {};
 \end{scope}
 \node[hdr, above=1.2mm of panelc.north] {(c) Evaluation paths and cost};
+
+\draw[flow] (panelb.east|-out) -- ++(5mm,0) |- (panelc.west|-conv);
+\draw[flow] (panelb.east|-out) -- ++(5mm,0) |- (panelc.west|-rec);
 
 \end{tikzpicture}

@@ -22,8 +22,9 @@ excitation-aware rollout speed and the extrapolation-bounded sweep
 (Sections~\ref{subsec:excitation}--\ref{subsec:iterative}), and the frozen
 regularisation target of \eqref{eq:fitobj}. Blue is the gated model interface
 to the controller (Section~\ref{sec:integration}); orange is the plant's own
-per-wheel force telemetry, which scores the result and is never admitted into
-the loop.}
+per-wheel force telemetry, which scores the result, is armed only once the
+controller has acknowledged the submitted model
+(Section~\ref{subsec:deployment}), and is never admitted into the loop.}
 \label{fig:pipeline}
 \end{figure*}
 
@@ -364,8 +365,10 @@ failing below $|a_{y}|=\SI{0.4}{\g}$ ``due to the proximity of the tyre force
 curves in the low slip regions'' and a \SIrange{40}{80}{\percent} utilisation
 working range. Samples with $|a_{x}|>\SI{0.35}{\g}$ are dropped rather than
 corrected, since the axle longitudinal force split a friction-ellipse
-correction would need is not observable from this sensor set, and samples whose
-force opposes their own slip angle are dropped as sign errors or noise.
+correction would need is not observable from this sensor set; samples below
+\SI{2.5}{\meter\per\second} are dropped because \eqref{eq:slip} is
+ill-conditioned there; and samples whose force opposes their own slip angle are
+dropped as sign errors or noise.
 
 \subsubsection{Applied as a floor, unconditionally}
 \label{subsec:frictionfloor}
@@ -389,10 +392,17 @@ why: $\sigma_{\mu}/\mu$ from the fit covariance is a \emph{precision} figure,
 not an accuracy one. A wrong mass, a wrong yaw inertia, an IMU bias or a road
 bank all fit tightly and wrongly through \eqref{eq:newtoneuler}, since axle
 force scales linearly with $m$. On this vehicle the configuration file's
-\SI{240}{\kilo\gram} against the simulated \SI{240.0}{\kilo\gram} biases $\mu$
-\SI{12}{\percent} low on its own, which is measurement-chain work
+\SI{240.0}{\kilo\gram} against the \SI{269.8}{\kilo\gram} the wheels actually
+carry biased $\mu$ \SI{12}{\percent} low on its own until the measured value
+replaced it (Table~\ref{tab:vehicle}); that is measurement-chain work
 (Section~\ref{subsec:measurement}) and not something a confidence interval can
-see.
+see. The same holds for the friction the result is compared against: the
+configured \num{1.5} is not the \num{1.05} the physics step uses, and an
+estimate validated against the former would be judged \SI{43}{\percent} short
+while being correct. Of the inputs to \eqref{eq:newtoneuler}, only $I_{z}$ now
+remains unmeasured on this vehicle; it enters $F_{y,f}$ at the
+\SI{10}{\percent} level and is listed among the assumptions of
+Section~\ref{subsec:assumptions}.
 
 \subsection{Deployment}
 \label{subsec:deployment}
@@ -415,6 +425,17 @@ model rather than to no model; the peak-friction outputs are published on a
 latched diagnostic topic so a late-starting consumer still sees the current
 value.
 
+That acknowledgement is also what arms the scoring. The node's own online
+metrics, and the parameter forward to the passive benchmark node, both fire
+from the acknowledgement handler rather than from the end of training. The
+distinction is not cosmetic: a submission the controller \emph{rejects} on its
+admissibility gate (Section~\ref{sec:integration}) is a model the car never
+drove on, and the seconds between a fit completing and its acknowledgement
+landing are seconds in which the car is still driving the previous model.
+Scoring either of them attributes to the identified model behaviour that
+belongs to another one, which is exactly the confusion the validation protocol
+below exists to avoid.
+
 \subsection{Validation protocol}
 \label{subsec:validation}
 
@@ -425,16 +446,32 @@ and $R^{2}$ of $v_{y}$ and $\omega$ under
 $\hat\vecx_{k+1}=f(\vecx_{k},\vecu_{k},\phip)$. A dedicated ROS~2 node extends
 this to configurable multi-step horizons (1/5/10 steps) with Euler/Heun/RK4
 integration and online statistics in Welford's form~\cite{welford1962}.
+Samples are admitted only above \SI{1}{\meter\per\second}, the same gate the
+identification data itself uses. This is not a division-by-zero guard: since
+$\alpha=\arctan(v_{y}/v_{x})$, a few tenths of a metre per second of lateral
+drift saturates the tire curve and the one-step model predicts yaw rates of
+several \si{\radian\per\second} against a ground truth of a few tenths, so a
+looser gate lets the low-speed bootstrap dominate a metric that is meant to
+describe the racing regime the model was fitted on.
 \item \textbf{Direct force comparison} against
 \texttt{feedback/\allowbreak tire\_forces}: the identified curve is evaluated at
 the measured $(\alpha,F_{z})$ and compared per axle against the measured
-$F_{y}$. This level is unavailable on a physical platform without a
-force-measuring hub and is the strongest evidence in the paper.
+$F_{y}$, and against the plant's own curve~\eqref{eq:physx} evaluated at the
+same points (Table~\ref{tab:ref}), which separates the error of the fit from
+the error of representing a PhysX tire as a Magic Formula. This level is
+unavailable on a physical platform without a force-measuring hub and is the
+strongest evidence in the paper.
 \item \textbf{Closed-loop tracking} under the MPC using the identified model:
 lap time, mean and maximum lateral deviation, steering sign reversals per
-control step, and RMS steering rate against the rate limit. This level is
+control step, and RMS steering rate against the rate limit. Lap timing runs
+from the first crossing of the raceline's $s=0$, not from the first odometry
+sample, so that the drive from the spawn point up to the start line is an
+untimed out-lap rather than a spuriously short first lap. This level is
 \emph{not} completed here; see Section~\ref{subsec:negative}.
 \end{enumerate}
+
+All three levels score the \emph{accepted} model only, for the reason given in
+Section~\ref{subsec:deployment}.
 
 The steady-state force recovery of \eqref{eq:ssforces} was itself validated
 against the simulator's axle force on a normal lap (correlation \num{0.993},

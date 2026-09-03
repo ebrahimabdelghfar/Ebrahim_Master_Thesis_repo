@@ -94,11 +94,15 @@
 \draw[fixlink] (f3.south) -- (s3.north);
 
 % ------------------- telemetry / gate row, then consumer ---------------------
-% Same `below` offset for both, so the orange arrow is straight.
-\node[gt,   below=11mm of s2] (truth)
+% Shared row y taken from the LOWER of s2/s4.south (their heights differ),
+% so both boxes land on one baseline and the orange arrow is straight.
+\path let \p1=(s2.south), \p2=(s4.south) in
+  coordinate (gaterow) at (0,{min(\y1,\y2)-11mm});
+\node[gt,   anchor=north] (truth) at (s2 |- gaterow)
   {\textbf{Plant force telemetry}\\[1pt]
-   per-wheel $\alpha$, $F_{z}$, $F_{y}$ --- \emph{scoring only}};
-\node[gate, below=11mm of s4] (gate)
+   per-wheel $\alpha$, $F_{z}$, $F_{y}$, $\mu$ --- \emph{scoring only},
+   armed on the controller's ack};
+\node[gate, anchor=north] (gate) at (s4 |- gaterow)
   {\textbf{Admissibility gate}\\[1pt]
    grip ceiling vs.\ demand, understeer sign, stiffness};
 \node[blk=26mm, below=6mm of gate, fill=black!3] (mpc)
@@ -106,7 +110,10 @@
 
 \draw[gateflow] (s4.south) -- (gate.north);
 \draw[gateflow] (gate) -- node[elbl]{\texttt{sysid/update\_params}} (mpc);
-\draw[gtflow] (truth.east) -- (gate.west);
+% truth is taller than gate, so their box-center anchors sit at different y;
+% route the arrow through gate's own center height instead, which still
+% falls inside truth's (taller) box since both share the same top edge.
+\draw[gtflow] (truth.east |- gate) -- (gate.west);
 
 % --------------------- re-nomination closes the loop ------------------------
 \coordinate (bot) at ($(mpc.south)+(0,-6mm)$);
