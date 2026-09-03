@@ -46,17 +46,22 @@ tire_force_benchmark_node:
     #     a copy of the identified set and the two curves then coincide.
     nominal_source: carla_physx
 
-    # CARLA WheelPhysicsControl lat_stiff_value / lat_stiff_max_load (PhysX
-    # mLatStiffY / mLatStiffX). These are vehicle.vehicle.asurt_fsai's values,
-    # read back from the running server with Vehicle.get_physics_control();
-    # re-read them if the blueprint or config/carla_interface_config.yaml
-    # changes.
+    # The bridge publishes CARLA's live per-wheel physics here (latched JSON,
+    # republished on every change including a runtime /sim/control/tire_friction
+    # command). Whatever arrives on this topic overrides the two fallbacks
+    # below, so changing the vehicle config cannot leave the nominal curve stale.
+    vehicle_physics_topic: /sim/feedback/vehicle_physics
+
+    # Fallbacks used only until (or unless) that topic is received: CARLA
+    # WheelPhysicsControl lat_stiff_value / lat_stiff_max_load (PhysX
+    # mLatStiffY / mLatStiffX), here vehicle.vehicle.asurt_fsai's values.
     carla_lat_stiff_value: 17.0
     carla_lat_stiff_max_load: 2.0
     # Peak friction of the nominal curve. <= 0 takes it from the tire_friction
-    # field of /sim/feedback/tire_forces, which is the road-multiplied value
-    # the physics step actually uses (~1.05 against the 1.5 configured on this
-    # map) rather than the configured one.
+    # field of /sim/feedback/tire_forces - the road-multiplied value the
+    # physics step actually uses (~1.05 against the 1.5 configured on this map),
+    # and the LATEST one, so a mid-run /sim/control/tire_friction change is
+    # followed rather than averaged away (the node warns when it moved).
     carla_tire_friction: 0.0
 
     # c_pf/c_pr have NO default - leave them unset (as below) to have the node

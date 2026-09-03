@@ -50,7 +50,13 @@ $$
 
 with $\bar F_z = F_z / F_z^{\text{rest}}$ and CarSimEd's smoothing function $S_1(K) = \min(1,\, K - K^2/3 + K^3/27)$. It saturates at $\mu F_z$ (first reached at $K = 3$) and **never falls off past the peak**, so a Magic Formula can only match it up to the peak.
 
-`nominal_source: carla_physx` (the default) draws that curve, via `physx_lateral_force()`. Its inputs are the simulator's, not a prior: `carla_lat_stiff_value` / `carla_lat_stiff_max_load` are CARLA's `WheelPhysicsControl` fields read back with `Vehicle.get_physics_control()` (17.0 and 2.0 on `vehicle.vehicle.asurt_fsai`), and $\mu$ comes from the `tire_friction` field of `/sim/feedback/tire_forces` — the road-multiplied 1.05 the physics step actually uses, not the 1.5 configured in the bridge. `nominal_source: model_file` restores the old prior-model comparison.
+`nominal_source: carla_physx` (the default) draws that curve, via `physx_lateral_force()`. Every input is read from the simulator while it runs, so the curve cannot go stale when the car is reconfigured:
+
+- **Stiffness** — the bridge publishes CARLA's live `WheelPhysicsControl` as latched JSON on `/sim/feedback/vehicle_physics` (`vehicle_physics_topic`), and the per-axle `lat_stiff_value` / `lat_stiff_max_load` from it override the `carla_lat_stiff_value` / `carla_lat_stiff_max_load` parameters, which are only a fallback for when the topic is absent. Change `carla_interface_config.yaml` or the blueprint, relaunch, and the nominal curve follows.
+- **Friction** — μ is the `tire_friction` field of `/sim/feedback/tire_forces`, the road-multiplied value the physics step actually uses (1.05 against the 1.5 configured; `/sim/feedback/vehicle_physics` reports the same effective value, plus the configured one and the 0.70 road factor), taken as the **latest** sample so a runtime `/sim/control/tire_friction` change is followed rather than averaged away. If friction moved by more than 2 % during the run, the node logs the range it saw.
+- **Load** — both curves are still drawn at the static axle load from `m`, `l_f`, `l_r`, `l_wb`. The node compares that against the mean `normal_load` the telemetry reported and logs the ratio when they differ by more than 10 %, since that scales both curves equally.
+
+`nominal_source: model_file` restores the old prior-model comparison.
 
 Validated against 1804 ground-truth wheel samples recorded from `/sim/feedback/tire_forces` on a live lap (|α| p99 = 3.66°), predicting each sample from its own measured α, $F_z$ and μ:
 

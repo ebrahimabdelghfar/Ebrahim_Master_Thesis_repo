@@ -10,6 +10,7 @@ sim_manager_msgs) - run these tests with the workspace sourced,
 e.g. `source install/setup.bash` before `pytest`, or `IdentifiedParam` import
 below will fail.
 """
+import json
 import math
 import sys
 import types
@@ -22,6 +23,7 @@ from adaptive_controller_interfaces.srv import IdentifiedParam
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import String
 
 
 def _stub_sim_manager_msgs():
@@ -132,6 +134,12 @@ def _make_tire_msg(index, fy=None, fz=10.0, slip_angle=0.01, tire_friction=1.05)
     msg.lateral_force = [value] * 4
     msg.normal_load = [float(fz)] * 4
     msg.slip_angle = [float(slip_angle)] * 4
+    return msg
+
+
+def _make_string_msg(payload):
+    msg = String()
+    msg.data = json.dumps(payload)
     return msg
 
 
@@ -387,6 +395,36 @@ def test_nominal_plot_uses_measured_friction_and_needs_no_prior_model(tmp_path):
 
     f = plot_dir / 'pacejka_identified_vs_nominal.png'
     assert f.exists() and f.stat().st_size > 0
+
+
+def test_vehicle_physics_topic_overrides_the_configured_stiffness():
+    # The bridge's latched /sim/feedback/vehicle_physics wins over the yaml
+    # params, so changing the vehicle config cannot leave the curve stale.
+    with NodeUnderTest({'min_fz_threshold': 1.0, 'enable_state_benchmarking': False}) as node:
+        assert node._nominal_lat_stiff('front') == (17.0, 2.0)
+
+        wheels = [{'name': n, 'lat_stiff_value': v, 'lat_stiff_max_load': 3.0}
+                  for n, v in zip(['FL', 'FR', 'RL', 'RR'], [25.0, 25.0, 11.0, 11.0])]
+        node.vehicle_physics_callback(_make_string_msg({'mass': 240.0, 'wheels': wheels}))
+
+        assert node._nominal_lat_stiff('front') == (25.0, 3.0)
+        assert node._nominal_lat_stiff('rear') == (11.0, 3.0)
+
+        node.vehicle_physics_callback(_make_string_msg({'not': 'physics'}))
+        assert node._nominal_lat_stiff('front') == (25.0, 3.0)
+
+
+def test_nominal_friction_follows_a_runtime_change():
+    # /sim/control/tire_friction can change grip mid-run: the nominal curve
+    # must be drawn at the latest friction, not an average of both levels.
+    with NodeUnderTest({'min_fz_threshold': 1.0, 'enable_state_benchmarking': False}) as node:
+        node.tire_forces_callback(_make_tire_msg(0, fy=100.0, tire_friction=1.05))
+        node.tire_forces_callback(_make_tire_msg(1, fy=100.0, tire_friction=1.05))
+        node.tire_forces_callback(_make_tire_msg(2, fy=60.0, tire_friction=0.60))
+
+        assert node._nominal_friction('front') == pytest.approx(0.60)
+        assert node.mu_min['front'] == pytest.approx(0.60)
+        assert node.mu_max['front'] == pytest.approx(1.05)
 
 
 # --- identified-params service gating (no hardcoded c_pf/c_pr) ---

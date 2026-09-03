@@ -185,9 +185,10 @@ See `config/benchmark_config.yaml` for the full, documented, canonical list. Sum
 | `model_file` | `''` | `C_Pf`/`C_Pr` (+ optionally `m`/`I_z`/`l_f`/`l_r`/`l_wb`) |
 | `nominal_model_file` | `''` | reference `C_Pf`/`C_Pr` for `pacejka_identified_vs_nominal.png` only — never seeds the live benchmark model |
 | `nominal_source` | `carla_physx` | `carla_physx`: draw CARLA's own tire curve as the nominal one; `model_file`: draw `nominal_model_file`'s Magic Formula instead |
-| `carla_lat_stiff_value` | `17.0` | CARLA `WheelPhysicsControl.lat_stiff_value` (PhysX `mLatStiffY`), read back with `Vehicle.get_physics_control()` |
-| `carla_lat_stiff_max_load` | `2.0` | CARLA `WheelPhysicsControl.lat_stiff_max_load` (PhysX `mLatStiffX`) |
-| `carla_tire_friction` | `0.0` | peak friction of the nominal curve; `<= 0` takes it from the telemetry's `tire_friction` field (the road-multiplied value the physics step uses) |
+| `vehicle_physics_topic` | `/sim/feedback/vehicle_physics` | bridge's latched JSON of CARLA's live per-wheel physics; overrides the two fallbacks below whenever it is received |
+| `carla_lat_stiff_value` | `17.0` | fallback CARLA `WheelPhysicsControl.lat_stiff_value` (PhysX `mLatStiffY`), used until that topic arrives |
+| `carla_lat_stiff_max_load` | `2.0` | fallback CARLA `WheelPhysicsControl.lat_stiff_max_load` (PhysX `mLatStiffX`) |
+| `carla_tire_friction` | `0.0` | peak friction of the nominal curve; `<= 0` takes the latest value from the telemetry's `tire_friction` field (the road-multiplied one the physics step uses), so a runtime friction change is followed |
 | `c_pf` / `c_pr` | **none** | optional startup override; otherwise wait for `identified_params_service` |
 | `identified_params_service` | `/benchmark/update_params` | `adaptive_controller_interfaces/srv/IdentifiedParam` server |
 | `min_fz_threshold` | **none — mandatory** | see "Configuration" above |

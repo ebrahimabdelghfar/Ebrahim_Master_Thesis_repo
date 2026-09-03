@@ -109,6 +109,11 @@ def generate_launch_description():
         executable='tire_force_benchmark_node',
         name='tire_force_benchmark_node',
         output='screen',
+        # Plot export runs on shutdown and takes ~10-15 s. launch's defaults
+        # (5 s to SIGTERM, 10 s more to SIGKILL) killed the process mid-export,
+        # so the last figures were never written.
+        sigterm_timeout='90.0',
+        sigkill_timeout='90.0',
         parameters=[
             LaunchConfiguration('config_file'),
             {

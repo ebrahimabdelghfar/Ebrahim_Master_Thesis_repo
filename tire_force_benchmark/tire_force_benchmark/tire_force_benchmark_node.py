@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 
 import csv
+import json
 import math
+import os
+import signal
 from collections import deque
 from pathlib import Path
 
@@ -141,11 +144,12 @@ class TireForceBenchmarkNode(Node):
         # from nominal_model_file.
         self.declare_parameter('nominal_source', 'carla_physx')
         # CARLA WheelPhysicsControl lat_stiff_value / lat_stiff_max_load
-        # (PhysX mLatStiffY / mLatStiffX). Defaults are this vehicle's
-        # measured values, read back from the running server with
-        # Vehicle.get_physics_control().
+        # (PhysX mLatStiffY / mLatStiffX). Only a fallback: the bridge
+        # publishes the live values on vehicle_physics_topic and those win, so
+        # changing the vehicle config does not leave this curve stale.
         self.declare_parameter('carla_lat_stiff_value', 17.0)
         self.declare_parameter('carla_lat_stiff_max_load', 2.0)
+        self.declare_parameter('vehicle_physics_topic', '/sim/feedback/vehicle_physics')
         # <= 0 means "use the friction the tire telemetry reports", which is
         # the road-surface-multiplied value the physics step actually uses -
         # not vehicle.physics.wheels[].tire_friction.
@@ -217,10 +221,20 @@ class TireForceBenchmarkNode(Node):
         self.carla_lat_stiff_value = float(self.get_parameter('carla_lat_stiff_value').value)
         self.carla_lat_stiff_max_load = float(self.get_parameter('carla_lat_stiff_max_load').value)
         self.carla_tire_friction = float(self.get_parameter('carla_tire_friction').value)
-        # Running mean of the per-axle tire_friction the telemetry reports,
-        # used as mu of the CARLA nominal curve when carla_tire_friction <= 0.
-        self.mu_sum = {'front': 0.0, 'rear': 0.0}
-        self.mu_count = {'front': 0, 'rear': 0}
+        # Friction the telemetry reports, per axle. The nominal curve is drawn
+        # at the LATEST value (friction is settable at runtime via
+        # /sim/control/tire_friction, and a mean would hide a change), with
+        # min/max kept so a change during the run can be reported.
+        self.mu_latest = {'front': None, 'rear': None}
+        self.mu_min = {'front': None, 'rear': None}
+        self.mu_max = {'front': None, 'rear': None}
+        # Per-axle lateral stiffness parameters from vehicle_physics_topic;
+        # None until the bridge publishes, then they override the parameters.
+        self.physx_lat_stiff = {'front': None, 'rear': None}
+        # Mean per-wheel normal load actually measured, per axle, to check the
+        # static axle load both curves are drawn at.
+        self.fz_sum = {'front': 0.0, 'rear': 0.0}
+        self.fz_count = {'front': 0, 'rear': 0}
 
         self.nominal_c_pf = None
         self.nominal_c_pr = None
@@ -311,6 +325,23 @@ class TireForceBenchmarkNode(Node):
                     self.estimated_fy_callback,
                     10,
                 )
+
+        self.physics_sub = None
+        if self.nominal_source == 'carla_physx':
+            # Latched on the bridge side (TRANSIENT_LOCAL, depth 1) so this
+            # node gets the current parameters however late it starts, and a
+            # new message whenever they change - including after a runtime
+            # /sim/control/tire_friction command.
+            self.physics_sub = self.create_subscription(
+                String,
+                str(self.get_parameter('vehicle_physics_topic').value),
+                self.vehicle_physics_callback,
+                QoSProfile(
+                    depth=1,
+                    reliability=ReliabilityPolicy.RELIABLE,
+                    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                ),
+            )
 
         self.odom_sub = None
         self.ackermann_sub = None
@@ -527,10 +558,15 @@ class TireForceBenchmarkNode(Node):
             return
 
         mu = [float(msg.tire_friction[i]) for i in order]
-        self.mu_sum['front'] += mu[0] + mu[1]
-        self.mu_count['front'] += 2
-        self.mu_sum['rear'] += mu[2] + mu[3]
-        self.mu_count['rear'] += 2
+        for key, values, loads in (('front', mu[:2], fz[:2]), ('rear', mu[2:], fz[2:])):
+            axle_mu = sum(values) / len(values)
+            self.mu_latest[key] = axle_mu
+            lo = self.mu_min[key]
+            hi = self.mu_max[key]
+            self.mu_min[key] = axle_mu if lo is None else min(lo, axle_mu)
+            self.mu_max[key] = axle_mu if hi is None else max(hi, axle_mu)
+            self.fz_sum[key] += sum(loads)
+            self.fz_count[key] += len(loads)
 
         fl_fy, fr_fy, rl_fy, rr_fy = fy
         front_gt = fl_fy + fr_fy
@@ -782,6 +818,23 @@ class TireForceBenchmarkNode(Node):
         out_dir = Path(self.plot_output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        # Export runs from destroy_node() during shutdown, and takes seconds:
+        # a second Ctrl-C would otherwise kill the process mid-figure and
+        # leave a truncated PNG. Defer both signals until export finishes.
+        prev_handlers = {
+            sig: signal.signal(sig, signal.SIG_IGN)
+            for sig in (signal.SIGINT, signal.SIGTERM)
+        }
+        self.get_logger().info(f'Exporting benchmark plots to {out_dir} - do not kill the process.')
+        try:
+            self._export_figures(plt, out_dir)
+        finally:
+            for sig, handler in prev_handlers.items():
+                signal.signal(sig, handler)
+
+        self.get_logger().info(f'Benchmark plots saved to: {out_dir}')
+
+    def _export_figures(self, plt, out_dir):
         self._plot_timeseries_grid(
             plt, FORCE_SIGNALS, out_dir / 'tire_forces_timeseries.png',
             'Tire Lateral Force: Ground Truth vs. Estimate',
@@ -810,7 +863,14 @@ class TireForceBenchmarkNode(Node):
         self._plot_identified_vs_nominal(plt, out_dir / 'pacejka_identified_vs_nominal.png')
         self._plot_metrics_table(plt, FORCE_SIGNALS + STATE_SIGNALS, out_dir / 'metrics_summary.png')
 
-        self.get_logger().debug(f'Benchmark plots saved to: {out_dir}')
+    def _savefig(self, fig, save_path):
+        # Write to a temp file then rename: if export is killed mid-figure,
+        # the previous PNG survives instead of being left truncated.
+        save_path = Path(save_path)
+        tmp_path = save_path.with_name(save_path.name + '.tmp')
+        # Explicit format: matplotlib otherwise infers it from the '.tmp' suffix.
+        fig.savefig(tmp_path, format='png')
+        os.replace(tmp_path, save_path)
 
     def _apply_academic_style(self, plt):
         # Serif, gridded, high-DPI - the conventions of the vehicle-dynamics
@@ -871,7 +931,7 @@ class TireForceBenchmarkNode(Node):
 
         fig.suptitle(suptitle, fontsize=14)
         fig.tight_layout()
-        fig.savefig(save_path)
+        self._savefig(fig, save_path)
         plt.close(fig)
 
     def _plot_error_hist_grid(self, plt, signals, save_path, suptitle):
@@ -902,7 +962,7 @@ class TireForceBenchmarkNode(Node):
 
         fig.suptitle(suptitle, fontsize=14)
         fig.tight_layout()
-        fig.savefig(save_path)
+        self._savefig(fig, save_path)
         plt.close(fig)
 
     def _plot_parity_grid(self, plt, signals, save_path, suptitle):
@@ -959,7 +1019,7 @@ class TireForceBenchmarkNode(Node):
         # unreliable (rows expand to stay square, crowding the suptitle) -
         # reserve the margin explicitly instead.
         fig.tight_layout(rect=(0, 0, 1, 0.96))
-        fig.savefig(save_path)
+        self._savefig(fig, save_path)
         plt.close(fig)
 
     def _plot_pacejka_curve(self, plt, save_path):
@@ -1018,18 +1078,76 @@ class TireForceBenchmarkNode(Node):
 
         fig.suptitle('Pacejka Magic Formula Validation: $F_y$ vs. Slip Angle', fontsize=14)
         fig.tight_layout()
-        fig.savefig(save_path)
+        self._savefig(fig, save_path)
         plt.close(fig)
+
+    def vehicle_physics_callback(self, msg: String):
+        # The bridge's /sim/feedback/vehicle_physics JSON: CARLA's own
+        # WheelPhysicsControl, republished whenever it changes. Taking the
+        # stiffness from here rather than from a parameter is what keeps this
+        # curve correct after the vehicle config or blueprint changes.
+        try:
+            data = json.loads(msg.data)
+            wheels = data['wheels']
+        except (ValueError, KeyError, TypeError) as exc:
+            self.get_logger().debug(f'Ignoring malformed vehicle physics message: {exc}.')
+            return
+        if len(wheels) < 4:
+            return
+
+        for key, pair in (('front', wheels[:2]), ('rear', wheels[2:4])):
+            try:
+                values = (
+                    sum(float(w['lat_stiff_value']) for w in pair) / len(pair),
+                    sum(float(w['lat_stiff_max_load']) for w in pair) / len(pair),
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                self.get_logger().debug(f'Ignoring vehicle physics message: {exc}.')
+                return
+            if self.physx_lat_stiff[key] != values:
+                self.get_logger().debug(
+                    f'{key} axle tire stiffness from CARLA: lat_stiff_value={values[0]:.2f}, '
+                    f'lat_stiff_max_load={values[1]:.2f} (was '
+                    f'{self.carla_lat_stiff_value:.2f} / {self.carla_lat_stiff_max_load:.2f}).'
+                )
+            self.physx_lat_stiff[key] = values
 
     def _nominal_friction(self, axle_key):
         # The friction the physics step reports for that axle, not the
         # configured tire_friction: the server multiplies it by the road
-        # surface's own coefficient.
+        # surface's own coefficient, and /sim/control/tire_friction can change
+        # it mid-run - hence the latest value, not an average.
         if self.carla_tire_friction > 0.0:
             return self.carla_tire_friction
-        if self.mu_count[axle_key] == 0:
-            return None
-        return self.mu_sum[axle_key] / self.mu_count[axle_key]
+        return self.mu_latest[axle_key]
+
+    def _warn_if_nominal_inputs_moved(self, axle_key, fz_axle_static):
+        # A single nominal curve is only meaningful if the friction held and
+        # the axle load the curves are drawn at is the one the tires carried.
+        lo, hi = self.mu_min[axle_key], self.mu_max[axle_key]
+        if lo is not None and hi is not None and hi - lo > 0.02 * hi:
+            self.get_logger().debug(
+                f'{axle_key} axle tire_friction moved during the run '
+                f'({lo:.2f} to {hi:.2f}); pacejka_identified_vs_nominal.png draws the '
+                f'nominal curve at the latest value only.'
+            )
+        if self.fz_count[axle_key] > 0:
+            fz_measured = 2.0 * self.fz_sum[axle_key] / self.fz_count[axle_key]
+            if abs(fz_measured - fz_axle_static) > 0.10 * fz_measured:
+                self.get_logger().debug(
+                    f'{axle_key} axle load: {fz_measured:.0f} N measured against '
+                    f'{fz_axle_static:.0f} N from m/l_f/l_r/l_wb - both curves in '
+                    f'pacejka_identified_vs_nominal.png are drawn at the latter, so '
+                    f'they are scaled by {fz_axle_static / fz_measured:.2f} of the truth.'
+                )
+
+    def _nominal_lat_stiff(self, axle_key):
+        # Live values from the bridge when it publishes them, the parameters
+        # otherwise.
+        live = self.physx_lat_stiff[axle_key]
+        if live is not None:
+            return live
+        return (self.carla_lat_stiff_value, self.carla_lat_stiff_max_load)
 
     def _plot_identified_vs_nominal(self, plt, save_path):
         # Model-vs-model comparison (no data scatter): the freshly identified
@@ -1074,12 +1192,13 @@ class TireForceBenchmarkNode(Node):
                         'forces topic and carla_tire_friction is not set.'
                     )
                     return
+                lat_stiff_value, lat_stiff_max_load = self._nominal_lat_stiff(key)
                 # Per wheel at half the axle load, then summed back to the axle.
                 fy_nominal = 2.0 * physx_lateral_force(
-                    alpha_sweep, 0.5 * fz, mu,
-                    self.carla_lat_stiff_value, self.carla_lat_stiff_max_load,
+                    alpha_sweep, 0.5 * fz, mu, lat_stiff_value, lat_stiff_max_load,
                 )
                 nominal_label = f'Nominal Model (CARLA PhysX, $\\mu$={mu:.2f})'
+                self._warn_if_nominal_inputs_moved(key, fz)
             else:
                 fy_nominal = pacejka_formula(nominal_params, alpha_sweep, fz)
                 nominal_label = 'Nominal Model'
@@ -1091,7 +1210,7 @@ class TireForceBenchmarkNode(Node):
             ax.legend(loc='best')
 
         fig.tight_layout()
-        fig.savefig(save_path)
+        self._savefig(fig, save_path)
         plt.close(fig)
 
     def _plot_metrics_table(self, plt, signals, save_path):
@@ -1125,7 +1244,7 @@ class TireForceBenchmarkNode(Node):
                 cell.set_text_props(weight='bold')
         fig.suptitle('Benchmark Metrics Summary', fontsize=14)
         fig.tight_layout()
-        fig.savefig(save_path)
+        self._savefig(fig, save_path)
         plt.close(fig)
 
     def destroy_node(self):
@@ -1148,7 +1267,10 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        # rclpy's own SIGINT handler may already have shut the context down;
+        # calling shutdown() again raises RCLError and exits with code 1.
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

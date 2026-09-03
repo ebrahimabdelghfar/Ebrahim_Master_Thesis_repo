@@ -806,7 +806,10 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        # rclpy's own SIGINT handler may already have shut the context down;
+        # calling shutdown() again raises RCLError and exits with code 1.
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':
