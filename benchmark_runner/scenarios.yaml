@@ -4,7 +4,7 @@
 # created under <graphs_root>/identification/<name> and <graphs_root>/control/<name>,
 # wiped before the run so a shorter run never leaves an earlier run's figures behind.
 
-n_laps: 6                      # TIMED laps. The car spawns behind the raceline's s=0,
+n_laps: 2                      # TIMED laps. The car spawns behind the raceline's s=0,
                                # so the drive to the start line is an untimed out-lap
                                # on top of this (see lap_monitor.py).
 lap_timeout_s: 1200            # Abort a scenario that stops making progress.
@@ -17,16 +17,15 @@ nominal_tire_friction: 1.5     # vehicle.physics.wheels[*].tire_friction in the 
                                # PhysX on top of this, so the effective mu is ~1.05.
 
 scenarios:
-  - name: test1_with_base_line
-    nn_params_yaml: On-Track-SysID/params/nn_params_base_line.yaml
-    pacejka_params_yaml: On-Track-SysID/params/pacejka_params_base_line.yaml
-    friction_schedule: constant
-
   - name: test2_with_enhanced
     nn_params_yaml: On-Track-SysID/params/nn_params.yaml
     pacejka_params_yaml: On-Track-SysID/params/pacejka_params.yaml
     friction_schedule: constant
 
+  - name: test1_with_base_line
+    nn_params_yaml: On-Track-SysID/params/nn_params_base_line.yaml
+    pacejka_params_yaml: On-Track-SysID/params/pacejka_params_base_line.yaml
+    friction_schedule: constant
   # The three LLA-MPC schedules of paper/sections/experiments.tex SVI-I. All three are
   # blocked on regenerating the raceline (SVI-J): the current traj_race_cl.csv demands
   # 1.22 g against a ~1.0 g plant, so a 40 % friction step leaves the car on a

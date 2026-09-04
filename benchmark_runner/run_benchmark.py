@@ -195,6 +195,8 @@ class BenchmarkRunner:
     def run_scenario(self, scenario):
         name = scenario['name']
         log(f'===== scenario {name} =====')
+        # One monitor serves the whole sweep, so its lap count must start at 0.
+        self.lap_monitor.reset()
         ident_dir = self.graphs_root / 'identification' / name
         control_dir = self.graphs_root / 'control' / name
         for directory in (ident_dir, control_dir):

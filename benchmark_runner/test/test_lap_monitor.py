@@ -121,3 +121,18 @@ def test_lap_fraction_tracks_arc_length(monitor):
     assert monitor.lap_fraction() is None
     _drive(monitor, circuits=0.2, start_fraction=0.0)
     assert monitor.lap_fraction() == pytest.approx(0.2, abs=0.02)
+
+
+def test_reset_clears_the_previous_scenario_laps(monitor):
+    _drive(monitor, circuits=2.8)
+    assert monitor.completed_laps() == 2
+
+    monitor.reset()
+    assert monitor.completed_laps() == 0
+    assert monitor.wraparounds() == 0
+    assert not monitor.wait_for_laps(2, timeout_s=0.2, poll_s=0.05), \
+        'scenario N+1 inherited scenario N lap count'
+
+    # Waypoints survive the reset, so laps count again without a redelivery.
+    _drive(monitor, circuits=2.8)
+    assert monitor.completed_laps() == 2

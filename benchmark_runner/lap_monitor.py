@@ -36,6 +36,7 @@ class LapMonitor(Node):
         self._on_progress = on_progress
         self._start_t = None
         self._last_completed = 0
+        self._waypoints = None
         self._lock = threading.Lock()
 
         sensor_qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
@@ -43,6 +44,20 @@ class LapMonitor(Node):
                                  reliability=ReliabilityPolicy.RELIABLE)
         self.create_subscription(Odometry, odom_topic, self._odom_cb, sensor_qos)
         self.create_subscription(WaypointArray, waypoint_topic, self._waypoint_cb, latched_qos)
+
+    def reset(self):
+        """Drop the previous scenario's laps, keeping the waypoints already received.
+
+        The runner reuses one monitor for the whole sweep, so without this the
+        next scenario starts with `lap_times` already full and `wait_for_laps`
+        returns immediately with the previous scenario's times.
+        """
+        with self._lock:
+            self.lap_tracker = LapTracker()
+            if self._waypoints is not None:
+                self.lap_tracker.set_waypoints(*self._waypoints)
+            self._start_t = None
+            self._last_completed = 0
 
     # ---------------- state ----------------
 
@@ -79,10 +94,13 @@ class LapMonitor(Node):
 
     def _waypoint_cb(self, msg):
         with self._lock:
-            self.lap_tracker.set_waypoints(
+            # Kept so `reset` can re-apply them: the raceline is the same for
+            # every scenario and is not guaranteed to be redelivered.
+            self._waypoints = (
                 [w.x_m for w in msg.waypoints],
                 [w.y_m for w in msg.waypoints],
                 [w.s_m for w in msg.waypoints])
+            self.lap_tracker.set_waypoints(*self._waypoints)
 
     def _odom_cb(self, msg):
         t = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9

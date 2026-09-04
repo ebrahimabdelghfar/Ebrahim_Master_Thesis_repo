@@ -1,0 +1,6 @@
+[INFO] [launch]: All log files can be found below /home/ebrahim/.ros/log/2026-09-04-17-32-01-274932-ebrahim-msi-16257
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [raceline_publisher_node-1]: process started with pid [16275]
+[raceline_publisher_node-1] [INFO] [1788532321.987391987] [raceline_publisher]: Loaded 2916 waypoints from /home/ebrahim/Ebrahim_Master_Thesis_repo/traj_race_cl.csv (psi_offset_rad=+1.5707963)
+[raceline_publisher_node-1] [INFO] [1788532321.991951852] [raceline_publisher]: Heading convention OK (mean |psi_rad - tangent| offset -0.0014 rad)
+[raceline_publisher_node-1] [INFO] [1788532322.012771262] [raceline_publisher]: Published latched waypoints and markers to /raceline_waypoints
