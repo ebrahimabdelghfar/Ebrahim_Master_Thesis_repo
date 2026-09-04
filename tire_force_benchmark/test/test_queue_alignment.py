@@ -341,6 +341,8 @@ def test_plot_export_creates_expected_files(tmp_path):
         'vehicle_states_timeseries.png',
         'tire_forces_error_hist.png',
         'vehicle_states_error_hist.png',
+        'friction_mu_timeseries.png',
+        'friction_mu_error_hist.png',
         'metrics_summary.png',
     ]
     for name in expected_files:
@@ -374,6 +376,34 @@ def test_physx_lateral_force_matches_the_simulators_own_model():
     assert node_module.physx_lateral_force(-0.05, fz, mu, 17.0, 2.0) == pytest.approx(
         -node_module.physx_lateral_force(0.05, fz, mu, 17.0, 2.0)
     )
+
+
+def test_each_identification_iteration_gets_its_own_nominal_plot(tmp_path):
+    # The shutdown export only shows the last identified model, so every set
+    # of params pushed on identified_params_service gets a numbered snapshot.
+    plot_dir = tmp_path / 'plots'
+    with NodeUnderTest({
+        'min_fz_threshold': 1.0,
+        'enable_state_benchmarking': False,
+        'plot_output_dir': str(plot_dir),
+        'm': 3.5, 'I_z': 0.0627, 'l_f': 0.17, 'l_r': 0.155, 'l_wb': 0.325,
+    }) as node:
+        node.tire_forces_callback(_make_tire_msg(0, fy=1.0, tire_friction=0.8))
+
+        for scale in (1.0, 1.2):
+            node.handle_identified_params(
+                _make_identified_param_request(
+                    [6.63 * scale, 1.1052, 0.4316, 0.5193,
+                     7.8594 * scale, 1.5468, 0.3589, 0.5631]),
+                IdentifiedParam.Response(),
+            )
+
+        first = plot_dir / 'pacejka_identified_vs_nominal_iter_01.png'
+        second = plot_dir / 'pacejka_identified_vs_nominal_iter_02.png'
+        assert first.exists() and first.stat().st_size > 0
+        assert second.exists() and second.stat().st_size > 0
+        # Different params must give different figures - the whole point.
+        assert first.read_bytes() != second.read_bytes()
 
 
 def test_nominal_plot_uses_measured_friction_and_needs_no_prior_model(tmp_path):
@@ -412,6 +442,28 @@ def test_vehicle_physics_topic_overrides_the_configured_stiffness():
 
         node.vehicle_physics_callback(_make_string_msg({'not': 'physics'}))
         assert node._nominal_lat_stiff('front') == (25.0, 3.0)
+
+
+def test_mu_benchmark_scores_identified_d_against_reported_friction():
+    # The identified Pacejka D is the axle peak friction, so it is scored
+    # directly against the tire_friction the telemetry reports - and only
+    # once an identification exists.
+    with NodeUnderTest({
+        'min_fz_threshold': 1.0, 'enable_state_benchmarking': False,
+    }) as node:
+        node.tire_forces_callback(_make_tire_msg(0, fy=1.0, tire_friction=0.80))
+        assert node.metrics['front_mu'].metrics()['n_samples'] == 0
+
+        node.handle_identified_params(
+            _make_identified_param_request([6.63, 1.1052, 0.4316, 0.5193,
+                                            7.8594, 1.5468, 0.3589, 0.5631]),
+            IdentifiedParam.Response(),
+        )
+        node.tire_forces_callback(_make_tire_msg(1, fy=1.0, tire_friction=0.80))
+
+        assert node.metrics['front_mu'].metrics()['n_samples'] == 1
+        assert node.metrics['front_mu'].metrics()['bias'] == pytest.approx(0.80 - 0.4316)
+        assert node.metrics['rear_mu'].metrics()['bias'] == pytest.approx(0.80 - 0.3589)
 
 
 def test_nominal_friction_follows_a_runtime_change():

@@ -55,6 +55,12 @@ STATE_SIGNALS = [
     ('v_y', 'Lateral velocity v_y', 'm/s'),
     ('omega', 'Yaw rate omega', 'rad/s'),
 ]
+# Peak friction per axle: the simulator's reported tire_friction against the
+# identified Pacejka D coefficient (see _benchmark_mu).
+MU_SIGNALS = [
+    ('front_mu', 'Front axle peak friction $\\mu_f$', '-'),
+    ('rear_mu', 'Rear axle peak friction $\\mu_r$', '-'),
+]
 G = 9.81
 
 # Fixed roles (not per-series-index) so ground truth / estimate keep the same
@@ -184,6 +190,9 @@ class TireForceBenchmarkNode(Node):
         self.csv_output_path = str(self.get_parameter('csv_output_path').value)
         self.plot_output_dir = str(self.get_parameter('plot_output_dir').value)
         self.plot_max_points = int(self.get_parameter('plot_max_points').value)
+        # Counts params sets received on identified_params_service - names the
+        # per-iteration identified-vs-nominal figures.
+        self.identification_iteration = 0
 
         try:
             self.min_fz = float(self.get_parameter('min_fz_threshold').value)
@@ -276,9 +285,12 @@ class TireForceBenchmarkNode(Node):
             'total_sum_fy': OnlineBenchmark('Vehicle total Fy sum'),
             'v_y': OnlineBenchmark('v_y (lateral velocity)'),
             'omega': OnlineBenchmark('omega (yaw rate)'),
+            'front_mu': OnlineBenchmark('mu_f (front peak friction)'),
+            'rear_mu': OnlineBenchmark('mu_r (rear peak friction)'),
         }
         self.history = {
-            key: HistoryBuffer(self.plot_max_points) for key, _, _ in FORCE_SIGNALS + STATE_SIGNALS
+            key: HistoryBuffer(self.plot_max_points)
+            for key, _, _ in FORCE_SIGNALS + STATE_SIGNALS + MU_SIGNALS
         }
         # Per-axle (slip_angle, Fy_ground_truth, Fy_model) triples for the
         # Pacejka curve validation plot (internal_pacejka mode only - see
@@ -441,8 +453,35 @@ class TireForceBenchmarkNode(Node):
             )
         else:
             self.get_logger().info(f'Updated Pacejka params via service: C_Pf={self.c_pf} C_Pr={self.c_pr}')
+        self.identification_iteration += 1
+        self._export_identified_vs_nominal_snapshot()
         response.ack = True
         return response
+
+    def _export_identified_vs_nominal_snapshot(self):
+        # One identified-vs-nominal figure per identification iteration: the
+        # shutdown export only ever shows the last set of params, so without
+        # these the intermediate models the run went through are unrecoverable.
+        if not self.plot_output_dir:
+            return
+
+        try:
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+        except ImportError:
+            self.get_logger().debug('matplotlib not available - skipping per-iteration plot.')
+            return
+
+        self._apply_academic_style(plt)
+        out_dir = Path(self.plot_output_dir)
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            save_path = out_dir / f'pacejka_identified_vs_nominal_iter_{self.identification_iteration:02d}.png'
+            self._plot_identified_vs_nominal(plt, save_path, iteration=self.identification_iteration)
+        except Exception as exc:
+            # A failed figure must not fail the identification handshake.
+            self.get_logger().warn(f'Per-iteration plot export failed: {exc}')
 
     def _load_model_if_available(self, model_file: str):
         model_path = Path(model_file)
@@ -566,6 +605,12 @@ class TireForceBenchmarkNode(Node):
             return
 
         mu = [float(msg.tire_friction[i]) for i in order]
+        # A wheel that loses road contact reports tire_friction 0.0, which halves
+        # the axle mean below and shows up as a spike in the mu trace. Drop the
+        # whole frame: a split-mu surface never reads exactly zero on one side.
+        if not all(m > 0.0 for m in mu):
+            return
+
         for key, values, loads in (('front', mu[:2], fz[:2]), ('rear', mu[2:], fz[2:])):
             axle_mu = sum(values) / len(values)
             self.mu_latest[key] = axle_mu
@@ -581,6 +626,8 @@ class TireForceBenchmarkNode(Node):
         rear_gt = rl_fy + rr_fy
         total_gt = front_gt + rear_gt
         stamp_sec = msg.stamp.sec + msg.stamp.nanosec * 1e-9
+
+        self._benchmark_mu(stamp_sec)
 
         if self.benchmark_mode == 'internal_pacejka':
             if not self.have_identified_params:
@@ -676,8 +723,26 @@ class TireForceBenchmarkNode(Node):
                     f'Consider increasing external_max_queue_size or adjusting external_prediction_lead_samples.'
                 )
 
+    def _benchmark_mu(self, stamp_sec: float):
+        # Fy = Fz * D * sin(...), so the identified Pacejka D coefficient IS the
+        # axle peak friction and is directly comparable to the tire_friction the
+        # telemetry reports (the road-multiplied value the physics step uses).
+        # Held constant between identifications, so this is a step trace.
+        if not self.have_identified_params:
+            return
+
+        for key, axle, params in (('front_mu', 'front', self.c_pf),
+                                  ('rear_mu', 'rear', self.c_pr)):
+            mu_gt = self.mu_latest[axle]
+            if mu_gt is None:
+                continue
+            mu_est = float(params[2])
+            self.metrics[key].update(mu_gt, mu_est)
+            if self.plot_output_dir:
+                self.history[key].add(stamp_sec, mu_gt, mu_est)
+
     def _build_summary_lines(self):
-        keys = [key for key, _, _ in FORCE_SIGNALS + STATE_SIGNALS]
+        keys = [key for key, _, _ in FORCE_SIGNALS + STATE_SIGNALS + MU_SIGNALS]
         return [self.metrics[key].summary() for key in keys]
 
     def _log_and_publish_summary(self):
@@ -868,9 +933,18 @@ class TireForceBenchmarkNode(Node):
             plt, STATE_SIGNALS, out_dir / 'vehicle_states_parity.png',
             'Vehicle State: Estimate vs. Ground Truth (Parity)',
         )
+        self._plot_timeseries_grid(
+            plt, MU_SIGNALS, out_dir / 'friction_mu_timeseries.png',
+            'Peak Friction $\\mu$: Ground Truth vs. Identified',
+        )
+        self._plot_error_hist_grid(
+            plt, MU_SIGNALS, out_dir / 'friction_mu_error_hist.png',
+            'Peak Friction $\\mu$ Error Distribution',
+        )
         self._plot_pacejka_curve(plt, out_dir / 'pacejka_curve_validation.png')
         self._plot_identified_vs_nominal(plt, out_dir / 'pacejka_identified_vs_nominal.png')
-        self._plot_metrics_table(plt, FORCE_SIGNALS + STATE_SIGNALS, out_dir / 'metrics_summary.png')
+        self._plot_metrics_table(
+            plt, FORCE_SIGNALS + STATE_SIGNALS + MU_SIGNALS, out_dir / 'metrics_summary.png')
 
     def _savefig(self, fig, save_path):
         # Write to a temp file then rename: if export is killed mid-figure,
@@ -1158,7 +1232,7 @@ class TireForceBenchmarkNode(Node):
             return live
         return (self.carla_lat_stiff_value, self.carla_lat_stiff_max_load)
 
-    def _plot_identified_vs_nominal(self, plt, save_path):
+    def _plot_identified_vs_nominal(self, plt, save_path, iteration=None):
         # Model-vs-model comparison (no data scatter): the freshly identified
         # Magic Formula against a nominal/prior reference model
         # (nominal_model_file - see _load_nominal_model_if_available), swept
@@ -1218,6 +1292,8 @@ class TireForceBenchmarkNode(Node):
             ax.set_ylabel(ylabel)
             ax.legend(loc='best')
 
+        if iteration is not None:
+            fig.suptitle(f'Identification Iteration {iteration}', fontsize=14)
         fig.tight_layout()
         self._savefig(fig, save_path)
         plt.close(fig)

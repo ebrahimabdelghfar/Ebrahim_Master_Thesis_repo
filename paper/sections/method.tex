@@ -2,8 +2,8 @@
 \section{Identification Methodology}
 \label{sec:method}
 
-This section describes the identification pipeline as it stands after
-correction. Section~\ref{subsec:residual} covers the residual model,
+This section describes the identification pipeline.
+Section~\ref{subsec:residual} covers the residual model,
 \ref{subsec:excitation}--\ref{subsec:iterative} the two changes to the
 virtual-data step that constitute the paper's central methodological
 contribution, \ref{subsec:fit} the fit itself, \ref{subsec:measurement} the
@@ -31,6 +31,18 @@ controller has acknowledged the submitted model
 \subsection{Residual model}
 \label{subsec:residual}
 
+The residual carries whatever the nominal model
+\eqref{eq:vydot}--\eqref{eq:mf} does not represent, and how that map is
+parameterised is a modelling decision rather than a hyperparameter. Two
+decisions are made here, both of the same kind: known vehicle physics is used
+to shape the residual's \emph{input space}
+(Section~\ref{subsec:physinputs}) and, optionally, its \emph{objective}
+(Section~\ref{subsec:pinnloss}), so that the network's small capacity is spent
+on what is genuinely unmodelled instead of on rediscovering structure that
+\eqref{eq:slip} and \eqref{eq:vydot}--\eqref{eq:omdot} already state exactly.
+The rest of this subsection states both and why they were chosen; their
+measured effect is an open ablation axis (Section~\ref{subsec:ablation}).
+
 The default residual is the baseline multilayer perceptron: 4 inputs, one
 hidden layer of 8 units, 2 outputs, LeakyReLU, 58 parameters, full-batch
 Adam~\cite{kingma2015adam} at $5\times10^{-4}$ on an MSE objective, in
@@ -39,26 +51,131 @@ structure from the scaled platform's, the architecture is selectable:
 \texttt{baseline}, \texttt{wide} (16 hidden units, 114 parameters, weight
 decay), \texttt{physics\_inputs} (74 parameters), \texttt{ensemble} (three
 averaged members, 174 parameters), and \texttt{s4} (\numrange{102}{110}
-parameters). An optional physics-informed
-loss~\cite{raissi2019pinn,deepdynamics2024}---dynamics consistency, left/right
-symmetry and input-gradient smoothness---is available as an ablation switch;
-the results below use the baseline MSE objective.
+parameters). The results below use the baseline MSE objective, so that the
+identifiability statements of
+Sections~\ref{subsec:excitation}--\ref{subsec:iterative} are not confounded
+with a change of residual.
 
-\subsubsection{Physics-augmented inputs}
+\subsubsection{Physics-augmented inputs: the slip angles}
 \label{subsec:physinputs}
-The baseline residual reads $[v_{x},v_{y},\omega,\delta]$. The quantity the
-residual actually corrects, however, enters the plant through the slip angles
-of \eqref{eq:slip}, which are a nonlinear function of all four inputs, so the
-network has to spend capacity reconstructing them. Appending
-$\alpha_{f},\alpha_{r}$ computed from \eqref{eq:slip} with the \emph{measured}
-geometry gives the network the two arguments of \eqref{eq:mf} directly, at a
-cost of 16 parameters and no new sensor. This is the same motivation as the
-physics-informed regularisers of \cite{raissi2019pinn,deepdynamics2024} applied
-at the input rather than at the loss, and it is available both on its own
-(\texttt{physics\_inputs}) and combined with the temporal residual
-(\textbf{s4} with \texttt{use\_physics\_inputs}). The augmentation is
-rank-agnostic, so the same code path serves a flat batch and a windowed
-sequence batch.
+The baseline residual reads $\vecz=[v_{x},v_{y},\omega,\delta]$ and predicts
+$[e_{v_{y}},e_{\omega}]$. The quantity it corrects, however, reaches the plant
+only through the slip angles of \eqref{eq:slip}: the tire law \eqref{eq:mf} is
+a function of $(\alpha,F_{z})$ and of nothing else in $\vecz$, so the target
+$e$ is, to the extent the single-track structure holds at all, a function of
+$(\alpha_{f},\alpha_{r},F_{z,f},F_{z,r})$ plus the genuinely unmodelled terms.
+The network is therefore asked to reconstruct
+$\alpha_{f},\alpha_{r}$ from $\vecz$ before it can represent anything.
+
+That reconstruction is the worst part of the map to leave to a small network.
+Equation~\eqref{eq:slip} composes a division by $v_{x}$ with an arctangent; a
+one-hidden-layer piecewise-linear network approximates a \emph{ratio} only by
+tiling the $(v_{y},\omega,v_{x})$ domain, and this vehicle's identification
+data spans \SIrange{11}{27}{\meter\per\second}, a $2.5\times$ range of the
+denominator. Eight LeakyReLU units cannot tile that, so the fitted residual
+represents the same tire nonlinearity independently at each speed it happened
+to observe, with nothing tying those representations together. The consequence
+is specific to this pipeline: stage~2 evaluates the network along a synthetic
+rollout at a single speed and a steering ramp, i.e.\ exactly in the region
+where such a residual has no reason to be consistent, and stage~3 then reads
+the result as tire force.
+
+Appending $\alpha_{f},\alpha_{r}$, computed from \eqref{eq:slip} with the
+\emph{measured} geometry of Table~\ref{tab:vehicle}, hands the network the two
+arguments of \eqref{eq:mf} directly. Three properties motivated the choice.
+(i)~The speed dependence becomes explicit rather than learned: a residual
+expressed in $\alpha$ transfers between the recorded lap's speed and the
+rollout speed by construction, which matters because
+Section~\ref{subsec:excitation} deliberately drives those two apart.
+(ii)~It costs 16 weights ($58\rightarrow74$ parameters) and no new sensor,
+against the several hundred a network would need to tile the division;
+augmentation is the cheaper way to buy the same function.
+(iii)~It is compatible with the symmetry argument of
+Section~\ref{subsec:pinnloss}: $\alpha_{f},\alpha_{r}$ are odd in
+$(v_{y},\omega,\delta)$, so the mirrored batch mirrors the augmented inputs too
+and the symmetry penalty remains exact.
+
+The raw four inputs are retained rather than replaced, because the effects the
+residual exists to absorb---load transfer, actuator dynamics, aerodynamic load,
+combined slip---are not functions of $\alpha$ alone, and $v_{x}$ in particular
+carries the load-dependent part. The geometry used for the augmentation is the
+same $l_{f},l_{r}$ the fit and the force recovery use, which is why
+$l_{wb}\equiv l_{f}+l_{r}$ is enforced (Section~\ref{subsec:measurement}): an
+augmentation computed from a different wheelbase than the one
+\eqref{eq:ssforces} assumes would inject a bias exactly where the network is
+meant to remove one.
+
+This is the physics-informed idea of
+\cite{raissi2019pinn,deepdynamics2024} applied at the input rather than at the
+loss, and the placement is deliberate: an input augmentation carries no penalty
+weight to tune, cannot trade against the data term, and costs nothing at
+inference, whereas a loss term buys the same structure only softly and only
+where the data supports it. Deep Dynamics~\cite{deepdynamics2024} makes the
+complementary choice of constraining coefficients \emph{inside} the network;
+here the network is left unconstrained and its input space is made physical
+instead. The augmentation is available on its own (\texttt{physics\_inputs})
+and combined with the temporal residual (\textbf{s4} with
+\texttt{use\_physics\_inputs}), and is rank-agnostic, so the same code path
+serves a flat batch and a windowed sequence batch.
+
+\subsubsection{Physics-informed objective}
+\label{subsec:pinnloss}
+The optional physics-informed
+objective~\cite{raissi2019pinn,deepdynamics2024} adds three penalties to the
+one-step MSE,
+\begin{equation}
+\mathcal{L}=\mathcal{L}_{\mathrm{data}}
++\lambda_{s}\mathcal{L}_{\mathrm{steady}}
++\lambda_{m}\mathcal{L}_{\mathrm{sym}}
++\lambda_{g}\mathcal{L}_{\mathrm{smooth}},
+\label{eq:pinnloss}
+\end{equation}
+with $\lambda_{s}=0.1$, $\lambda_{m}=0.05$, $\lambda_{g}=10^{-4}$. Each answers
+a specific weakness of training a residual on one lap of ordinary driving.
+
+\paragraph{Dynamics consistency}
+$\mathcal{L}_{\mathrm{steady}}$ substitutes the \emph{corrected} next state
+$\vecx_{k+1}=\hat\vecx_{k+1}+e_{k}$ back into
+\eqref{eq:vydot}--\eqref{eq:omdot}, with the axle forces re-evaluated through
+\eqref{eq:mf} at the corrected slip angles, and penalises the squared lateral
+and yaw balance residuals. Its purpose is to keep the two residual channels
+consistent with each other: nothing in the data term prevents an
+$e_{v_{y}}$ and an $e_{\omega}$ that individually reduce one-step error while
+jointly implying an axle force pair no tire could produce, and it is that force
+pair, not the state prediction, that stage~3 subsequently fits. The term is
+applied only on a quasi-steady mask ($|\dot v_{y}|<\SI{0.8}{\meter\per\second\squared}$,
+$|\dot\omega|<\SI{6}{\radian\per\second\squared}$), because
+\eqref{eq:vydot}--\eqref{eq:omdot} neglect load transfer and transient tire
+relaxation and therefore hold as written only where those terms are small;
+penalising the balance during a transient would ask the network to absorb the
+model's known omissions rather than the plant's unmodelled dynamics.
+
+\paragraph{Left/right symmetry}
+The vehicle is laterally symmetric, so the true residual map is odd:
+$e(-v_{y},-\omega,-\delta)=-e(v_{y},\omega,\delta)$.
+$\mathcal{L}_{\mathrm{sym}}$ penalises
+$\|f_{NN}(\vecz)+f_{NN}(-\vecz)\|^{2}$ over the sign-mirrored batch. A circuit
+is rarely balanced in its corner directions, so \SI{30}{\second} of lap data
+covers one sign of $\delta$ far better than the other, and the synthetic sweep
+of stage~2 is run in one direction only. The mirror supplies the missing half
+of the input domain from geometry rather than from data, at no data cost; the
+same mirroring is applied to the recorded trace before windowing
+(Section~\ref{subsec:s4}), so the two uses are consistent.
+
+\paragraph{Input-gradient smoothness}
+$\mathcal{L}_{\mathrm{smooth}}$ penalises
+$\|\partial e/\partial\vecz\|^{2}$, a soft Lipschitz bound on the residual.
+Stage~2 queries the network beyond the steering range it was trained on, and
+Section~\ref{subsec:iterative} shows what an unconstrained extrapolation there
+costs. The two mechanisms are complementary and both are kept: the
+extrapolation bound of Section~\ref{subsec:iterative} decides \emph{where} the
+sweep stops asking, and the gradient penalty decides \emph{how fast} the
+residual is allowed to grow inside that range.
+
+The nominal-model half of \eqref{eq:pinnloss}---the nominal rollout, the
+mirrored inputs and the constant terms of the symmetry residual---depends only
+on quantities fixed for the whole training call and is precomputed once
+(Section~\ref{subsec:s4cost}).
 
 \subsubsection{Temporal residual}
 \label{subsec:s4}
@@ -237,13 +354,10 @@ baseline we (i) raised the number of jittered multi-starts from 1 to 8, (ii)
 added a derivative-free simplex~\cite{neldermead1965} and a global
 differential-evolution solver~\cite{storn1997de} as alternatives to
 trust-region reflective~\cite{branch1999trust}, all through the same
-optimisation library~\cite{virtanen2020scipy}, and
-(iii) corrected the configured prior, which previously initialised $D$
-\emph{below} its own lower bound and thus started every optimisation on the
-rail it then failed to leave. The prior now carries the measured tire of
-Table~\ref{tab:ref}.
+optimisation library~\cite{virtanen2020scipy}. The prior carries the measured
+tire of Table~\ref{tab:ref}.
 
-None of (i)--(iii) fixes the degeneracy on its own, and they were verified as
+Neither (i) nor (ii) addresses the degeneracy, and both were verified as
 secondary: with the rollout speed left at \SI{4}{\meter\per\second}, a
 synthetic $D=1.5$ tire fits back as $D_{f}=0.753$, $D_{r}=0.737$ with three
 coefficients railed regardless of solver or start point; at
@@ -272,32 +386,8 @@ $l_{wb}\equiv l_{f}+l_{r}$ is enforced by a regression test, because
 \eqref{eq:ssforces} uses the wheelbase for the normal loads and the axle split
 for the force division; the two disagreeing is a silent bias.
 
-\subsubsection{Friction warm-start as a floor}
-An initial estimate of $D$ is derived from measured accelerations, in the
-spirit of model-free friction estimation \cite{slipfriction2025}. The
-baseline-adjacent implementation computed the \emph{median} of
-$\sqrt{a_{x}^{2}+a_{y}^{2}}/g$ over an explicitly \emph{low-slip} mask, which
-is structurally wrong: it measures utilised friction over samples selected for
-being far from the limit, and utilisation lower-bounds capability. On a
-\SI{13}{\meter\per\second} pure-pursuit lap the median measures \num{0.044}
-against a peak of \num{0.46}. The estimator is now a 99th percentile over the
-whole buffer, applied as a \emph{floor} on the prior's $D$ and never as a
-replacement. Section~\ref{subsec:friction} replaces the bound itself with a
-tire-model fit. This is a corrected implementation detail rather than a
-criticism of the friction-estimation literature, whose methods target
-\emph{available} friction and assume near-limit excitation.
-
-\subsection{Warm-starting the peak factor from measured friction}
+\subsubsection{Proprioceptive friction warm-start}
 \label{subsec:friction}
-
-The 99th-percentile utilisation above is a hard lower bound on the available
-grip and nothing more: $\sqrt{a_{x}^{2}+a_{y}^{2}}/g$ is the friction the
-vehicle \emph{used}, and it equals the friction the vehicle \emph{had} only at
-the limit. Under MPC on the raceline this vehicle peaks at \SI{0.63}{\g}
-against a measured axle $\mu$ of \num{1.05}, so the bound is short by
-$\approx\SI{40}{\percent}$ by construction, and no choice of quantile fixes
-that. The warm start is therefore computed from the shape of the axle force
-curve instead, using only the sensors already on the vehicle.
 
 \subsubsection{Axle forces and slip angles without a force sensor}
 Newton--Euler on the single-track body of
@@ -383,9 +473,8 @@ the controller re-ingests the reference speed profile at
 $\min(a_{y,\max}^{\mathrm{cfg}},\,a_{y}^{\max}\eta)$ on every accepted model
 update, so a lowered $D$ rewrites the reference under the running controller;
 a lowered $D$ that also \emph{moves} between cycles rewrites it repeatedly.
-Shipping the estimator with a confident fit permitted to replace the prior did
-exactly that, and the observed behaviour was erratic
-(Section~\ref{subsec:mufloor}).
+The floor makes the estimate a one-way influence on the reference, which is the
+property the interface needs.
 
 The gate cannot substitute for the floor, and it is worth being precise about
 why: $\sigma_{\mu}/\mu$ from the fit covariance is a \emph{precision} figure,
@@ -458,23 +547,14 @@ describe the racing regime the model was fitted on.
 the measured $(\alpha,F_{z})$ and compared per axle against the measured
 $F_{y}$, and against the plant's own curve~\eqref{eq:physx} evaluated at the
 same points (Table~\ref{tab:ref}), which separates the error of the fit from
-the error of representing a PhysX tire as a Magic Formula. This level is
-unavailable on a physical platform without a force-measuring hub and is the
-strongest evidence in the paper.
+the error of representing a PhysX tire.
 \item \textbf{Closed-loop tracking} under the MPC using the identified model:
 lap time, mean and maximum lateral deviation, steering sign reversals per
 control step, and RMS steering rate against the rate limit. Lap timing runs
-from the first crossing of the raceline's $s=0$, not from the first odometry
-sample, so that the drive from the spawn point up to the start line is an
-untimed out-lap rather than a spuriously short first lap. This level is
+from the first crossing of the raceline's $s=0$, so the drive from the spawn
+point up to the start line is an untimed out-lap. This level is
 \emph{not} completed here; see Section~\ref{subsec:negative}.
 \end{enumerate}
 
 All three levels score the \emph{accepted} model only, for the reason given in
 Section~\ref{subsec:deployment}.
-
-The steady-state force recovery of \eqref{eq:ssforces} was itself validated
-against the simulator's axle force on a normal lap (correlation \num{0.993},
-slope \num{0.94}). This matters because \eqref{eq:ssforces} is not a force
-measurement---it is fully determined by $v_{x}\omega$---so its adequacy had to
-be established rather than assumed.

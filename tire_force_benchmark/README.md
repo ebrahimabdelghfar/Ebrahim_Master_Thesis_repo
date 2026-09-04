@@ -129,7 +129,13 @@ If `m`/`I_z`/`l_f`/`l_r`/`l_wb` aren't available, state benchmarking is disabled
 
 For each signal, metrics are updated incrementally (O(1) per sample): RMSE, MAE, NRMSE, MaxAE, Bias, StdDev, R².
 
-Signals benchmarked: FL/FR/RL/RR Fy, front/rear axle Fy sum, total vehicle Fy sum, $v_y$, $\omega$.
+Signals benchmarked: FL/FR/RL/RR Fy, front/rear axle Fy sum, total vehicle Fy sum, $v_y$, $\omega$, front/rear axle peak friction $\mu$.
+
+### Peak friction ($\mu$) benchmarking
+
+`Fy = Fz · D · sin(...)`, so the identified Pacejka `D` coefficient *is* the axle peak friction, and is scored directly against the `tire_friction` the tire telemetry reports (`front_mu` = `C_Pf[2]` vs. the FL/FR mean, `rear_mu` = `C_Pr[2]` vs. the RL/RR mean). Ground truth here is the road-multiplied value the physics step actually uses — not the configured `vehicle.physics.wheels[].tire_friction` — so it also follows a runtime `/sim/control/tire_friction` change.
+
+The estimate is held between identifications, so the traces are step functions: ground truth moves only when the surface or the friction command changes, the estimate only when a new model is accepted. No samples are scored before the first identification arrives.
 
 ### Academic plot export
 
@@ -137,10 +143,12 @@ If `plot_output_dir` is set, on node shutdown the following PNGs are written (ma
 
 - `tire_forces_timeseries.png` — ground truth vs estimate, one subplot per Fy signal.
 - `vehicle_states_timeseries.png` — ground truth vs estimate for $v_y$, $\omega$.
-- `tire_forces_error_hist.png` / `vehicle_states_error_hist.png` — error distribution histograms, with the zero-error line and mean bias marked.
+- `friction_mu_timeseries.png` — reported (ground truth) vs. identified peak friction $\mu$, front/rear axle stacked. Both traces are piecewise constant — see "Peak friction ($\mu$) benchmarking" above.
+- `tire_forces_error_hist.png` / `vehicle_states_error_hist.png` / `friction_mu_error_hist.png` — error distribution histograms, with the zero-error line and mean bias marked.
 - `tire_forces_parity.png` / `vehicle_states_parity.png` — estimate-vs-ground-truth parity (regression) scatter with a y=x reference line and RMSE/R² annotated, one subplot per signal — the standard model-validation figure in this field (cf. Dikici et al. 2024, Fig. 5/6-style validation).
 - `pacejka_curve_validation.png` — measured Fy vs. slip angle scatter overlaid with the identified Magic Formula curve, front/rear axle side by side at their nominal static loads (`internal_pacejka` mode only, once a model has been identified) — the canonical Pacejka-model validation plot (Bakker/Nyborg/Pacejka SAE 870421; Pacejka & Bakker 1992).
 - `pacejka_identified_vs_nominal.png` — the identified model vs. the nominal curve, swept analytically over a fixed slip-angle range, front/rear stacked. With `nominal_source: carla_physx` (default) the nominal curve is CARLA's own PhysX tire model at the friction the telemetry reports, so it needs a live identified model and at least one tire-forces message; with `nominal_source: model_file` it is the prior `C_Pf`/`C_Pr` from `nominal_model_file` instead. See `docs/tire_force_benchmark.md`.
+- `pacejka_identified_vs_nominal_iter_NN.png` — the same figure, but written immediately for **every** set of params received on `identified_params_service` (`NN` counting from 01, titled with the iteration). The shutdown export above only ever shows the last identified model; these keep the intermediate ones, so a run's re-identifications can be compared. Only written when `plot_output_dir` is set; a failed figure logs a warning and never fails the service handshake.
 - `metrics_summary.png` — a table of RMSE/MAE/NRMSE/MaxAE/Bias/StdDev/R² for every signal.
 
 History is kept in a bounded-memory buffer (`plot_max_points`, logarithmic decimation) so long runs don't grow memory unbounded.

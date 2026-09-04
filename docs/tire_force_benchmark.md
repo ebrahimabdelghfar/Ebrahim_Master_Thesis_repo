@@ -58,6 +58,12 @@ with $\bar F_z = F_z / F_z^{\text{rest}}$ and CarSimEd's smoothing function $S_1
 
 `nominal_source: model_file` restores the old prior-model comparison.
 
+### One figure per identification iteration
+
+The figure holds no per-sample data — it is an analytic sweep of two closed-form curves — so its only run-to-run inputs are the identified `C_Pf`/`C_Pr`, μ, the PhysX stiffness and the static axle loads. With the last three effectively fixed by the map and the vehicle blueprint, a shutdown-only export is byte-identical whenever identification lands on the same coefficients, and every intermediate model the run passed through is lost.
+
+`handle_identified_params` therefore renders `pacejka_identified_vs_nominal_iter_NN.png` as each set of params arrives (`NN` from 01, in receipt order, with the iteration in the figure title). Rendering happens inline in the service callback and takes a few hundred milliseconds; `On-Track-SysID` forwards params with `call_async` and only logs the ack, so this does not stall identification. Any failure is caught and logged as a warning — the handshake still acks. `plot_output_dir` must be set; params seeded from `model_file` at startup are not an identification iteration and produce no snapshot.
+
 Validated against 1804 ground-truth wheel samples recorded from `/sim/feedback/tire_forces` on a live lap (|α| p99 = 3.66°), predicting each sample from its own measured α, $F_z$ and μ:
 
 | | R² | RMSE | bias |

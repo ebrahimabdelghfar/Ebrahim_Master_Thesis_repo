@@ -104,17 +104,3 @@ and the simulator's longitudinal wheel force channel is drivetrain torque
 rather than a contact-patch force, so it is unusable as ground truth for a
 longitudinal extension without further work.
 \end{enumerate}
-
-\subsection{Threats to validity}
-
-The most serious internal threat is that several corrections of
-Table~\ref{tab:defects} were applied together rather than factorially; only the
-rollout-speed correction was isolated, by the zeroed-residual round-trip of
-Section~\ref{subsec:isolation}. The effects attributed to individual
-measurement-side corrections come from re-fitting the same recorded run with
-one change at a time, which controls for the data but not for interaction
-between changes; a full ablation would settle this and is inexpensive offline.
-The most serious external threat is the simulator's tire model, discussed
-above; the mitigation available within this study is that every claim is scored
-against the plant's own per-wheel forces rather than against a secondary model,
-so the identification result is at least not self-referential.

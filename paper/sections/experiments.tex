@@ -53,93 +53,6 @@ gate rejects.}
 \label{fig:raceline}
 \end{figure*}
 
-\subsection{The failure mode, reproduced}
-\label{subsec:failure}
-
-Running the baseline pipeline unmodified on this platform yields
-\begin{align*}
-\mathrm{C\_Pf} &= [5.2874,\; 1.5536,\; \mathbf{0.4},\; \mathbf{1.0}],\\
-\mathrm{C\_Pr} &= [19.3236,\; \mathbf{1.2},\; 0.4046,\; -0.1292],
-\end{align*}
-with the bold entries exactly on their box constraints and $B_{r}$ just under
-its upper bound: five of eight coefficients on or against a rail. The implied
-physics is qualitatively wrong, not merely inaccurate---a grip ceiling of
-\SI{3.95}{\meter\per\second\squared} (\SI{0.40}{\g}) and a front axle stiffness
-of \SI{4012}{\newton\per\radian}, so the model believes it needs
-$\approx\SI{0.30}{\radian}$ of front slip to generate \SI{1}{\g}, beyond the
-vehicle's \SI{0.2793}{\radian} steering limit. The model believes the car
-cannot corner. Table~\ref{tab:closedloop} shows why this stays invisible until
-it is not: lateral demand scales as $v^{2}$.
-
-\begin{table}[t]
-\caption{Closed-loop consequence of the degenerate tire set, measured in a
-harness driving the raceline for \SI{20}{\second} with the
-pure-pursuit$\rightarrow$MPC switch at $t=\SI{5}{\second}$.}
-\label{tab:closedloop}
-\centering
-\small
-\begin{tabular}{@{}lcc@{}}
-\toprule
-Controller model & Max cross-track & Infeasible stages\\
-\midrule
-Plausible prior ($D=1.5$)        & \SI{0.03}{\meter}  & 0\\
-Identified set @ \SI{11.1}{\meter\per\second} & \SI{0.16}{\meter} & 0\\
-Identified set @ \SI{15}{\meter\per\second}   & \SI{0.43}{\meter} & 0\\
-Identified set @ \SI{27}{\meter\per\second}   & \SI{41.89}{\meter} & 29\,461\\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Isolating the cause}
-\label{subsec:isolation}
-
-Four hypotheses were tested against measurement rather than argued from code.
-Table~\ref{tab:hypotheses} records the outcome, including the two that were
-wrong; the eliminated hypotheses are as informative as the confirmed one.
-
-\begin{table}[t]
-\caption{Hypotheses tested against the simulator's own telemetry.}
-\label{tab:hypotheses}
-\centering
-\scriptsize
-\begin{tabular}{@{}p{3.05cm}p{4.5cm}@{}}
-\toprule
-Hypothesis & Verdict\\
-\midrule
-Friction warm-start measures utilised friction over a low-slip mask &
-\emph{Structurally confirmed, not the cause.} Utilisation measures \num{0.044}
-median, \num{0.46} peak at \SI{13}{\meter\per\second}. Corrected anyway
-(Sec.~\ref{subsec:measurement}).\\
-Static $D$ prior below its own lower bound &
-\emph{Confirmed, secondary.} Corrected; multi-starts 1$\rightarrow$8.\\
-Only $BCD$ identifiable at low slip &
-\emph{Confirmed, and it is the mechanism}---but caused by the rollout speed,
-not by the recorded lap (Sec.~\ref{subsec:excitation}).\\
-\texttt{/odom} twist in world frame &
-\emph{Refuted.} corr $=0.93$, RMS \SI{0.09}{\meter\per\second} against a
-body-frame interpretation.\\
-Steady-state force model~\eqref{eq:ssforces} inadequate &
-\emph{Refuted as a cause.} corr $=0.993$, slope \num{0.94} against the
-simulator's own axle force.\\
-$\delta$ taken from command, not achieved &
-\emph{Confirmed, significant.} Ratio \num{0.76}; worth \SI{20}{\percent} of
-front stiffness.\\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The decisive experiment is an offline round-trip with the residual network
-zeroed, so that only the rollout is under test: a synthetic $D=1.5$ tire,
-rolled out at \SI{4}{\meter\per\second} and re-fitted, returns
-$D_{f}=0.753$, $D_{r}=0.737$ with three coefficients railed; the same tire
-rolled out at \SIrange{8}{20}{\meter\per\second} returns
-$D=\numrange{1.40}{1.61}$ with nothing railed. Since the tire is known exactly
-and the residual model is absent, this isolates the rollout configuration as
-the cause and confirms \eqref{eq:mureach}. Figure~\ref{fig:baseline} shows the
-round trip as a sweep over rollout speed, next to the reachable-friction bound
-that predicts it and the slip-angle coverage each configuration delivers to
-the fit.
-
 \subsection{Baseline versus this work}
 \label{subsec:baselinecmp}
 
@@ -181,9 +94,13 @@ Solver & Trust-region, single start & Multi-start, plus simplex and global
 options\\
 Output contract & Per-coefficient box constraints & Gates on derived
 quantities at the controller interface\\
+Residual objective & One-step MSE & MSE plus quasi-steady balance, left/right
+symmetry and input-gradient penalties, \eqref{eq:pinnloss}, optional\\
+Residual inputs & State, command & \emph{inherited} plus axle slip angles
+(Sec.~\ref{subsec:physinputs}), optional\\
 \addlinespace
 Residual model & MLP, 58 parameters & \emph{inherited} as default; selectable
-wide, physics-augmented, ensemble and S4D temporal alternatives\\
+wide, ensemble and S4D temporal alternatives\\
 Residual cost & Not reported & S4D identification \SI{181.4}{\second}
 $\rightarrow$ \SI{20.9}{\second}, exact (Table~\ref{tab:runtime})\\
 Data budget & \SI{30}{\second}, one controller-free lap & \emph{inherited}\\
@@ -193,89 +110,6 @@ Simulator per-wheel force, slip and load\\
 \bottomrule
 \end{tabular}
 \end{table}
-
-\subsection{Identification after correction}
-\label{subsec:corrected}
-
-With the six defects of Table~\ref{tab:defects} corrected, three consecutive
-live identifications return no coefficient on a bound. Peak friction
-coefficients land at $D_{f},D_{r}\in[1.05,1.18]$ against the reference
-\num{1.009}/\num{1.002} of Table~\ref{tab:ref}; axle cornering stiffnesses land
-at $C_{f}\approx\SI{21}{\kilo\newton\per\radian}$ and
-$C_{r}\approx\SI{20}{\kilo\newton\per\radian}$ against the simulator's measured
-\SIrange{17}{19}{\kilo\newton\per\radian}; the understeer gradient has the
-correct sign ($l_{f}C_{f}<l_{r}C_{r}$) on every run, matching the measured
-plant; and one-step prediction on held-out data gives $R^{2}=\num{0.97}$ for
-$v_{y}$ and $R^{2}=\num{0.99}$ for $\omega$. The peak-friction drift across the
-six co-identification iterations is removed: where the unbounded sweep walked
-$D$ from \num{1.01} to \num{1.87}, the bounded sweep with a frozen prior
-settles inside $[1.05,1.18]$. That band brackets the plant's own effective
-friction coefficient of \num{1.05} (Table~\ref{tab:ref}), which is the quantity
-$D$ is supposed to recover---and not the \num{1.5} written in the vehicle
-configuration, against which the same result would read \SI{30}{\percent} low.
-
-Because the plant's curve is known in closed form
-(Section~\ref{subsec:planttire}), the residual error of the identified model
-can be separated into the error of the fit and the error of the model family.
-On the same 1804 ground-truth wheel samples, \eqref{eq:physx} evaluated at each
-sample's measured $(\alpha,F_{z},\mu)$ gives $R^{2}=\num{0.99}$ with
-\SI{16.1}{\newton}/\SI{14.7}{\newton} RMSE front/rear, while the identified
-Magic Formula gives \num{0.96}/\SI{34.6}{\newton} and
-\num{0.98}/\SI{21.3}{\newton}. The gap is therefore not a failure of the
-identification: over a slip range reaching $P_{99}=\SI{3.66}{\degree}$ the
-identified curve is within roughly \SI{20}{\newton} RMS of a tire whose shape
-it cannot represent exactly, and the remaining error is the price of the model
-form the controller requires.
-
-\begin{table*}[t]
-\caption{Defects identified, corrected and regression-tested in this work. The
-effect column reports the measured change where one was quantified.}
-\label{tab:defects}
-\centering
-\small
-\begin{tabular}{@{}p{3.1cm}p{5.4cm}p{4.1cm}p{3.6cm}@{}}
-\toprule
-Defect & Root cause & Correction & Measured effect\\
-\midrule
-Degenerate fit, $D$ on its bound &
-Pacejka fit runs on a synthetic rollout whose speed was clipped to
-\SIrange{2}{4}{\meter\per\second}; $\mu_{\mathrm{reach}}=0.43$ &
-Rollout speed from measured lap speed, floored at
-\SI{7}{\meter\per\second}; warning when \eqref{eq:mureach} $<D$ &
-$D$: 0.40 (railed) $\rightarrow$ 1.05--1.18; $C_{f}$: 4.0 $\rightarrow$
-21 \si{\kilo\newton\per\radian}\\
-\addlinespace
-Identified set never reached the controller &
-Trainer wrote coefficients to file but returned nothing; the node re-read a
-static prior file and submitted \emph{that} &
-Trainer returns the identified coefficients; node submits them &
-Service received the prior verbatim while the fit had produced a different
-set\\
-\addlinespace
-$D$ drifts upward across iterations &
-Sweep extrapolated the residual network far past its training range, and each
-answer became its own regularisation target &
-Sweep bounded at $1.5\times P_{99}(|\delta|)$; regularisation target frozen at
-the configured prior &
-1.01 $\rightarrow$ 1.87 drift removed; settles 1.05--1.18\\
-\addlinespace
-Front stiffness underestimated &
-Slip angle built from the steering \emph{setpoint} &
-Achieved road-wheel angle from feedback/\allowbreak steering angle, with
-fallback &
-$C_{f}$: 13725 $\rightarrow$ 18486 \si{\newton\per\radian} (truth 17198)\\
-\addlinespace
-Friction prior pinned near 0.4 &
-Median of \emph{utilised} friction over an explicitly \emph{low-slip} mask;
-utilisation lower-bounds capability at any quantile &
-$P_{99}$ over the whole buffer as a floor, then a gated per-axle brush fit of
-$(C_{\alpha},\mu)$ (Sec.~\ref{subsec:friction}) &
-Median 0.044 vs peak 0.46 at \SI{13}{\meter\per\second}; brush fit recovers
-$\mu=1.048$ against truth 1.05 at \SI{45}{\percent} utilisation, where the
-bound reads 0.473 (Table~\ref{tab:mu})\\
-\bottomrule
-\end{tabular}
-\end{table*}
 
 \subsection{Peak-friction warm start}
 \label{subsec:mu}
@@ -321,24 +155,6 @@ designed: below the \SI{40}{\percent} floor it suppresses the fit and reports
 the bound, so the estimator's failure is visible rather than silent.
 Figures~\ref{fig:mufit}--\ref{fig:mucrosscheck} are the corresponding
 diagnostics on the CARLA plant and are not yet collected.
-
-\subsubsection{Negative result: a confident fit must still not lower $D$}
-\label{subsec:mufloor}
-The estimator was first shipped with the natural policy---replace the prior's
-$D$ when the gate passes, in either direction---and the vehicle became erratic
-within one session. The mechanism is the one anticipated in
-Section~\ref{subsec:frictionfloor}: a $\mu$ estimate slightly below the prior
-lowers $D$, the lowered $D$ becomes the frozen regularisation target of every
-subsequent iteration, and the controller re-derives the reference speed profile
-from the identified grip ceiling on each accepted update, so corner speeds
-collapse and the high-curvature stages lose their steady-state equilibrium.
-Because the warm start is recomputed every cycle, a wandering estimate rewrote
-that reference repeatedly. The confidence gate could not have caught it, for
-the reason given in Section~\ref{subsec:frictionfloor}: $\sigma_{\mu}/\mu$ is
-precision, not accuracy. The policy is now floor-only for every input kind, and
-we report the episode because the failure is a property of the
-identification-to-control interface rather than of the estimator, and any stack
-that lets an online estimate move a reference trajectory inherits it.
 
 \subsection{Identification cost}
 \label{subsec:runtime}
@@ -404,12 +220,14 @@ correctable measurement bias rather than by unmodelled temporal dynamics. The
 cost objection to running this axis is now removed
 (Section~\ref{subsec:runtime}): the S4D arm costs \SI{20.9}{\second} per
 identification rather than \SI{181.4}{\second}. The second is the loss mode
-(\texttt{mse} versus \texttt{physics\_informed}) on the same dataset, comparing
-one-step metrics, per-iteration coefficient trajectories and closed-loop
-tracking. The third is the input vector: whether the slip-angle augmentation of
-Section~\ref{subsec:physinputs} buys anything once the residual is temporal,
-which is a question about whether $\alpha_{f},\alpha_{r}$ are recoverable from
-a \SI{0.4}{\second} window (Fig.~\ref{fig:physinputs}).
+(\texttt{mse} versus the physics-informed objective of
+Section~\ref{subsec:pinnloss}) on the same dataset, comparing one-step metrics,
+per-iteration coefficient trajectories and closed-loop tracking; the term of
+interest is the symmetry penalty, since it is the one that supplies data the
+lap does not contain. The third is the input vector: whether the slip-angle
+augmentation of Section~\ref{subsec:physinputs} buys anything once the residual
+is temporal, which is a question about whether $\alpha_{f},\alpha_{r}$ are
+recoverable from a \SI{0.4}{\second} window (Fig.~\ref{fig:physinputs}).
 
 \subsection{adaptation to time-varying friction}
 \label{subsec:varyingmu}
@@ -435,7 +253,7 @@ slowly enough that a controller with a stale model degrades gradually rather
 than failing outright, so it measures tracking latency rather than recovery.
 The quantity of interest is the lag between $\mu(t)$ and the identified
 $D(t)$, and whether the floor-only warm-start policy of
-Section~\ref{subsec:mufloor} biases the estimate upward when grip is falling
+Section~\ref{subsec:frictionfloor} biases the estimate upward when grip is falling
 monotonically---a case the floor was never designed for, and the one place
 where the policy is expected to cost accuracy.
 

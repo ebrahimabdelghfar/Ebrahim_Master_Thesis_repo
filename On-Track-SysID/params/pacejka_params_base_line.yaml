@@ -1,0 +1,141 @@
+# [B, C, D, E] per axle. This is the cold-start initial guess for EVERY
+# identification cycle (the friction warm-start only ever raises D, and only
+# on the first one), so it has to be a physically plausible model of the car
+# actually being driven - a prior below the D bound made the solver start on
+# the rail and stay there (bug-sysid-degenerate-pacejka-fit).
+#
+# Measured on the CARLA asurt_fsai on 2026-08-22 by fitting CARLA's own
+# per-wheel telemetry (/sim/feedback/tire_forces: slip_angle, lateral_force,
+# normal_load - the simulator's forces, no analytic tire model in between)
+# over a limit-excitation run that reached alpha = 0.37 rad, axle mu = 1.05
+# and 1.50 g. Fitted with differential-evolution, E constrained to >= -2 to
+# keep the prior off the PACEJKA_BOUNDS edge; RMSE 135 N front / 85 N rear.
+#
+# Note D ~= 1.0, not the 1.5 of carla_interface_config.yaml's PhysX
+# wheel tire_friction: 1.5 is the wheel's friction coefficient, the realised
+# peak axle mu measured on the road surface is 1.00-1.05.
+pacejka_model:
+  C_Pf_model: [7.0760, 1.3460, 1.0090, -2.0000]
+  C_Pr_model: [7.8730, 1.3830, 1.0020, -1.0240]
+
+# Reference set kept for plotting/benchmark overlays only (train_model.py
+# reads it into the model dict but the solver never starts from it).
+pacejka_ref:
+  C_Pf_ref: [7.0760, 1.3460, 1.0090, -2.0000]
+  C_Pr_ref: [7.8730, 1.3830, 1.0020, -1.0240]
+
+# Speed of the synthetic steering sweep that simulated_data_gen() rolls out
+# and solve_pacejka() actually fits (the measured trace only trains the
+# residual NN). See train_model.rollout_speed() for the full derivation:
+# the rollout's reachable mu is v^2 * sweep_delta_max / (g * l_wb), so a
+# rollout slower than the tire's peak makes D unidentifiable.
+#
+# speed_max: null means "use the speed the car was actually driven at". The
+# previous hardcoded clip to 4.0 m/s capped the reachable mu at 0.43 on this
+# vehicle and pinned Df/Dr on the 0.4 bound.
+pacejka_rollout:
+  speed_min: 15.0          # m/s - below this the sweep cannot reach mu = 1.0
+  speed_max: null         # m/s, null = no upper clamp
+  sweep_delta_max: 0.54    # rad, hard cap on simulated_data_gen()'s delta sweep
+  # The sweep actually stops at sweep_delta_extrapolation * p99(|delta|) of
+  # the recorded lap (floored at sweep_delta_min), because past that the
+  # residual NN is extrapolating and the fit reads its invention as grip.
+  # See train_model.rollout_delta_max().
+  sweep_delta_extrapolation: 1.5
+  sweep_delta_min: 0.05   # rad
+
+# Nonlinear least-squares settings for Pacejka identification.
+# Defaults are robust for noisy on-track data while keeping runtime low.
+pacejka_solver:
+  # trf | dogbox | lm            - scipy.optimize.least_squares, gradient-based, fast, local.
+  # nelder-mead                  - scipy.optimize.minimize, derivative-free simplex search;
+  #                                 same solver arXiv:2603.09399 (this repo's own SOTA
+  #                                 follow-on paper) uses for iterative on-track Pacejka
+  #                                 extraction. Slower than trf, more robust to a poor
+  #                                 initial guess or a noisy/non-smooth cost surface.
+  # differential-evolution        - scipy.optimize.differential_evolution, a global
+  #                                 population-based search; escapes local minima that
+  #                                 multi-start trf/nelder-mead can still miss, at
+  #                                 significantly higher runtime cost. Same rationale
+  #                                 this repo's own pacejka_identification/
+  #                                 coefficient_identifier.py already applies via its
+  #                                 genetic-algorithm identifier.
+  method: trf
+  loss: soft_l1               # trf/dogbox/lm only - ignored by nelder-mead/differential-evolution
+  f_scale: null                # trf/dogbox/lm only; null = auto from the F_y residual scale
+  x_scale: jac                  # trf/dogbox/lm only
+  max_nfev: null                 # trf/dogbox/lm (max function evals) / nelder-mead (maps to maxfev)
+  num_starts: 8                  # jitter restarts; applies to trf/dogbox/lm/nelder-mead,
+                                   # ignored by differential-evolution (already global)
+  start_jitter: 0.05
+  # Tikhonov pull toward C_P*_model, in units of the data residual budget
+  # (see solve_pacejka._prior_weights). Keeps the coefficients the manoeuvre
+  # does not excite - E above all - at their nominal value instead of on a
+  # box edge. 0.0 restores the unregularised fit.
+  # 0.05 measured: clears the E/C rails for both the measured prior and a
+  # D = 1.5 tire while still letting D move ~8 % and B ~13 % off the prior.
+  prior_weight: 0.05
+  seed: null                       # also seeds differential-evolution's RNG
+  de_popsize: null                  # differential-evolution only; null = scipy default (15)
+  de_maxiter: null                  # differential-evolution only; null = scipy default (1000)
+
+# Friction-based cold-start warm-start for the Pacejka D (peak-mu)
+# coefficient's initial guess. Applied ONLY ONCE per node lifetime - the
+# very first identification cycle (see on_track_sys_id.py's
+# self._is_first_identification gate and helpers/friction_warmstart.py).
+# Every subsequent reidentification_interval_s retrain is unaffected: it
+# keeps cold-starting iteration 1 from pacejka_model's static D value
+# exactly as before this feature was added (see train_model.py::nn_train).
+# Non-vision analog of arXiv:2603.09399's camera-based friction prior,
+# adapted from arXiv:2509.15423's model-free friction-from-acceleration idea.
+friction_warm_start:
+  enable: false
+  method: brush_axle       # only implementation for now; reserved key for future alternatives
+  accel_source: imu    # finite_diff (default, verified working in SIM) | imu (real hardware
+                                # only - f1tenth_simulator's own /imu publisher is an unimplemented
+                                # stub, see node/simulator.cpp::pub_imu(); falls back to finite_diff
+                                # with a warning if no IMU message arrives within imu_wait_timeout_s)
+  imu_topic: "/sim/feedback/imu"             # only used when accel_source: imu
+  imu_wait_timeout_s: 2.0       # only used when accel_source: imu
+  # mu_hat is PEAK UTILISED friction and is applied as a floor on the static
+  # D prior, never as a replacement (nn_train). quantile picks the peak
+  # robustly; low_slip_only: true restores the pre-2026-08-22 behaviour of
+  # measuring only over _low_slip_mask(), which by construction can only
+  # report how far from the limit the car was driven (measured 0.044 median
+  # on a 13 m/s pure-pursuit lap) and is the reason D collapsed to its bound.
+  quantile: 0.99
+  low_slip_only: false
+  low_slip_alpha_f_max: 0.15   # rad — only used when low_slip_only: true
+  low_slip_alpha_r_max: 0.08   # rad — only used when low_slip_only: true
+  vx_min: 2.5                  # m/s — margin above collect_data()'s own vx>1 gate
+  omega_max: 5.0                # rad/s — mirrors analyse_tires()'s abs(omega)<=5 filter
+  min_samples: 20                # below this, skip override, fall back to static D default
+
+  # Reserved for method: brush_axle (helpers/mu_estimator.py), which fits the
+  # Fiala brush model to IMU-reconstructed axle forces to identify the PEAK
+  # friction instead of the utilised one. NOT enabled: on 2026-09-01 it
+  # returned mu 1.71/1.58 against the 1.00-1.05 measured on this vehicle and,
+  # because the warm start is a floor, that bias can only push D up. Re-enable
+  # only after the mass in models/SIM/SIM_pacejka.txt (240.0 against a
+  # measured 269.6 kg) and I_z are corrected - the axle forces are linear in
+  # both - and after the identified mu is checked against the measurement.
+  brush:
+    min_samples: 200             # gated samples needed per axle before fitting
+    alpha_min: 0.005             # rad — below this a sample carries no tyre information
+    alpha_linear_max: 0.02       # rad — subset used for the C_alpha initial guess only
+    ax_max_g: 0.35               # drop samples above this |a_x|: the brush fit is pure-lateral
+                                 # and combined slip shrinks the lateral capacity. Matches the
+                                 # |a_x| < 0.3 g limit Ray/Rajamani report for the same class
+                                 # of estimator.
+    utilisation_min: 0.40        # peak |F_y|/(mu*F_z) needed before the answer is trusted.
+                                 # 0.40 is where d(mu)/d(force ratio) stops blowing up, and is
+                                 # the same 40 % floor Acosta & Kanarachos report for
+                                 # lateral-dynamics friction estimation.
+    sigma_rel_max: 0.15          # reject when the fit's own sigma_mu/mu exceeds this
+    C_bounds: [2000.0, 300000.0] # N/rad, per axle
+    mu_bounds: [0.2, 2.0]        # mirrors PACEJKA_BOUNDS' D range
+    f_scale: 0.05                # soft_l1 robust loss scale, in units of F_y/F_z
+    savgol_window: 21            # samples — yaw-rate derivative and kinematic-accel fallback
+    savgol_poly: 2
+    use_load_transfer: true      # apply m*a_x*h_cg/l_wb to the axle vertical loads
+    utilisation_quantile: 0.99   # quantile for the |a|/g lower bound reported alongside

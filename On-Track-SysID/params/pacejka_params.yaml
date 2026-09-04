@@ -34,7 +34,7 @@ pacejka_ref:
 # previous hardcoded clip to 4.0 m/s capped the reachable mu at 0.43 on this
 # vehicle and pinned Df/Dr on the 0.4 bound.
 pacejka_rollout:
-  speed_min: 7.0          # m/s - below this the sweep cannot reach mu = 1.0
+  speed_min: 15.0          # m/s - below this the sweep cannot reach mu = 1.0
   speed_max: null         # m/s, null = no upper clamp
   sweep_delta_max: 0.54    # rad, hard cap on simulated_data_gen()'s delta sweep
   # The sweep actually stops at sweep_delta_extrapolation * p99(|delta|) of
