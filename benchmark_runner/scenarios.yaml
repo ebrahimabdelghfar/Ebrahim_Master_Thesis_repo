@@ -1,0 +1,48 @@
+# Scenario sweep for benchmark_runner/run_benchmark.py.
+#
+# Every path is relative to the repository root. One directory per scenario is
+# created under <graphs_root>/identification/<name> and <graphs_root>/control/<name>,
+# wiped before the run so a shorter run never leaves an earlier run's figures behind.
+
+n_laps: 6                      # TIMED laps. The car spawns behind the raceline's s=0,
+                               # so the drive to the start line is an untimed out-lap
+                               # on top of this (see lap_monitor.py).
+lap_timeout_s: 1200            # Abort a scenario that stops making progress.
+raceline_csv: traj_race_cl.csv
+psi_offset_rad: 1.5707963268   # TUM -> ROS heading convention; 0.0 for f1tenth_racetracks/*
+graphs_root: graphs
+racecar_version: SIM
+nominal_tire_friction: 1.5     # vehicle.physics.wheels[*].tire_friction in the bridge config.
+                               # The map's road factor (0.70 on silverstone) is applied by
+                               # PhysX on top of this, so the effective mu is ~1.05.
+
+scenarios:
+  - name: test1_with_base_line
+    nn_params_yaml: On-Track-SysID/params/nn_params_base_line.yaml
+    pacejka_params_yaml: On-Track-SysID/params/pacejka_params_base_line.yaml
+    friction_schedule: constant
+
+  - name: test2_with_enhanced
+    nn_params_yaml: On-Track-SysID/params/nn_params.yaml
+    pacejka_params_yaml: On-Track-SysID/params/pacejka_params.yaml
+    friction_schedule: constant
+
+  # The three LLA-MPC schedules of paper/sections/experiments.tex SVI-I. All three are
+  # blocked on regenerating the raceline (SVI-J): the current traj_race_cl.csv demands
+  # 1.22 g against a ~1.0 g plant, so a 40 % friction step leaves the car on a
+  # trajectory it cannot drive. Uncomment once the raceline is regenerated.
+  #
+  # - name: test3_enhanced_mu_decay
+  #   nn_params_yaml: On-Track-SysID/params/nn_params.yaml
+  #   pacejka_params_yaml: On-Track-SysID/params/pacejka_params.yaml
+  #   friction_schedule: decay_2pct_s
+  #
+  # - name: test4_enhanced_mu_step_end_lap1
+  #   nn_params_yaml: On-Track-SysID/params/nn_params.yaml
+  #   pacejka_params_yaml: On-Track-SysID/params/pacejka_params.yaml
+  #   friction_schedule: step40_end_lap1
+  #
+  # - name: test5_enhanced_mu_step_mid_lap1
+  #   nn_params_yaml: On-Track-SysID/params/nn_params.yaml
+  #   pacejka_params_yaml: On-Track-SysID/params/pacejka_params.yaml
+  #   friction_schedule: step40_mid_lap1

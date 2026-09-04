@@ -332,6 +332,20 @@ class AdaptiveControllerBenchmarkNode(Node):
 
         self.get_logger().info(f'Benchmark plots saved to: {out_dir}')
 
+    def _save(self, fig, save_path, header, rows):
+        """Export one figure plus the same-named CSV holding the numbers behind it.
+
+        The PNGs are the deliverable, but a scenario sweep needs them
+        machine-readable - benchmark_runner/compare_scenarios.py reads these
+        instead of re-deriving any metric.
+        """
+        fig.savefig(save_path, dpi=150)
+        csv_path = Path(save_path).with_suffix('.csv')
+        with csv_path.open('w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows(rows)
+
     def _shade_states(self, ax):
         """axvspan background per contiguous FSM-state run, colored per STATE_COLORS -
         ties tracking-error/speed behavior visually to which controller was active.
@@ -381,7 +395,7 @@ class AdaptiveControllerBenchmarkNode(Node):
             ax.set_title('Active FSM state over time')
             ax.grid(True, alpha=0.3)
         fig.tight_layout()
-        fig.savefig(save_path, dpi=150)
+        self._save(fig, save_path, ['t_run_s', 'state'], list(zip(h.t, h.state)))
         plt.close(fig)
 
     def _plot_tracking_error_timeseries(self, plt, save_path):
@@ -405,7 +419,10 @@ class AdaptiveControllerBenchmarkNode(Node):
             axes[1].set_title('Heading tracking error')
             axes[1].grid(True, alpha=0.3)
         fig.tight_layout()
-        fig.savefig(save_path, dpi=150)
+        self._save(
+            fig, save_path,
+            ['t_run_s', 'state', 'e_y_m', 'heading_error_rad'],
+            list(zip(h.t, h.state, h.e_y, h.heading_error)))
         plt.close(fig)
 
     def _plot_error_boxplot_by_controller(self, plt, save_path):
@@ -416,10 +433,15 @@ class AdaptiveControllerBenchmarkNode(Node):
         mpc_heading = [abs(e) for e, s in zip(h.heading_error, h.state) if s == MPC_ACTIVE_STATE]
 
         fig, axes = plt.subplots(1, 2, figsize=(9, 4))
+        # Raw absolute-error samples, not box statistics: the cross-scenario
+        # box plot needs the samples to build its own boxes.
+        csv_rows = []
         for ax, pp_vals, mpc_vals, label, unit in (
             (axes[0], pp_e_y, mpc_e_y, '|e_y|', 'm'),
             (axes[1], pp_heading, mpc_heading, '|heading error|', 'rad'),
         ):
+            for controller, vals in ((PP_ACTIVE_STATE, pp_vals), (MPC_ACTIVE_STATE, mpc_vals)):
+                csv_rows.extend([label, unit, controller, v] for v in vals)
             data = [v for v in (pp_vals, mpc_vals) if v]
             labels = [n for n, v in ((PP_ACTIVE_STATE, pp_vals), (MPC_ACTIVE_STATE, mpc_vals)) if v]
             if not data:
@@ -431,7 +453,8 @@ class AdaptiveControllerBenchmarkNode(Node):
             ax.grid(True, alpha=0.3)
         fig.suptitle('Tracking error by active controller')
         fig.tight_layout()
-        fig.savefig(save_path, dpi=150)
+        self._save(
+            fig, save_path, ['signal', 'unit', 'controller', 'abs_error'], csv_rows)
         plt.close(fig)
 
     def _plot_speed_and_compute_cost(self, plt, save_path):
@@ -455,24 +478,31 @@ class AdaptiveControllerBenchmarkNode(Node):
             ax2.tick_params(axis='y', labelcolor='tab:purple')
         fig.suptitle('Speed profile vs. MPC compute cost')
         fig.tight_layout()
-        fig.savefig(save_path, dpi=150)
+        self._save(
+            fig, save_path,
+            ['t_run_s', 'state', 'v_x_mps', 'mpc_solve_time_ms'],
+            list(zip(h.t, h.state, h.v_x, h.solve_time_ms)))
         plt.close(fig)
 
     def _plot_handover_transient(self, plt, save_path):
         episodes = self.switch_tracker.episodes
+        header = ['episode', 'to_state', 'steering_jump_rad', 't_since_switch_s', 'v_cmd_mps']
         fig, axes = plt.subplots(1, 2, figsize=(11, 4))
         if not episodes:
             for ax in axes:
                 ax.set_title('(no switching episodes recorded)')
                 ax.axis('off')
             fig.tight_layout()
-            fig.savefig(save_path, dpi=150)
+            self._save(fig, save_path, header, [])
             plt.close(fig)
             return
 
+        csv_rows = []
         for idx, ep in enumerate(episodes):
             ts = [s[0] for s in ep['samples']]
             v_cmds = [s[1] for s in ep['samples']]
+            jump = abs(ep['entry_steering'] - ep['exit_steering'])
+            csv_rows.extend([idx, ep['to_state'], jump, t, v] for t, v in zip(ts, v_cmds))
             style = '-' if ep['to_state'] == 'SWITCHING_TO_MPC' else '--'
             axes[0].plot(
                 ts, v_cmds, style, linewidth=1.0, alpha=0.8,
@@ -493,7 +523,7 @@ class AdaptiveControllerBenchmarkNode(Node):
         axes[1].grid(True, alpha=0.3)
 
         fig.tight_layout()
-        fig.savefig(save_path, dpi=150)
+        self._save(fig, save_path, header, csv_rows)
         plt.close(fig)
 
     def _plot_lap_times(self, plt, save_path):
@@ -508,7 +538,9 @@ class AdaptiveControllerBenchmarkNode(Node):
         ax.set_title('Lap-wise lap time')
         ax.grid(True, alpha=0.3)
         fig.tight_layout()
-        fig.savefig(save_path, dpi=150)
+        self._save(
+            fig, save_path, ['lap', 'lap_time_s'],
+            [[i, t] for i, t in enumerate(laps, start=1)])
         plt.close(fig)
 
     def _plot_track_by_lap(self, plt, out_dir):
@@ -533,6 +565,8 @@ class AdaptiveControllerBenchmarkNode(Node):
         # a shorter run that never reaches lap N leaves that older run's track_lap_N.png
         # sitting in out_dir, making it look like this run completed a lap it didn't.
         for old in out_dir.glob('track_lap_*.png'):
+            old.unlink()
+        for old in out_dir.glob('track_lap_*.csv'):
             old.unlink()
 
         track_x, track_y = self.lap_tracker.get_waypoints_xy()
@@ -573,11 +607,17 @@ class AdaptiveControllerBenchmarkNode(Node):
             ax.legend(handles=[track_handle] + state_handles, loc='best', fontsize=7)
 
             fig.tight_layout()
-            fig.savefig(out_dir / f'track_lap_{lap:02d}.png', dpi=150)
+            self._save(
+                fig, out_dir / f'track_lap_{lap:02d}.png',
+                ['x_m', 'y_m', 'state'], list(zip(xs, ys, states)))
             plt.close(fig)
 
     def _plot_metrics_summary_table(self, plt, save_path):
         rows = []
+        # Tidy long-format companion (section, key, metric, value) with raw
+        # floats rather than the table's display strings: this is the file the
+        # cross-scenario comparison reads, and it looks values up by name.
+        csv_rows = []
         for label, e_y_stats, heading_stats in (
             ('Overall', self.overall_e_y, self.overall_heading),
             (PP_ACTIVE_STATE, self.pp_e_y, self.pp_heading),
@@ -585,9 +625,17 @@ class AdaptiveControllerBenchmarkNode(Node):
         ):
             e = e_y_stats.metrics()
             h = heading_stats.metrics()
+            csv_rows.append(['tracking', label, 'n', e['n']])
             if e['n'] == 0:
                 rows.append([label, '0', '-', '-', '-', '-', '-'])
                 continue
+            csv_rows.extend([
+                ['tracking', label, 'rms_e_y_m', e['rms']],
+                ['tracking', label, 'max_abs_e_y_m', e['max_abs']],
+                ['tracking', label, 'itae_e_y', e['itae']],
+                ['tracking', label, 'rms_heading_rad', h['rms']],
+                ['tracking', label, 'max_abs_heading_rad', h['max_abs']],
+            ])
             rows.append([
                 label, str(e['n']), f"{e['rms']:.4f}", f"{e['max_abs']:.4f}",
                 f"{e['itae']:.2f}", f"{h['rms']:.4f}", f"{h['max_abs']:.4f}",
@@ -611,6 +659,12 @@ class AdaptiveControllerBenchmarkNode(Node):
             [state, f"{d['n']}", f"{d['mean']:.2f}", f"{d['max']:.2f}"]
             for state, d in sw['dwell'].items()
         ]
+        for state, d in sw['dwell'].items():
+            csv_rows.extend([
+                ['dwell', state, 'n_intervals', d['n']],
+                ['dwell', state, 'mean_dwell_s', d['mean']],
+                ['dwell', state, 'max_dwell_s', d['max']],
+            ])
         laps = self.lap_tracker.lap_times
         lap_text = (
             f"laps={len(laps)} best={min(laps):.2f}s mean={sum(laps)/len(laps):.2f}s"
@@ -638,8 +692,19 @@ class AdaptiveControllerBenchmarkNode(Node):
                   transform=ax2.transAxes)
         ax2.set_title('Switching / dwell-time / lap / compute-cost summary', fontsize=11)
 
+        csv_rows.extend([
+            ['summary', '', 'transitions', sw['transitions']],
+            ['summary', '', 'emergency_halts', self.emergency_halt_count],
+            ['summary', '', 'emergency_halt_total_s', self.emergency_halt_total_s],
+            ['summary', '', 'laps', len(laps)],
+            ['summary', '', 'best_lap_s', min(laps) if laps else ''],
+            ['summary', '', 'mean_lap_s', sum(laps) / len(laps) if laps else ''],
+            ['summary', '', 'mpc_solve_time_rms_ms', solve['rms'] if solve['n'] else ''],
+            ['summary', '', 'mpc_solve_time_max_ms', solve['max_abs'] if solve['n'] else ''],
+        ])
+
         fig.tight_layout()
-        fig.savefig(save_path, dpi=150)
+        self._save(fig, save_path, ['section', 'key', 'metric', 'value'], csv_rows)
         plt.close(fig)
 
     def destroy_node(self):

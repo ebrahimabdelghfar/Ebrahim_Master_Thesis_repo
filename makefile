@@ -75,6 +75,20 @@ launch_pacejka_identification:
 	source $(CARLA_BRIDGE_SETUP) && \
 	PYTHONPATH=$$PYTHONPATH:$(ENV_SITE_PACKAGES) \
 	ros2 launch pacejka_identification pacejka_identification.launch.py
+SCENARIOS?=$(WORKSPACE)/benchmark_runner/scenarios.yaml
+# Sweeps every scenario in $(SCENARIOS): identification + control for N laps each,
+# one output directory per scenario. The CARLA server and bridge must ALREADY be
+# running (cd /home/ebrahim/Carla_ASU_Bridge && make launch_carla_sim AUTO_START=false);
+# this only drives the bridge's lifecycle. Pass ONLY=<name> to run one scenario.
+run_benchmark_scenarios:
+	@source /opt/ros/humble/setup.bash && source ${WORKSPACE}/install/setup.bash && \
+	source $(CARLA_BRIDGE_SETUP) && \
+	MPLBACKEND=Agg python3 $(WORKSPACE)/benchmark_runner/run_benchmark.py \
+	--config $(SCENARIOS) $(if $(ONLY),--only $(ONLY))
+compare_benchmark_scenarios:
+	@source /opt/ros/humble/setup.bash && source ${WORKSPACE}/install/setup.bash && \
+	MPLBACKEND=Agg python3 $(WORKSPACE)/benchmark_runner/compare_scenarios.py \
+	--config $(SCENARIOS)
 setup_ros2_workspace:
 	@source /opt/ros/humble/setup.bash && \
 	bash ${WORKSPACE}/scripts/colcon_build.sh

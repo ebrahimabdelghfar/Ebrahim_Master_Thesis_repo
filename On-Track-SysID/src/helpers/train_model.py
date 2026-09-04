@@ -123,6 +123,28 @@ def get_package_path(package_name='on_track_sys_id'):
         return package_root
     return current_dir
 
+NN_PARAMS_ENV = 'SYSID_NN_PARAMS_FILE'
+PACEJKA_PARAMS_ENV = 'SYSID_PACEJKA_PARAMS_FILE'
+_reported_overrides = set()
+
+def params_file(env_var, filename, package_path=None):
+    """Resolve a params/*.yaml path, letting an env var override it.
+
+    The benchmark runner sweeps several parameter sets in one session and needs
+    each scenario to point at its own yaml pair without editing the tracked
+    defaults. An env var (rather than a ROS parameter) because this module is a
+    plain helper with no node handle.
+    """
+    override = os.environ.get(env_var, '').strip()
+    if override:
+        if override not in _reported_overrides:
+            _reported_overrides.add(override)
+            log_warn(f'{env_var} override in effect: {override}')
+        return override
+    if package_path is None:
+        package_path = get_package_path('on_track_sys_id')
+    return os.path.join(package_path, 'params', filename)
+
 def filter_data(training_data, model):
     b, a = butter(N=3, Wn=0.1, btype='low')
     training_data[:,0] = filtfilt(b, a, training_data[:,0])
@@ -627,7 +649,7 @@ def simulated_data_gen(nn_model, vehicle_model, avg_vel, nn_params, delta_max=No
 
 def get_model_param(racecar_version):
     package_path = get_package_path('on_track_sys_id')
-    yaml_file = os.path.join(package_path, 'params', 'pacejka_params.yaml')
+    yaml_file = params_file(PACEJKA_PARAMS_ENV, 'pacejka_params.yaml', package_path)
     with open(yaml_file, 'r') as file:
         pacejka_params = yaml.safe_load(file)
 
@@ -666,8 +688,7 @@ def get_model_param(racecar_version):
     return model
 
 def get_nn_params():
-    package_path = get_package_path('on_track_sys_id')
-    yaml_file = os.path.join(package_path, 'params', 'nn_params.yaml')
+    yaml_file = params_file(NN_PARAMS_ENV, 'nn_params.yaml')
     with open(yaml_file, 'r') as file:
         nn_params = yaml.safe_load(file)
     return nn_params

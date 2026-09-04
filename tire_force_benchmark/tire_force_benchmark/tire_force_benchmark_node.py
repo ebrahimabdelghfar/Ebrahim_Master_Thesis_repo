@@ -955,6 +955,20 @@ class TireForceBenchmarkNode(Node):
         fig.savefig(tmp_path, format='png')
         os.replace(tmp_path, save_path)
 
+    def _write_plot_csv(self, save_path, header, rows):
+        # Companion CSV beside every exported PNG, same basename. The figures
+        # are what goes in the paper, but a scenario sweep needs the numbers
+        # behind them machine-readable - benchmark_runner/compare_scenarios.py
+        # reads these rather than re-deriving any of the maths. Same
+        # tmp-then-rename as _savefig so a killed export cannot truncate one.
+        csv_path = Path(save_path).with_suffix('.csv')
+        tmp_path = csv_path.with_name(csv_path.name + '.tmp')
+        with tmp_path.open('w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows(rows)
+        os.replace(tmp_path, csv_path)
+
     def _apply_academic_style(self, plt):
         # Serif, gridded, high-DPI - the conventions of the vehicle-dynamics
         # identification literature this package's model traces back to (see
@@ -992,6 +1006,7 @@ class TireForceBenchmarkNode(Node):
     def _plot_timeseries_grid(self, plt, signals, save_path, suptitle):
         nrows, ncols = self._grid_shape(len(signals))
         fig, axes = plt.subplots(nrows, ncols, figsize=(7 * ncols, 3 * nrows), squeeze=False)
+        csv_rows = []
 
         for idx, (key, label, unit) in enumerate(signals):
             ax = axes[idx // ncols][idx % ncols]
@@ -1008,6 +1023,8 @@ class TireForceBenchmarkNode(Node):
             ax.set_xlabel('Time [s]')
             ax.set_ylabel(f'{label} [{unit}]')
             ax.legend(loc='best')
+            csv_rows.extend(
+                [key, unit, f'{ts:.6f}', g, e] for ts, g, e in zip(t, hist.gt, hist.est))
 
         for idx in range(len(signals), nrows * ncols):
             axes[idx // ncols][idx % ncols].axis('off')
@@ -1015,11 +1032,14 @@ class TireForceBenchmarkNode(Node):
         fig.suptitle(suptitle, fontsize=14)
         fig.tight_layout()
         self._savefig(fig, save_path)
+        self._write_plot_csv(
+            save_path, ['signal', 'unit', 't_s', 'ground_truth', 'estimate'], csv_rows)
         plt.close(fig)
 
     def _plot_error_hist_grid(self, plt, signals, save_path, suptitle):
         nrows, ncols = self._grid_shape(len(signals))
         fig, axes = plt.subplots(nrows, ncols, figsize=(7 * ncols, 3 * nrows), squeeze=False)
+        csv_rows = []
 
         for idx, (key, label, unit) in enumerate(signals):
             ax = axes[idx // ncols][idx % ncols]
@@ -1030,6 +1050,9 @@ class TireForceBenchmarkNode(Node):
                 continue
             errors = [g - e for g, e in zip(hist.gt, hist.est)]
             mean_err = float(np.mean(errors))
+            # Raw error samples, not bin counts: the cross-scenario overlay
+            # re-bins several runs onto one axis and needs the samples.
+            csv_rows.extend([key, unit, err] for err in errors)
             ax.hist(errors, bins=40, color=COLOR_GT, alpha=0.75,
                     edgecolor='white', linewidth=0.3, label='Error samples')
             ax.axvline(0.0, color=COLOR_MUTED, linestyle=':', linewidth=1.2, label='Zero error')
@@ -1046,6 +1069,7 @@ class TireForceBenchmarkNode(Node):
         fig.suptitle(suptitle, fontsize=14)
         fig.tight_layout()
         self._savefig(fig, save_path)
+        self._write_plot_csv(save_path, ['signal', 'unit', 'error_gt_minus_est'], csv_rows)
         plt.close(fig)
 
     def _plot_parity_grid(self, plt, signals, save_path, suptitle):
@@ -1057,6 +1081,7 @@ class TireForceBenchmarkNode(Node):
         # whole run.
         nrows, ncols = self._grid_shape(len(signals))
         fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 4.3 * nrows), squeeze=False)
+        csv_rows = []
 
         for idx, (key, label, unit) in enumerate(signals):
             ax = axes[idx // ncols][idx % ncols]
@@ -1070,6 +1095,7 @@ class TireForceBenchmarkNode(Node):
             est = np.asarray(hist.est)
             ax.scatter(gt, est, s=10, alpha=0.35, color=COLOR_GT,
                       edgecolors='none', label='Samples')
+            csv_rows.extend([key, unit, g, e] for g, e in zip(hist.gt, hist.est))
 
             lo = float(min(gt.min(), est.min()))
             hi = float(max(gt.max(), est.max()))
@@ -1103,6 +1129,8 @@ class TireForceBenchmarkNode(Node):
         # reserve the margin explicitly instead.
         fig.tight_layout(rect=(0, 0, 1, 0.96))
         self._savefig(fig, save_path)
+        self._write_plot_csv(
+            save_path, ['signal', 'unit', 'ground_truth', 'estimate'], csv_rows)
         plt.close(fig)
 
     def _plot_pacejka_curve(self, plt, save_path):
@@ -1132,6 +1160,7 @@ class TireForceBenchmarkNode(Node):
 
         fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
         any_data = False
+        csv_rows = []
         for ax, (key, label, params, fz) in zip(axes, axle_specs):
             hist = self.slip_history[key]
             if len(hist.stamps) == 0:
@@ -1155,6 +1184,12 @@ class TireForceBenchmarkNode(Node):
             ax.set_ylabel(r'Lateral force $F_y$ [N]')
             ax.legend(loc='best')
 
+            csv_rows.extend(
+                [key, f'{fz:.4f}', 'measured', a, f] for a, f in zip(alpha, fy_gt))
+            csv_rows.extend(
+                [key, f'{fz:.4f}', 'identified_model', a, f]
+                for a, f in zip(alpha_sweep, fy_model))
+
         if not any_data:
             plt.close(fig)
             return
@@ -1162,6 +1197,8 @@ class TireForceBenchmarkNode(Node):
         fig.suptitle('Pacejka Magic Formula Validation: $F_y$ vs. Slip Angle', fontsize=14)
         fig.tight_layout()
         self._savefig(fig, save_path)
+        self._write_plot_csv(
+            save_path, ['axle', 'fz_N', 'series', 'alpha_rad', 'fy_N'], csv_rows)
         plt.close(fig)
 
     def vehicle_physics_callback(self, msg: String):
@@ -1263,6 +1300,7 @@ class TireForceBenchmarkNode(Node):
         ]
 
         fig, axes = plt.subplots(2, 1, figsize=(7, 7))
+        csv_rows = []
         for ax, (key, title, identified_params, nominal_params, fz, ylabel, xlabel) in zip(axes, axle_specs):
             fy_identified = pacejka_formula(identified_params, alpha_sweep, fz)
             if use_physx:
@@ -1285,6 +1323,7 @@ class TireForceBenchmarkNode(Node):
             else:
                 fy_nominal = pacejka_formula(nominal_params, alpha_sweep, fz)
                 nominal_label = 'Nominal Model'
+                mu = float('nan')
             ax.plot(alpha_sweep, fy_identified, color=COLOR_EST, linewidth=2.0, label='Identified Model')
             ax.plot(alpha_sweep, fy_nominal, color=COLOR_NOMINAL, linewidth=2.0, label=nominal_label)
             ax.set_title(title)
@@ -1292,19 +1331,36 @@ class TireForceBenchmarkNode(Node):
             ax.set_ylabel(ylabel)
             ax.legend(loc='best')
 
+            # B/C/D/E repeat down the axle's rows: redundant, but it makes the
+            # identified coefficients readable straight out of this one file,
+            # which is what the cross-scenario comparison groups on.
+            b, c, d, e = (list(identified_params) + [float('nan')] * 4)[:4]
+            csv_rows.extend(
+                [key, f'{fz:.4f}', self.nominal_source, mu, b, c, d, e, a, fi, fn]
+                for a, fi, fn in zip(alpha_sweep, fy_identified, fy_nominal))
+
         if iteration is not None:
             fig.suptitle(f'Identification Iteration {iteration}', fontsize=14)
         fig.tight_layout()
         self._savefig(fig, save_path)
+        self._write_plot_csv(
+            save_path,
+            ['axle', 'fz_N', 'nominal_source', 'mu', 'B', 'C', 'D', 'E',
+             'alpha_rad', 'fy_identified_N', 'fy_nominal_N'],
+            csv_rows)
         plt.close(fig)
 
     def _plot_metrics_table(self, plt, signals, save_path):
         col_labels = ['Signal', 'N', 'RMSE', 'MAE', 'NRMSE', 'MaxAE', 'Bias', 'Std', 'R2']
         rows = []
+        # The CSV carries the signal key too: the comparison pass joins on it,
+        # and the display label is free to change without breaking that.
+        csv_rows = []
         for key, label, _unit in signals:
             m = self.metrics[key].metrics()
             if m['n_samples'] == 0:
                 rows.append([label, '0', '-', '-', '-', '-', '-', '-', '-'])
+                csv_rows.append([key] + rows[-1])
                 continue
             nrmse = f"{m['nrmse']:.3f}" if not math.isnan(m['nrmse']) else 'N/A'
             r2 = f"{m['r_squared']:.3f}" if not math.isnan(m['r_squared']) else 'N/A'
@@ -1312,6 +1368,7 @@ class TireForceBenchmarkNode(Node):
                 label, str(m['n_samples']), f"{m['rmse']:.3f}", f"{m['mae']:.3f}",
                 nrmse, f"{m['max_ae']:.3f}", f"{m['bias']:.3f}", f"{m['std_dev']:.3f}", r2,
             ])
+            csv_rows.append([key] + rows[-1])
 
         fig, ax = plt.subplots(figsize=(13, 0.4 * len(rows) + 1.2))
         ax.axis('off')
@@ -1330,6 +1387,7 @@ class TireForceBenchmarkNode(Node):
         fig.suptitle('Benchmark Metrics Summary', fontsize=14)
         fig.tight_layout()
         self._savefig(fig, save_path)
+        self._write_plot_csv(save_path, ['signal_key'] + col_labels, csv_rows)
         plt.close(fig)
 
     def destroy_node(self):

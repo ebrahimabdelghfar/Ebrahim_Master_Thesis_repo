@@ -22,7 +22,8 @@ from adaptive_controller_interfaces.srv import IdentifiedParam
 
 # Import helpers - handle both installed and development paths
 try:
-    from helpers.train_model import nn_train, get_model_param, resolve_device
+    from helpers.train_model import (nn_train, get_model_param, resolve_device,
+                                     params_file, NN_PARAMS_ENV)
     from helpers.pacejka_formula import pacejka_formula
     from helpers.benchmarking_metrics import OnlineBenchmark
     from helpers.friction_warmstart import estimate_mu_from_buffer, estimate_mu_from_imu
@@ -33,7 +34,8 @@ except ImportError:
     src_path = os.path.dirname(os.path.abspath(__file__))
     if src_path not in sys.path:
         sys.path.insert(0, src_path)
-    from helpers.train_model import nn_train, get_model_param, resolve_device
+    from helpers.train_model import (nn_train, get_model_param, resolve_device,
+                                     params_file, NN_PARAMS_ENV)
     from helpers.pacejka_formula import pacejka_formula
     from helpers.benchmarking_metrics import OnlineBenchmark
     from helpers.friction_warmstart import estimate_mu_from_buffer, estimate_mu_from_imu
@@ -253,10 +255,15 @@ class OnTrackSysId(Node):
     def load_parameters(self):
         """
         Load neural network parameters from params/nn_params.yaml
+        (or SYSID_NN_PARAMS_FILE, see params_file()).
         """
-        yaml_file = os.path.join(self.package_path, 'params', 'nn_params.yaml')
+        yaml_file = params_file(NN_PARAMS_ENV, 'nn_params.yaml', self.package_path)
         with open(yaml_file, 'r') as file:
             self.nn_params = yaml.safe_load(file)
+        if os.environ.get(NN_PARAMS_ENV, '').strip():
+            # WARN, not INFO: the node runs at --log-level warn, and an
+            # overridden parameter set is exactly what a run log must record.
+            self.get_logger().warn(f'{NN_PARAMS_ENV} override in effect: {yaml_file}')
 
     def log_torch_device(self):
         """

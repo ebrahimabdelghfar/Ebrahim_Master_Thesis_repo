@@ -237,6 +237,13 @@ class LapTracker:
     def ready(self) -> bool:
         return self._x is not None and self._x.size > 0
 
+    def track_length(self) -> float:
+        return self._track_length
+
+    def last_s(self):
+        """Arc-length of the last sample, or None before the first update."""
+        return self._last_s
+
     def nearest_s(self, x: float, y: float) -> float:
         dx = self._x - x
         dy = self._y - y
