@@ -1,0 +1,5 @@
+scenario,category,value
+ours,RMS,0.3813295163599772
+ours,Max,2.030489
+Baseline-NN-MSE,RMS,0.38795642808848635
+Baseline-NN-MSE,Max,1.482388

@@ -1,0 +1,5 @@
+scenario,category,value
+ours,front_sum_fy,68.84
+ours,rear_sum_fy,39.389
+Baseline-NN-MSE,front_sum_fy,49.888
+Baseline-NN-MSE,rear_sum_fy,54.694
