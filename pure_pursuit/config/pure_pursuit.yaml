@@ -5,9 +5,9 @@ pure_pursuit:
     # (divided by 1 + lookahead_curvature_gain * |kappa|), then clamped to
     # [lookahead_min, lookahead_max]. lookahead_distance is used only when
     # adaptive_lookahead is false. All are runtime-settable via ros2 param set.
-    adaptive_lookahead: true
+    adaptive_lookahead: false
     lookahead_gain: 0.35            # s, lookahead per m/s of speed
-    lookahead_min: 4.5              # m
+    lookahead_min: 5.5              # m
     lookahead_max: 12.0             # m
     lookahead_curvature_gain: 5.0   # m, 0.0 disables the corner shortening
     lookahead_distance: 5.5         # m, fixed fallback

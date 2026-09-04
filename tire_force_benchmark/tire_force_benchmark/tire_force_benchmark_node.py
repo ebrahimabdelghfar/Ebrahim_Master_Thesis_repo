@@ -55,6 +55,14 @@ STATE_SIGNALS = [
     ('v_y', 'Lateral velocity v_y', 'm/s'),
     ('omega', 'Yaw rate omega', 'rad/s'),
 ]
+# Persistence: predict the next state as the last measured one. The one-step
+# prediction above integrates a single ~33 ms Euler step from that same
+# measurement, so without this reference an error concentrated at zero says
+# nothing about the tire model - it only says the state barely moved.
+STATE_BASELINE_SIGNALS = [
+    ('v_y_persistence', 'v_y persistence baseline', 'm/s'),
+    ('omega_persistence', 'omega persistence baseline', 'rad/s'),
+]
 # Peak friction per axle: the simulator's reported tire_friction against the
 # identified Pacejka D coefficient (see _benchmark_mu).
 MU_SIGNALS = [
@@ -285,12 +293,15 @@ class TireForceBenchmarkNode(Node):
             'total_sum_fy': OnlineBenchmark('Vehicle total Fy sum'),
             'v_y': OnlineBenchmark('v_y (lateral velocity)'),
             'omega': OnlineBenchmark('omega (yaw rate)'),
+            'v_y_persistence': OnlineBenchmark('v_y (persistence baseline)'),
+            'omega_persistence': OnlineBenchmark('omega (persistence baseline)'),
             'front_mu': OnlineBenchmark('mu_f (front peak friction)'),
             'rear_mu': OnlineBenchmark('mu_r (rear peak friction)'),
         }
         self.history = {
             key: HistoryBuffer(self.plot_max_points)
-            for key, _, _ in FORCE_SIGNALS + STATE_SIGNALS + MU_SIGNALS
+            for key, _, _ in (FORCE_SIGNALS + STATE_SIGNALS
+                              + STATE_BASELINE_SIGNALS + MU_SIGNALS)
         }
         # Per-axle (slip_angle, Fy_ground_truth, Fy_model) triples for the
         # Pacejka curve validation plot (internal_pacejka mode only - see
@@ -742,7 +753,8 @@ class TireForceBenchmarkNode(Node):
                 self.history[key].add(stamp_sec, mu_gt, mu_est)
 
     def _build_summary_lines(self):
-        keys = [key for key, _, _ in FORCE_SIGNALS + STATE_SIGNALS + MU_SIGNALS]
+        keys = [key for key, _, _ in (FORCE_SIGNALS + STATE_SIGNALS
+                                      + STATE_BASELINE_SIGNALS + MU_SIGNALS)]
         return [self.metrics[key].summary() for key in keys]
 
     def _log_and_publish_summary(self):
@@ -840,7 +852,8 @@ class TireForceBenchmarkNode(Node):
         omega_pred = self.prev_omega + omega_dot * dt
 
         stamp_sec = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-        self._benchmark_state(stamp_sec, v_x, v_y_real, omega_real, delta, v_y_pred, omega_pred)
+        self._benchmark_state(stamp_sec, v_x, v_y_real, omega_real, delta, v_y_pred, omega_pred,
+                              self.prev_v_y, self.prev_omega)
 
         self.prev_v_y = v_y_real
         self.prev_omega = omega_real
@@ -848,13 +861,18 @@ class TireForceBenchmarkNode(Node):
     def ackermann_callback(self, msg: AckermannDriveStamped):
         self.current_delta = msg.drive.steering_angle
 
-    def _benchmark_state(self, stamp_sec, v_x, v_y_real, omega_real, delta, v_y_pred, omega_pred):
+    def _benchmark_state(self, stamp_sec, v_x, v_y_real, omega_real, delta, v_y_pred, omega_pred,
+                         v_y_prev, omega_prev):
         self.metrics['v_y'].update(v_y_real, v_y_pred)
         self.metrics['omega'].update(omega_real, omega_pred)
+        self.metrics['v_y_persistence'].update(v_y_real, v_y_prev)
+        self.metrics['omega_persistence'].update(omega_real, omega_prev)
 
         if self.plot_output_dir:
             self.history['v_y'].add(stamp_sec, v_y_real, v_y_pred)
             self.history['omega'].add(stamp_sec, omega_real, omega_pred)
+            self.history['v_y_persistence'].add(stamp_sec, v_y_real, v_y_prev)
+            self.history['omega_persistence'].add(stamp_sec, omega_real, omega_prev)
 
         sensor_msg = Float64MultiArray()
         sensor_msg.data = [v_x, v_y_real, omega_real, delta]
@@ -922,8 +940,9 @@ class TireForceBenchmarkNode(Node):
             'Tire Lateral Force Error Distribution',
         )
         self._plot_error_hist_grid(
-            plt, STATE_SIGNALS, out_dir / 'vehicle_states_error_hist.png',
-            'Vehicle State Error Distribution',
+            plt, STATE_SIGNALS + STATE_BASELINE_SIGNALS,
+            out_dir / 'vehicle_states_error_hist.png',
+            'Vehicle State Error Distribution (model vs. persistence baseline)',
         )
         self._plot_parity_grid(
             plt, FORCE_SIGNALS, out_dir / 'tire_forces_parity.png',
@@ -944,7 +963,8 @@ class TireForceBenchmarkNode(Node):
         self._plot_pacejka_curve(plt, out_dir / 'pacejka_curve_validation.png')
         self._plot_identified_vs_nominal(plt, out_dir / 'pacejka_identified_vs_nominal.png')
         self._plot_metrics_table(
-            plt, FORCE_SIGNALS + STATE_SIGNALS + MU_SIGNALS, out_dir / 'metrics_summary.png')
+            plt, FORCE_SIGNALS + STATE_SIGNALS + STATE_BASELINE_SIGNALS + MU_SIGNALS,
+            out_dir / 'metrics_summary.png')
 
     def _savefig(self, fig, save_path):
         # Write to a temp file then rename: if export is killed mid-figure,

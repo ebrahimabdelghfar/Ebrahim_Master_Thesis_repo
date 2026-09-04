@@ -1,0 +1,5 @@
+scenario,category,value
+ours,front_mu,0.071
+ours,rear_mu,0.051
+Baseline-NN-MSE,front_mu,0.803
+Baseline-NN-MSE,rear_mu,0.801

@@ -284,7 +284,7 @@ def test_state_prediction_matches_reference_formula():
         assert node.have_identified_params is True
 
         captured = []
-        node._benchmark_state = lambda stamp_sec, v_x, v_y_real, omega_real, delta, v_y_pred, omega_pred: (
+        node._benchmark_state = lambda stamp_sec, v_x, v_y_real, omega_real, delta, v_y_pred, omega_pred, v_y_prev, omega_prev: (
             captured.append((v_y_pred, omega_pred))
         )
 

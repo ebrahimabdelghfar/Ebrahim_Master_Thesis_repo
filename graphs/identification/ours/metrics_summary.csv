@@ -1,0 +1,14 @@
+signal_key,Signal,N,RMSE,MAE,NRMSE,MaxAE,Bias,Std,R2
+fl_fy,FL Fy,9758,32.632,24.931,0.777,71.060,-7.702,31.710,0.950
+fr_fy,FR Fy,9758,34.672,26.523,0.788,71.807,-9.084,33.461,0.949
+rl_fy,RL Fy,9758,18.828,14.485,0.461,42.844,-4.393,18.308,0.981
+rr_fy,RR Fy,9758,20.257,15.623,0.473,47.283,-5.754,19.422,0.980
+front_sum_fy,Front axle Fy sum,9758,67.254,51.445,0.782,133.891,-16.786,65.126,0.949
+rear_sum_fy,Rear axle Fy sum,9758,39.008,30.100,0.466,84.143,-10.147,37.665,0.981
+total_sum_fy,Vehicle total Fy sum,9758,106.134,81.471,0.625,213.586,-26.933,102.660,0.966
+v_y,Lateral velocity v_y,19292,0.028,0.019,0.454,0.184,-0.005,0.027,0.987
+omega,Yaw rate omega,19292,0.036,0.018,1.476,0.629,-0.001,0.036,0.938
+v_y_persistence,v_y persistence baseline,19292,0.010,0.006,0.156,0.203,0.000,0.010,0.998
+omega_persistence,omega persistence baseline,19292,0.005,0.003,0.224,0.073,-0.000,0.005,0.999
+front_mu,Front axle peak friction $\mu_f$,9758,0.071,0.057,0.068,0.167,0.014,0.070,N/A
+rear_mu,Rear axle peak friction $\mu_r$,9758,0.051,0.051,0.049,0.069,0.033,0.039,N/A

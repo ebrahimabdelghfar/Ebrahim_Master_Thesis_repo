@@ -4,7 +4,7 @@
 # created under <graphs_root>/identification/<name> and <graphs_root>/control/<name>,
 # wiped before the run so a shorter run never leaves an earlier run's figures behind.
 
-n_laps: 2                      # TIMED laps. The car spawns behind the raceline's s=0,
+n_laps: 3                      # TIMED laps. The car spawns behind the raceline's s=0,
                                # so the drive to the start line is an untimed out-lap
                                # on top of this (see lap_monitor.py).
 lap_timeout_s: 1200            # Abort a scenario that stops making progress.
@@ -17,12 +17,12 @@ nominal_tire_friction: 1.5     # vehicle.physics.wheels[*].tire_friction in the 
                                # PhysX on top of this, so the effective mu is ~1.05.
 
 scenarios:
-  - name: test2_with_enhanced
+  - name: ours
     nn_params_yaml: On-Track-SysID/params/nn_params.yaml
     pacejka_params_yaml: On-Track-SysID/params/pacejka_params.yaml
     friction_schedule: constant
 
-  - name: test1_with_base_line
+  - name: Baseline-NN-MSE
     nn_params_yaml: On-Track-SysID/params/nn_params_base_line.yaml
     pacejka_params_yaml: On-Track-SysID/params/pacejka_params_base_line.yaml
     friction_schedule: constant
