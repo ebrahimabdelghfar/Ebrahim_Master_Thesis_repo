@@ -260,15 +260,18 @@ class BenchmarkRunner:
             log(f'SCENARIO FAILED ({name}): {exc}')
             return False
         finally:
-            # Each step is isolated: stopping the launches is the one that must
-            # happen no matter what, because a skipped SIGINT leaves the sysid
-            # and control stacks driving the car after the runner has exited.
-            self._safely('restoring nominal friction', self._stop_friction, friction)
-            for key in SHUTDOWN_ORDER:
-                if key in launches:
-                    self._safely(f'stopping {key}', launches[key].shutdown)
-            self._safely('returning the bridge to unconfigured', self._deactivate_bridge)
-            self._verify_clean()
+            self._teardown(launches, friction)
+
+    def _teardown(self, launches, friction):
+        """Every step isolated, because stopping the launches must happen no
+        matter what: a skipped SIGINT leaves the identification and control
+        stacks driving the car after the runner has exited."""
+        self._safely('restoring nominal friction', self._stop_friction, friction)
+        for key in SHUTDOWN_ORDER:
+            if key in launches:
+                self._safely(f'stopping {key}', launches[key].shutdown)
+        self._safely('returning the bridge to unconfigured', self._deactivate_bridge)
+        self._verify_clean()
 
     def _stop_friction(self, friction):
         if friction is None:
