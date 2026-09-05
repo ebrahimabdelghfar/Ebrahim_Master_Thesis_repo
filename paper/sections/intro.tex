@@ -35,16 +35,17 @@ RMSE than nonlinear least squares under noise, from \SI{30}{\second} of driving
 
 This paper asks what the pipeline identifies when it is moved from a
 \SI{3.7}{\kilo\gram}, \SI{0.32}{\meter}-wheelbase platform to a full-scale
-Formula Student vehicle: \SI{269.8}{\kilo\gram}, \SI{1.53}{\meter} wheelbase,
-\SI{16}{\degree} of road-wheel lock, driven at
-\SIrange{9.6}{25.8}{\meter\per\second}. The question is one of identifiability
+Formula Student vehicle: \SI{269.6}{\kilo\gram}, \SI{1.53}{\meter} wheelbase,
+\SI{16}{\degree} of road-wheel lock, following a reference speed profile of
+\SIrange{9.6}{25.8}{\meter\per\second} and achieving
+\SIrange{9.2}{26.5}{\meter\per\second} in the identification data. The question is one of identifiability
 rather than of parameter transfer. Two scale-dependent mechanisms, both latent
 at 1:10, break the estimate:
 
 \begin{enumerate}
 \item \textbf{Excitation collapses inside the virtual-data step.} The Pacejka
 fit never sees the recorded lap; it sees the synthetic rollout, whose reachable
-friction $\mu_{\mathrm{reach}}\!\approx\!v^{2}\delta_{\max}/(gL)$ is a property
+friction $\mu_{\mathrm{reach}}\!\approx\!v^{2}\delta_{\mathrm{sweep}}/(gL)$ is a property
 of the rollout configuration, not of the tire. A rollout speed inherited from
 the scaled platform caps it at $0.43$ here. Below the tire's peak the Magic
 Formula degenerates to $F_{y}\approx F_{z}(BCD)\alpha$: only the product $BCD$
@@ -92,8 +93,9 @@ is representative there and is not here.
 $1.5\times$ the 99th percentile of the observed steering, so the fit cannot
 read the residual network's extrapolation as grip; and the Tikhonov target is
 frozen at the configured prior while the optimiser's start point tracks the
-iterations. Together they remove a \num{1.01}$\rightarrow$\num{1.87} drift of
-the peak factor over six iterations.
+iterations. Together they remove a drift of the peak factor over six iterations that took
+$D$ from the \num{1.009}/\num{1.002} front/rear prior to \num{1.5402} front and
+\num{1.8721} rear.
 
 \item \textbf{Measurement-side corrections for full-scale deployment}
 (Section~\ref{subsec:measurement}): slip angles built from the \emph{achieved}
@@ -119,10 +121,13 @@ set.
 \item \textbf{A closed-loop evaluation against the inherited
 configuration} (Section~\ref{sec:results}), on a static \num{1.05} friction
 surface over three timed laps, scored throughout against the simulator's own
-per-wheel forces. The corrected pipeline holds its peak factor within
+per-wheel forces. The corrected pipeline \emph{preserves} a peak factor within
 \num{0.05} of the plant's effective friction where the inherited configuration
 starts and ends on its box constraint, and halves the lateral tracking error
-under MPC. We
+under MPC. On this trajectory that factor is carried by the configured prior
+rather than recovered from the lap---the accepted fits return the prior to four
+decimal places, and Section~\ref{subsubsec:priorprovenance} states where the
+prior came from. We
 report the two axes on which the inherited configuration is better, and the
 reason: the lap reaches \SI{2.2}{\degree} of slip, where a wrong peak factor
 costs nothing.
@@ -130,7 +135,7 @@ costs nothing.
 
 The paper follows that order: Section~\ref{sec:related} places the work against
 the state of the art; Section~\ref{sec:problem} states the identification
-problem and its structural identifiability properties;
+problem and its practical-identifiability properties;
 Section~\ref{sec:platform} describes the simulation architecture and data
 pipeline; Section~\ref{sec:method} the identification methodology;
 Section~\ref{sec:results} the results; Section~\ref{sec:integration} how the

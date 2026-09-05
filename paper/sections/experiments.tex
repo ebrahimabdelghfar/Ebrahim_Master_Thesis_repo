@@ -105,6 +105,34 @@ excitation-aware rollout of Section~\ref{subsec:excitation}, which both use.
 \end{threeparttable}
 \end{table}
 
+\subsubsection{Provenance of the tire prior}
+\label{subsubsec:priorprovenance}
+The prior $\phip^{0}$ that both arms start from, and that the Tikhonov term of
+\eqref{eq:fitobj} pulls toward, is the measured tire of Table~\ref{tab:ref}. It
+was obtained by fitting \eqref{eq:mf} to CARLA's own per-wheel telemetry
+(\texttt{feedback/tire\_forces}: slip angle, lateral force, normal load) over a
+dedicated limit-excitation run that reached $\alpha=\SI{0.37}{\radian}$, axle
+$\mu=\num{1.05}$ and \SI{1.50}{\g}, by differential evolution, at
+\SI{135}{\newton} front and \SI{85}{\newton} rear residual RMSE. Two
+consequences have to be stated plainly. First, that is the same channel the
+force and friction results below are scored against, so the prior is not
+independent of the validation data. Second, the manoeuvre that produced it is
+one the pipeline itself is not allowed to run: the raceline of
+Section~\ref{subsubsec:raceline} peaks at \SI{0.51}{\g} and never approaches
+the tire's peak, which is precisely the excitation deficit this paper is about.
+
+The consequence for the numbers is direct. On all six accepted identifications
+the \texttt{Ours} arm returns the eight prior coefficients to four decimal
+places (Section~\ref{subsec:resultstire}), so the peak-friction accuracy
+reported in Section~\ref{subsec:resultsmu}---$\mu$ RMSE \num{0.041} front and
+\num{0.048} rear---is the accuracy of a prior that the fit did not move, not a
+peak factor recovered from the lap. What the corrected pipeline demonstrably
+does on this trajectory is \emph{preserve} a physically valid peak factor where
+the inherited configuration destroys it by railing $D$ on its bound; that, and
+not identification of the peak, is the claim these runs support.
+Section~\ref{subsec:sweep} is where the peak factor is shown to be recoverable
+from data, on a plant where the excitation can be varied.
+
 \subsubsection{What is measured}
 Three families of quantity are recorded, each against the plant's own
 telemetry: the identified tire model (coefficients, axle force, peak friction),
@@ -127,8 +155,11 @@ the fit loses is lost to the prior, to the start point or to a local minimum;
 everything it loses is lost to excitation. Table~\ref{tab:sweep} and
 Fig.~\ref{fig:sweep} report the grid.
 
-Two axes are swept, rollout speed $v$ and true $D$, and each cell is repeated
-over five noise realisations. The repetition is over noise and not over the
+Three axes are swept---rollout speed $v$, sweep amplitude
+$\delta_{\mathrm{sweep}}$, and true $D$---and each cell is repeated over five
+noise realisations. The two configuration axes are swept one at a time, because
+$\mu_{\mathrm{reach}}$ is a function of both and a claim that it, and not the
+speed, is what governs the fit cannot be tested by moving the speed alone. The repetition is over noise and not over the
 solver because the noise-free fit is exactly seed-invariant here: five
 multi-start seeds return the same coefficients to four decimal places, and so
 does a jitter width seven times wider, which is the direct measurement behind
@@ -137,50 +168,63 @@ is Gaussian on the rolled-out states at the measured one-step persistence RMSE
 of the two CARLA runs, $\sigma_{v_{y}}=\SI{0.009}{\meter\per\second}$ and
 $\sigma_{\omega}=\SI{0.005}{\radian\per\second}$
 (Table~\ref{tab:comparison}), and is what the intervals in
-Table~\ref{tab:sweep} are computed over.
+Table~\ref{tab:sweep} are computed over. Because the front and rear fits of one
+rollout share that rollout, the interval is taken over the five realisations
+and not over the ten fits.
 
-\begin{table}[t]
-\caption{Peak factor $\hat D$ recovered from a known tire, against rollout speed.}
+\begin{table*}[t]
+\caption{Peak factor $\hat D$ recovered from a known tire, along both arguments
+of $\mu_{\mathrm{reach}}$.}
 \label{tab:sweep}
 \centering
 \begin{threeparttable}
-\scriptsize
-\setlength{\tabcolsep}{3pt}
+\footnotesize
+\setlength{\tabcolsep}{6pt}
 \begin{tabular}{@{}rrcccc@{}}
 \toprule
-$v$ & $\mu_{\mathrm{reach}}$ & \multicolumn{4}{c}{$\hat D$ (railed of 8) at true $D$ of}\\
+swept & $\mu_{\mathrm{reach}}$ & \multicolumn{4}{c}{$\hat D$ (railed of 8) at true $D$ of}\\
 \cmidrule(l){3-6}
-[\si{\meter\per\second}] & & 0.70 & 1.05 & 1.40 & 1.80\\
+value & & 0.70 & 1.05 & 1.40 & 1.80\\
 \midrule
-4 & 0.43 & \num{0.52}$\pm$\num{0.02} (1.8) & \num{0.57}$\pm$\num{0.02} (2.8) & \num{0.59}$\pm$\num{0.02} (3.8) & \num{0.50}$\pm$\num{0.07} (7)\\
-6 & 0.96 & \num{0.68}$\pm$\num{0.01} (1) & \num{1.04}$\pm$\num{0.02} (1.2) & \num{1.22}$\pm$\num{0.04} (1.8) & \num{1.26}$\pm$\num{0.06} (2)\\
-8 & 1.70 & \num{0.69}$\pm$\num{0.02} (1) & \num{1.02}$\pm$\num{0.02} (0.8) & \num{1.36}$\pm$\num{0.02} (0) & \num{1.79}$\pm$\num{0.03} (1.2)\\
-10 & 2.66 & \num{0.70}$\pm$\num{0.03} (0) & \num{1.03}$\pm$\num{0.03} (0.4) & \num{1.37}$\pm$\num{0.03} (1) & \num{1.75}$\pm$\num{0.03} (0)\\
-13 & 4.49 & \num{0.72}$\pm$\num{0.04} (0) & \num{1.05}$\pm$\num{0.04} (0) & \num{1.38}$\pm$\num{0.05} (0.4) & \num{1.77}$\pm$\num{0.05} (0.4)\\
-15 & 5.98 & \num{0.76}$\pm$\num{0.05} (1) & \num{1.05}$\pm$\num{0.05} (0) & \num{1.39}$\pm$\num{0.06} (0) & \num{1.78}$\pm$\num{0.06} (0)\\
-20 & 10.64 & \num{0.92}$\pm$\num{0.06} (1) & \num{1.14}$\pm$\num{0.08} (0.4) & \num{1.43}$\pm$\num{0.06} (0) & \num{1.80}$\pm$\num{0.07} (0)\\
+\multicolumn{6}{@{}l}{\emph{(a) rollout speed $v$ [\si{\meter\per\second}] swept at $\delta_{\mathrm{sweep}}=\SI{0.40}{\radian}$}}\\
+4 & 0.43 & \num{0.52}$\pm$\num{0.036} (1.8) & \num{0.57}$\pm$\num{0.013} (2.8) & \num{0.59}$\pm$\num{0.018} (3.8) & \num{0.50}$\pm$\num{0.001} (7)\\
+6 & 0.96 & \num{0.68}$\pm$\num{0.001} (1) & \num{1.04}$\pm$\num{0.014} (1.2) & \num{1.22}$\pm$\num{0.066} (1.8) & \num{1.26}$\pm$\num{0.097} (2)\\
+8 & 1.70 & \num{0.69}$\pm$\num{0.001} (1) & \num{1.02}$\pm$\num{0.001} (0.8) & \num{1.36}$\pm$\num{0.002} (0) & \num{1.79}$\pm$\num{0.025} (1.2)\\
+10 & 2.66 & \num{0.70}$\pm$\num{0.000} (0) & \num{1.03}$\pm$\num{0.001} (0.4) & \num{1.37}$\pm$\num{0.002} (1) & \num{1.75}$\pm$\num{0.002} (0)\\
+13 & 4.49 & \num{0.72}$\pm$\num{0.001} (0) & \num{1.05}$\pm$\num{0.002} (0) & \num{1.38}$\pm$\num{0.001} (0.4) & \num{1.77}$\pm$\num{0.002} (0.4)\\
+15 & 5.98 & \num{0.76}$\pm$\num{0.009} (1) & \num{1.05}$\pm$\num{0.002} (0) & \num{1.39}$\pm$\num{0.002} (0) & \num{1.78}$\pm$\num{0.001} (0)\\
+20 & 10.64 & \num{0.92}$\pm$\num{0.004} (1) & \num{1.14}$\pm$\num{0.005} (0.4) & \num{1.43}$\pm$\num{0.002} (0) & \num{1.80}$\pm$\num{0.005} (0)\\
+\addlinespace
+\multicolumn{6}{@{}l}{\emph{(b) $\delta_{\mathrm{sweep}}$ [\si{\radian}] swept at $v=\SI{15}{\meter\per\second}$}}\\
+0.03 & 0.45 & \num{0.80}$\pm$\num{0.019} (2) & \num{1.10}$\pm$\num{0.041} (2) & \num{1.08}$\pm$\num{0.182} (2) & \num{1.09}$\pm$\num{0.397} (2)\\
+0.06 & 0.90 & \num{0.92}$\pm$\num{0.003} (2) & \num{1.30}$\pm$\num{0.008} (2) & \num{1.68}$\pm$\num{0.017} (2) & \num{1.80}$\pm$\num{0.232} (3.4)\\
+0.10 & 1.50 & \num{0.96}$\pm$\num{0.004} (2) & \num{1.34}$\pm$\num{0.016} (2) & \num{1.60}$\pm$\num{0.017} (1) & \num{1.97}$\pm$\num{0.030} (1.4)\\
+0.15 & 2.24 & \num{0.99}$\pm$\num{0.004} (2) & \num{1.38}$\pm$\num{0.003} (2) & \num{1.71}$\pm$\num{0.019} (2) & \num{1.98}$\pm$\num{0.009} (1)\\
+0.25 & 3.74 & \num{0.77}$\pm$\num{0.002} (2) & \num{1.12}$\pm$\num{0.004} (2) & \num{1.81}$\pm$\num{0.020} (2) & \num{2.00}$\pm$\num{0.000} (2)\\
+0.40 & 5.98 & \num{0.76}$\pm$\num{0.009} (1) & \num{1.05}$\pm$\num{0.002} (0) & \num{1.39}$\pm$\num{0.002} (0) & \num{1.78}$\pm$\num{0.001} (0)\\
+0.54 & 8.08 & \num{0.83}$\pm$\num{0.004} (1) & \num{1.08}$\pm$\num{0.002} (0) & \num{1.38}$\pm$\num{0.001} (0) & \num{1.78}$\pm$\num{0.008} (0)\\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}[flushleft]\scriptsize
-\item Unregularised, started from the true coefficients. Each cell is $\hat D$ (mean over ten fits, five noise realisations $\times$ two axles) $\pm$ the half-width of its \SI{95}{\percent} interval, with the mean number of the eight coefficients resting on a box constraint in parentheses.
-\item $\mu_{\mathrm{reach}}$ is \eqref{eq:mureach} at $\delta_{\mathrm{sweep}}=\SI{0.4}{\radian}$ and $L=\SI{1.5334}{\meter}$. The inherited rollout speed is the first row.
+\item Unregularised, started from the true coefficients. Each cell is $\hat D$ $\pm$ the half-width of its \SI{95}{\percent} $t$-interval over the five noise realisations, with the mean number of the eight coefficients resting on a box constraint in parentheses. The two axles of one rollout are not independent, so each realisation contributes the mean of its own $(\hat D_{f},\hat D_{r})$ and $n=5$; per-axle means and intervals are in \texttt{identifiability\_sweep\_summary.csv}.
+\item $\mu_{\mathrm{reach}}$ is \eqref{eq:mureach} at $L=\SI{1.5334}{\meter}$; the inherited configuration is the first row of (a). It is the Ackermann \emph{upper} bound, and above $\mu_{\mathrm{reach}}\approx2$ it detaches from what the rollout realises: at $v=\SI{20}{\meter\per\second}$ it reads \num{10.64} while the rollout's realised $\max|v_{x}\omega|/g$ is \numrange{1.40}{2.18} across the four tires. A large $\mu_{\mathrm{reach}}$ means ``far past saturation'', not a demand the tire ever sees.
 \end{tablenotes}
 \end{threeparttable}
-\end{table}
+\end{table*}
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{identifiability_sweep.pdf}
-\caption{The same grid as Table~\ref{tab:sweep}. Left: recovered peak factor
-against rollout speed, one series per true $D$ (dotted lines), mean $\pm$
-\SI{95}{\percent} interval over the noise realisations. Right: the mean number
-of coefficients resting on a box constraint. Below
-$\mu_{\mathrm{reach}}\approx D$ the fit returns the excitation rather than the
-tire---at the inherited \SI{4}{\meter\per\second} all four tires come back as
-$\hat D\approx0.5$---and the coefficients slide onto the box. The transition
-is set by $\mu_{\mathrm{reach}}$, not by speed: at
-\SI{6}{\meter\per\second} ($\mu_{\mathrm{reach}}=0.96$) the two low-grip tires
-are recovered and the two high-grip ones are not.}
+\caption{The grid of Table~\ref{tab:sweep}. Top: recovered peak factor against
+rollout speed (left, $\delta_{\mathrm{sweep}}=\SI{0.4}{\radian}$) and against
+sweep amplitude (right, $v=\SI{15}{\meter\per\second}$), one series per true
+$D$ (dotted lines), mean $\pm$ \SI{95}{\percent} interval over the noise
+realisations. Bottom: the same fits against the demand the rollout actually
+realises, $\max|v_{x}\omega|/g$, normalised by the tire's own $D$; left, the
+mean number of coefficients on a box constraint, right, $\hat D/D$. Below a
+realised demand of $D$ (dotted vertical) the fit reports the excitation and not
+the tire on both axes---downward when the speed is the limiting factor,
+upward when the sweep amplitude is---and the coefficients slide onto the box.}
 \label{fig:sweep}
 \end{figure}
 
@@ -193,7 +237,12 @@ coefficients on a bound. Second, the boundary is
 $\mu_{\mathrm{reach}}\gtrsim D$ and not a speed: at
 \SI{6}{\meter\per\second}, where $\mu_{\mathrm{reach}}=0.96$, the $0.70$ and
 $1.05$ tires are recovered to within \SI{3}{\percent} while the $1.40$ and
-$1.80$ tires are \SI{13}{\percent} and \SI{30}{\percent} short. Above
+$1.80$ tires are \SI{13}{\percent} and \SI{30}{\percent} short. The boundary is
+soft rather than sharp: the $1.05$ tire is recovered to \SI{1}{\percent} at
+$\mu_{\mathrm{reach}}=0.96$, i.e.\ slightly \emph{below} its own $D$, because a
+rollout that stops just short of the peak still traverses the curvature that
+separates $B$, $C$ and $D$. The bound predicts where the information runs out,
+not a step. Above
 $\mu_{\mathrm{reach}}=1.7$ every tire is recovered to within \SI{4}{\percent}
 with no systematic railing. Third, the failure is not the solver's: the
 noise-free fit is invariant to the multi-start seed and to the jitter width, so
@@ -206,6 +255,41 @@ $0.70$ tire at \SI{20}{\meter\per\second}), because the Magic Formula's falling
 branch is being fitted to data the plant's own curve does not produce; the
 extrapolation bound of Section~\ref{subsec:iterative} is what keeps the shipped
 configuration away from that regime.
+
+Panel (b) of Table~\ref{tab:sweep} sweeps the other argument of
+\eqref{eq:mureach}: $\delta_{\mathrm{sweep}}$ from \SI{0.03}{\radian} to the
+shipped $\delta_{\max}=\SI{0.54}{\radian}$, at a fixed
+$v=\SI{15}{\meter\per\second}$. It confirms that speed is not the governing
+variable---starving the sweep amplitude destroys $D$ just as starving the speed
+does, at the same fixed speed---and it corrects the shape of the claim in two
+ways. First, the failure is not a common bias. Where an under-speeded rollout
+returns \emph{too little} grip (every tire back at $\hat D\approx0.5$), an
+under-swept one returns too much: at $\delta_{\mathrm{sweep}}=\SI{0.06}{\radian}$
+the \num{1.05} tire comes back as \num{1.30} and the \num{1.80} tire rails on
+the \num{2.0} bound, with two of the eight coefficients on a box edge in every
+cell. What the two axes share is that $\hat D$ stops being a function of the
+tire; the direction in which it then errs is set by the rollout, which is the
+signature of an unidentified parameter rather than of a biased one.
+
+Second, the two axes do \emph{not} collapse onto a common
+$\mu_{\mathrm{reach}}$, and the reason is the upper-bound caveat of
+Section~\ref{subsec:excitation}. Equation~\eqref{eq:mureach} uses the Ackermann
+curvature, so it tracks the realised demand only while the vehicle's own
+understeer is small; the realised $\max|v_{x}\omega|/g$ saturates near the
+tire's peak while $\mu_{\mathrm{reach}}$ keeps growing, reaching \num{10.64}
+against a realised \numrange{1.40}{2.18} at
+$v=\SI{20}{\meter\per\second}$. Read against the realised demand
+(Fig.~\ref{fig:sweep}, bottom) both axes do behave alike: recovery sets in
+where the rollout actually reaches the tire's peak. Equation~\eqref{eq:mureach}
+should therefore be used as it is used in the pipeline---as a cheap screening
+bound that is conclusive when it falls below $D$---and not as a measure of the
+excitation achieved.
+
+One property of this experiment bounds how all of it should be read: the
+residual network is set to zero, so a Magic Formula is fitted to Magic-Formula
+data and the model structure is exactly matched. The recovery reported here is
+the best case, and the real pipeline's degradation at a given excitation is at
+least this bad.
 
 \subsection{Cross-run summary}
 \label{subsec:summary}
@@ -331,7 +415,14 @@ so the three are comparable. \texttt{Ours} gives
 \texttt{Baseline-NN-MSE} gives \num{19.1} and \num{18.1}, \SI{6.5}{\percent}
 and \SI{4.6}{\percent} low. The
 understeer sign is correct in both ($l_{r}C_{r}>l_{f}C_{f}$), so both sets pass
-the stability gate of Section~\ref{subsec:gates}, and only
+the stability gate of Section~\ref{subsec:gates}---but not by much in the
+baseline's case: at the same axle loads it gives
+$l_{f}C_{f}=\SI{14.10}{\kilo\newton\meter\per\radian}$ against
+$l_{r}C_{r}=\SI{14.38}{\kilo\newton\meter\per\radian}$, an understeer margin of
+\SI{2}{\percent}, where \texttt{Ours} keeps \SI{12}{\percent}
+($\num{9.74}$ against $\num{11.06}$). A set that lands \SI{2}{\percent} from an
+oversteering pair on a coefficient it did not identify is the case the gate
+exists for, and no per-coefficient bounds check sees it. and only
 \texttt{Baseline-NN-MSE}'s grip ceiling is a claim the plant cannot honour:
 \eqref{eq:gripceiling} gives \SI{2.00}{\g} for it against \SI{1.01}{\g} for
 \texttt{Ours} and $\approx\SI{1.0}{\g}$ measured.
@@ -640,7 +731,7 @@ axes that differ.}
 Axis & Baseline~\cite{ontrack2025} & This work\\
 \midrule
 Platform & 1:10, \SI{3.7}{\kilo\gram}, $L=\SI{0.32}{\meter}$ &
-Full scale, \SI{269.8}{\kilo\gram}, $L=\SI{1.53}{\meter}$\\
+Full scale, \SI{269.6}{\kilo\gram}, $L=\SI{1.53}{\meter}$\\
 Rollout speed & $\mathrm{clip}(\overline{v_{x}},2,4)\,\si{\meter\per\second}$ &
 From the measured lap, floored at \SI{15}{\meter\per\second}\\
 Reachable $\mu$ & $\approx2.0$ (adequate) & $0.43$ under the baseline clip;

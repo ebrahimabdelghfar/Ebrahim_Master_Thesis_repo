@@ -1,6 +1,10 @@
 data_collection_duration: 30
 num_of_iterations: 6   # NN-train <-> Pacejka-refit co-identification loop count (README-documented, was previously hardcoded and ignored)
-sample_dt: 0.035         # MUST match 1/rate in on_track_sys_id.py (rate=50 Hz) - single source of truth for the nominal integration step used by generate_predictions.py, simulated_data_gen, and the physics-informed loss
+sample_dt: 0.035         # Nominal integration step for generate_predictions.py, simulated_data_gen
+                        # and the physics-informed loss. EMPIRICAL: it is neither 1/rate
+                        # (0.020 s, the acquisition timer in on_track_sys_id.py) nor the
+                        # CARLA physics step (0.033 s). Kept because identification at
+                        # 0.020 and 0.035 returns the same accepted coefficients.
 nn_architecture: "s4"   # options: baseline | wide | physics_inputs | ensemble | s4
 
 ode_solver: "rk4" # options: euler | rk2 | rk4
@@ -42,7 +46,7 @@ s4:
   state_dim: 4              # N: complex state dimension per channel
   num_channels: 4            # H: number of independent SISO S4D channels
   num_layers: 1               # stacked S4D blocks (residual-connected); keep at 1 - ~30s of data, don't overfit with a deep stack
-  sequence_length: 20          # W: sliding-window length (samples) fed per training example; 20 @ 50Hz sample_dt = 0.4s, matched to tire-relaxation timescales
+  sequence_length: 20          # W: sliding-window length (samples) fed per training example; 20 * sample_dt (0.035) = 0.7 s
   dt_min: 0.001                 # learnable per-channel discretization step, log-uniform init range (standard S4D defaults) - NOT the same as sample_dt above, this is a free SSM hyperparameter, not tied to the physical 1/rate timestep
   dt_max: 0.1
   use_physics_inputs: true      # true => augment each timestep with slip angles alpha_f/alpha_r (6-dim input) before the S4D input projection

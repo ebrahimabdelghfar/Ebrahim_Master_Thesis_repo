@@ -41,17 +41,6 @@ stack testing on exactly these grounds~\cite{kaur2021simsurvey}.
 \subsection{Plant: Formula AI vehicle in CARLA}
 \label{subsec:platform}
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.86\columnwidth]{fig2.png}
-\caption{The Formula AI vehicle model, on the start point of the
-silverstone map in CARLA. Its lateral forces are produced by the engine's
-PhysX wheeled-vehicle tire model~\cite{physxvehicle} rather than by a Magic
-Formula, which is the curve of Table~\ref{tab:ref} the identifier is scored
-against. Measured geometry and mass are given in Table~\ref{tab:vehicle}.}
-\label{fig:vehicle}
-\end{figure}
-
 The plant is the driverless Formula Student--class vehicle model, instantiated in
 CARLA~\cite{carla2017} (server 0.9.16, Unreal Engine 4.26) on the
 \texttt{silverstone} map: a four-wheeled, front-steered, all-wheel-drive
@@ -76,8 +65,8 @@ Quantity  & Value & Unit\\
 \midrule
 Body mass (configured) & 240.0 & \si{\kilo\gram}\\
 Static wheel load (total)      & 2644.5 & \si{\newton}\\
-Total (kerb) mass $m$\textsuperscript{a} & 269.8 & \si{\kilo\gram}\\
-Unsprung mass\textsuperscript{b} & 29.8 & \si{\kilo\gram}\\
+Total (kerb) mass $m$\textsuperscript{a} & 269.6 & \si{\kilo\gram}\\
+Unsprung mass\textsuperscript{b} & 29.6 & \si{\kilo\gram}\\
 Front/rear static split        & 51.2 / 48.8 & \si{\percent}\\
 Wheelbase $L$                  & 1.5334 & \si{\meter}\\
 $l_{f}$ / $l_{r}$              & 0.7381 / 0.7953 & \si{\meter}\\
@@ -97,7 +86,7 @@ Drag coefficient               & 0.426 & ---\\
 \texttt{carla\_interface\_\allowbreak config.yaml}; measured values are obtained
 from the simulator's per-wheel telemetry.
 \textsuperscript{a}Total static wheel load divided by
-$g$. This is the mass every equation in this paper uses, not the configured
+$g=\SI{9.81}{\meter\per\second\squared}$ ($\num{2644.5}/\num{9.81}=\num{269.6}$). This is the mass every equation in this paper uses, not the configured
 body mass. \textsuperscript{b}Total minus body mass; not measured
 independently. \textsuperscript{c}Assumed; see
 Section~\ref{subsec:assumptions}. \textsuperscript{d}Configured wheel friction
@@ -182,7 +171,7 @@ ground truth against which the identifier is scored.}
 \label{fig:bridge}
 \end{figure*}
 
-\subsection{\bridge{}: interfaces and telemetry}
+\subsection{\textup{\bridge{}}: interfaces and telemetry}
 \label{subsec:bridge}
 
 \bridge{}~\cite{carlaasubridge} is a C\texttt{++} ROS~2 lifecycle node linked
@@ -317,14 +306,23 @@ drive command are sampled into a ring buffer by a \SI{50}{\hertz} timer for
 \SI{30}{\second}, gated on $v_{x}>\SI{1}{\meter\per\second}$. The timer runs on
 the simulation clock, which advances only at the server's \SI{0.033}{\second}
 step, so the buffer cannot acquire a new state faster than the physics produces
-one and the achieved acquisition rate is the step rate, not the timer rate. The
-interval the one-step model of Section~\ref{subsec:model} is discretised at is
-therefore set separately, at $T_{s}=\SI{0.035}{\second}$, to match the physics
-step rather than the timer. The residual \SI{6}{\percent} mismatch between the
-two is not free of consequence in principle---a timer faster than the step
-returns repeated states, and the one-step residual target
-$e_{k}=\vecx_{k+1}-\hat\vecx_{k+1}$ then carries a zero-order-hold artefact---so
-the identification was repeated at both settings. The same two configurations
+one and the achieved acquisition rate is the step rate, not the timer rate.
+
+Two distinct mismatches follow from that arrangement, and they carry different
+consequences. The first is between the acquisition timer and the physics step:
+the timer asks for a sample every \SI{0.020}{\second}, \SI{65}{\percent} more
+often than the server produces one, so a fraction of consecutive buffer entries
+are repeated states and the one-step residual target
+$e_{k}=\vecx_{k+1}-\hat\vecx_{k+1}$ carries a zero-order-hold artefact on those
+pairs. The second is between the physics step and the interval the one-step
+model of Section~\ref{subsec:model} is discretised at, which is set separately
+at $T_{s}=\SI{0.035}{\second}$ (\texttt{nn\_params.yaml: sample\_dt}) and is
+\SI{6}{\percent} longer than the step. $T_{s}$ is an empirical setting: it is
+neither the \SI{0.033}{\second} step nor the \SI{0.020}{\second} timer period,
+and it is carried because the identification proved insensitive to it over the
+range tested, not because it matches either clock. That insensitivity was
+measured rather than assumed---the identification was repeated at both
+settings. The same two configurations
 identified at $T_{s}=\SI{0.020}{\second}$ and at $T_{s}=\SI{0.035}{\second}$
 return the \emph{same} last accepted coefficient set to four decimal places in
 the corrected configuration ($B,C,D,E=\num{7.076},\num{1.346},\num{1.009},

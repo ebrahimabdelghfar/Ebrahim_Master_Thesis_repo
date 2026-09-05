@@ -62,7 +62,7 @@
 \begin{document}
 
 \title{Excitation-Aware On-Track System Identification\\
-at Full Scale}
+at Full Scale: A Simulation Study}
 
 \author{Ebrahim~Abdelghfar~Ebrahim$^{1}$,
         Hazem~Abuelanin$^{2}$,
@@ -118,11 +118,12 @@ figure and table of Section~\ref{sec:results}, and the sweep generator behind
 Table~\ref{tab:sweep} are in the repositories listed in
 Appendix~\ref{sec:refimpl}; the top-level project repository is
 \url{https://github.com/ebrahimabdelghfar/Ebrahim_Master_Thesis_repo/tree/feat-follow-premade-racing-track}. \sysid{} is an extension of the ForzaETH release
-of~\cite{ontrack2025} and inherits its licence; \bridge{} is GPL-3.0. The two
+of~\cite{ontrack2025} and is distributed under the MIT licence it declares in
+its package manifest; \bridge{} is GPL-3.0. The two
 are used as separate ROS~2 overlays communicating only over ROS~2 topics and
 services, and neither links against the other, so no combined-work obligation
 arises between them; the identification and control packages in this work are
-released under the terms the \sysid{} upstream requires.
+released under the MIT terms the \sysid{} upstream requires.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}

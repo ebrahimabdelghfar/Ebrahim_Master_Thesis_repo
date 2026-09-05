@@ -22,10 +22,18 @@ warm start identified from the curvature of the axle force curve and applied
 only as a floor---produces identifications with no railed coefficient and a
 peak factor of \num{1.009}/\num{1.002} against a plant realising \num{1.05},
 with the correct understeer sign. Run against the inherited configuration over
-three timed laps on a static surface, it holds that peak factor to \num{0.041}
-and \num{0.048} RMSE where the inherited configuration starts and ends on its
-\num{2.0} box constraint, and halves the MPC's lateral tracking error, from
-\SI{0.177}{\meter} to \SI{0.092}{\meter} RMS, at unchanged solver cost. The
+three timed laps on a static surface, it \emph{preserves} that peak factor to
+\num{0.041} and \num{0.048} RMSE where the inherited configuration starts and
+ends on its \num{2.0} box constraint, and halves the MPC's lateral tracking
+error, from \SI{0.177}{\meter} to \SI{0.092}{\meter} RMS, at unchanged solver
+cost. Preserves, not identifies: this trajectory never approaches the tire's
+peak, the accepted fits return the configured prior to four decimal places, and
+the reported peak-friction accuracy is therefore the prior's
+(Section~\ref{subsubsec:priorprovenance}). That the peak factor is recoverable
+\emph{when the excitation reaches it} is shown on a known tire in
+Section~\ref{subsec:sweep}, not on these laps. Each configuration is a single
+run, so the closed-loop margins are observations rather than estimates with a
+confidence interval. The
 inherited configuration is better on front-axle force and on lateral-velocity
 prediction, because the lap reaches \SI{2.2}{\degree} of slip and a wrong peak
 factor is not observable there---which is the same identifiability statement

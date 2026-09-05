@@ -56,7 +56,7 @@ $l_{f}C_{f}>l_{r}C_{r}$ and is then open-loop unstable above the critical speed
 $v_{\mathrm{crit}}=L\sqrt{C_{f}C_{r}/\big(m(l_{f}C_{f}-l_{r}C_{r})\big)}$
 \cite{rajamani2012}.
 
-\subsection{Structural identifiability}
+\subsection{Practical identifiability under limited excitation}
 \label{subsec:identifiability}
 
 Two properties of \eqref{eq:mf} are used throughout. First, its slope at zero
@@ -64,10 +64,18 @@ slip is $F_{z}BCD$: the cornering stiffness depends on the coefficients only
 through that product, and $E$ drops out. Second, and decisively, if the data
 does not approach the peak then \eqref{eq:mf} linearises to
 $F_{y}\approx F_{z}(BCD)\alpha$ and $B$, $C$, $D$ become mutually
-unidentifiable. This is a structural-identifiability statement in the sense of
-Bellman and {\AA}str{\"o}m~\cite{bellman1970structural} combined with the
-standard persistent-excitation argument~\cite{ljung1999sysid}, and neither is
-claimed as novel. What we claim, and
+unidentifiable. The distinction matters for what is being claimed. Given data
+that reaches the peak, \eqref{eq:mf} is \emph{structurally} identifiable in the
+sense of Bellman and {\AA}str{\"o}m~\cite{bellman1970structural}: the map from
+coefficients to noise-free outputs is injective, and no amount of excitation
+design is needed to make it so. What fails here is \emph{practical}
+(a-posteriori) identifiability~\cite{raue2009practical}: under a specific
+excitation the likelihood is flat along the $BCD$ direction, so the parameters
+are not recoverable from the data at hand even though the structure admits
+them. That is the standard persistent-excitation
+condition~\cite{ljung1999sysid,astrom1995adaptive} expressed on this model, and
+neither the structural result nor the excitation condition is claimed as
+novel. What we claim, and
 demonstrate in Section~\ref{subsec:excitation}, is that the baseline pipeline's
 virtual-data step can silently violate it, and that a bounded optimiser then
 resolves the remaining freedom by sliding onto a box edge---so the violation is
@@ -101,7 +109,7 @@ $(\alpha_{i},F_{y,i})$ by bounded least squares.
 nominal model and the residual network is reinitialised.
 \end{enumerate}
 
-The structural point that drives the rest of this paper is that stage~3
+The point that drives the rest of this paper is that stage~3
 \emph{never sees the recorded lap}. It sees the output of stage~2. The recorded
 lap enters only through the residual network, so the excitation available to
 the fit is set by the rollout configuration and not by how the vehicle was

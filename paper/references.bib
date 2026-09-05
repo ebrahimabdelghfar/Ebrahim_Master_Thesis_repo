@@ -116,7 +116,9 @@
   title     = {Cautious {NMPC} with {Gaussian} Process Dynamics for
                Autonomous Miniature Race Cars},
   booktitle = {Proc. European Control Conference (ECC)},
-  year      = {2018}
+  year      = {2018},
+  pages     = {1341--1348},
+  doi       = {10.23919/ECC.2018.8550162}
 }
 
 @article{hewing2020cautious,
@@ -124,7 +126,11 @@
   title   = {Cautious Model Predictive Control Using {Gaussian} Process
              Regression},
   journal = {IEEE Transactions on Control Systems Technology},
-  year    = {2020}
+  year    = {2020},
+  volume  = {28},
+  number  = {6},
+  pages   = {2736--2743},
+  doi     = {10.1109/TCST.2019.2949757}
 }
 
 @article{liniger2015,
@@ -273,6 +279,9 @@
              Fully Commercial Off-the-Shelf Hardware},
   journal = {Journal of Field Robotics},
   year    = {2024},
+  volume  = {42},
+  number  = {4},
+  pages   = {1037--1079},
   doi     = {10.1002/rob.22429},
   note    = {Preprint: arXiv:2403.11784}
 }
@@ -516,11 +525,12 @@
 
 @misc{physxvehicle,
   author       = {{NVIDIA Corporation}},
-  title        = {{PhysX} {SDK} Documentation: Vehicles --- Tire Force
+  title        = {{PhysX} {SDK} 4.1 Documentation: Vehicles --- Tire Force
                   Computation ({PxVehicleComputeTireForceDefault})},
-  year         = {2018},
-  howpublished = {Software documentation},
-  note         = {\url{https://nvidia-omniverse.github.io/PhysX/physx/}}
+  year         = {2019},
+  howpublished = {Software documentation, {PhysX} {SDK} 4.1, as bundled with
+                  Unreal Engine 4.26 and linked by CARLA 0.9.16},
+  note         = {\url{https://github.com/NVIDIA-Omniverse/PhysX/tree/release/104.2/physx}}
 }
 
 % --- Recursive state/parameter estimation and friction estimation ------------
@@ -564,12 +574,13 @@
 
 @article{ahn2013friction,
   author  = {Ahn, Changsun and Peng, Huei and Tseng, H. Eric},
-  title   = {Robust Estimation of Road Friction Coefficient},
+  title   = {Robust Estimation of Road Frictional Coefficient},
   journal = {IEEE Transactions on Control Systems Technology},
   year    = {2013},
   volume  = {21},
   number  = {1},
-  pages   = {1--13}
+  pages   = {1--13},
+  doi     = {10.1109/TCST.2011.2170838}
 }
 
 @article{farroni2018tripid,
@@ -606,4 +617,64 @@
   publisher = {Academic Press},
   address   = {New York, NY, USA},
   year      = {1977}
+}
+
+% --- Added in the 2026-09-05 reviewer pass -----------------------------------
+@article{raue2009practical,
+  author  = {Raue, Andreas and Kreutz, Clemens and Maiwald, Thomas and
+             Bachmann, Julie and Schilling, Marcel and
+             Klingm{\"u}ller, Ursula and Timmer, Jens},
+  title   = {Structural and Practical Identifiability Analysis of Partially
+             Observed Dynamical Models by Exploiting the Profile Likelihood},
+  journal = {Bioinformatics},
+  year    = {2009},
+  volume  = {25},
+  number  = {15},
+  pages   = {1923--1929},
+  doi     = {10.1093/bioinformatics/btp358}
+}
+
+@book{astrom1995adaptive,
+  author    = {{\AA}str{\"o}m, Karl J. and Wittenmark, Bj{\"o}rn},
+  title     = {Adaptive Control},
+  edition   = {2nd},
+  publisher = {Addison-Wesley},
+  address   = {Reading, MA, USA},
+  year      = {1995}
+}
+
+@article{khaleghian2017survey,
+  author  = {Khaleghian, Seyedmeysam and Emami, Anahita and Taheri, Saied},
+  title   = {A Technical Survey on Tire-Road Friction Estimation},
+  journal = {Friction},
+  year    = {2017},
+  volume  = {5},
+  number  = {2},
+  pages   = {123--146},
+  doi     = {10.1007/s40544-017-0151-0}
+}
+
+@article{cabrera2004genetic,
+  author  = {Cabrera, Juan A. and Ortiz, Antonio and Sim{\'o}n, Antonio and
+             Garc{\'i}a, Francisco and P{\'e}rez La Blanca, Alberto},
+  title   = {An Alternative Method to Determine the Magic Tyre Model
+             Parameters Using Genetic Algorithms},
+  journal = {Vehicle System Dynamics},
+  year    = {2004},
+  volume  = {41},
+  number  = {2},
+  pages   = {109--127},
+  doi     = {10.1076/vesd.41.2.109.26496}
+}
+
+@article{sierra2006cornering,
+  author  = {Sierra, C. and Tseng, E. and Jain, A. and Peng, H.},
+  title   = {Cornering Stiffness Estimation Based on Vehicle Lateral
+             Dynamics},
+  journal = {Vehicle System Dynamics},
+  year    = {2006},
+  volume  = {44},
+  number  = {sup1},
+  pages   = {24--38},
+  doi     = {10.1080/00423110600867259}
 }

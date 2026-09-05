@@ -182,7 +182,10 @@ on quantities fixed for the whole training call and is precomputed once
 \label{subsec:s4}
 The \texttt{s4} architecture is an S4D diagonal state-space
 residual~\cite{gu2022s4d} over a sliding window of $W=20$ samples
-(\SI{0.4}{\second}, matched to tire-relaxation timescales). Windows are cut so
+(\SI{0.7}{\second} at $T_{s}=\SI{0.035}{\second}$). The length is a
+configured value rather than a derived one: it spans roughly \num{30} times the
+time constant of the model's fastest lateral mode at the identification speeds,
+so every window contains the transient the residual has to reproduce. Windows are cut so
 that none straddles the seam between the recorded trace and its mirrored copy.
 Each block carries $H=4$ independent single-input single-output channels of
 complex state dimension $N=4$, initialised in the S4D-Lin form
@@ -284,7 +287,12 @@ coefficient the rollout can \emph{demand} of the tire is
 \label{eq:mureach}
 \end{equation}
 Equation~\eqref{eq:mureach} contains no tire parameter: it is a property of the
-rollout configuration alone. If $\mu_{\mathrm{reach}}<D$, the synthetic data
+rollout configuration alone. It is also an \emph{upper} bound on what the
+rollout demands rather than an equality, because $\kappa\approx\delta/L$ is the
+Ackermann (kinematic) curvature; the steady-state curvature a compliant vehicle
+actually holds is $\kappa=\delta/(L+K_{us}v^{2}/g)$, which is smaller. Reading
+\eqref{eq:mureach} as a ceiling is what the argument needs: if even the ceiling
+sits below $D$, the peak is certainly not reached. If $\mu_{\mathrm{reach}}<D$, the synthetic data
 never leaves the linear ramp of \eqref{eq:mf}, only the product $BCD$ is
 identifiable (Section~\ref{subsec:identifiability}), and the bounded optimiser
 resolves the residual freedom on a box edge---the signature measured in
@@ -329,11 +337,12 @@ Two changes close the loop:
 $\delta_{\mathrm{sweep}}=\mathrm{clip}\big(\lambda_{e}\cdot
 P_{99}(|\delta_{\mathrm{obs}}|),\,\delta_{\min},\,\delta_{\max}\big)$ with
 $\lambda_{e}=1.5$, $\delta_{\min}=\SI{0.05}{\radian}$,
-$\delta_{\max}=\SI{0.34}{\radian}$, so the network is never queried more than
+$\delta_{\max}=\SI{0.54}{\radian}$, so the network is never queried more than
 \SI{50}{\percent} beyond the steering range it was trained on. Both
 $\delta_{\max}$ and the inherited $\delta_{\mathrm{sweep}}=\SI{0.4}{\radian}$
 lie above the plant's \SI{16.0}{\degree} ($\SI{0.279}{\radian}$) mechanical
-lock. That is deliberate: the sweep is a \emph{virtual} rollout of the
+lock---$\delta_{\max}$ by a factor of \num{1.9}, the inherited sweep by
+\SI{43}{\percent}. That is deliberate: the sweep is a \emph{virtual} rollout of the
 corrected model, and clamping it to the lock would cap
 $\mu_{\mathrm{reach}}$ in \eqref{eq:mureach} for a second time---by the
 actuator instead of by the rollout speed---which is the failure this section
@@ -365,8 +374,13 @@ baseline we (i) raised the number of jittered multi-starts from 1 to 8, (ii)
 added a derivative-free simplex~\cite{neldermead1965} and a global
 differential-evolution solver~\cite{storn1997de} as alternatives to
 trust-region reflective~\cite{branch1999trust}, all through the same
-optimisation library~\cite{virtanen2020scipy}. The prior carries the measured
-tire of Table~\ref{tab:ref}.
+optimisation library~\cite{virtanen2020scipy}; population-based global search
+on Magic-Formula coefficients follows Cabrera \emph{et
+al.}~\cite{cabrera2004genetic}. The prior carries the measured
+tire of Table~\ref{tab:ref}. One caveat on (i): \texttt{num\_starts} is honoured
+by the trust-region and simplex solvers only---differential evolution is already
+a population search and ignores it---so the multi-start claim describes the
+\texttt{Baseline-NN-MSE} arm and not the shipped \texttt{Ours} arm.
 
 Neither (i) nor (ii) addresses the degeneracy, and both are verified as
 secondary in Section~\ref{subsec:sweep}, which sweeps rollout speed against
@@ -512,9 +526,9 @@ why: $\sigma_{\mu}/\mu$ from the fit covariance is a \emph{precision} figure,
 not an accuracy one. A wrong mass, a wrong yaw inertia, an IMU bias or a road
 bank all fit tightly and wrongly through \eqref{eq:newtoneuler}, since axle
 force scales linearly with $m$. On this vehicle the configuration file's
-\SI{240.0}{\kilo\gram} against the \SI{269.8}{\kilo\gram} the wheels actually
-carry biased $\mu$ \SI{11}{\percent} low on its own---the \SI{29.8}{\kilo\gram}
-shortfall taken on the \SI{269.8}{\kilo\gram} the wheels carry---until the
+\SI{240.0}{\kilo\gram} against the \SI{269.6}{\kilo\gram} the wheels actually
+carry biased $\mu$ \SI{11}{\percent} low on its own---the \SI{29.6}{\kilo\gram}
+shortfall taken on the \SI{269.6}{\kilo\gram} the wheels carry---until the
 measured value replaced it (Table~\ref{tab:vehicle}); that is measurement-chain work
 (Section~\ref{subsec:measurement}) and not something a confidence interval can
 see. The same holds for the friction the result is compared against: the
@@ -528,18 +542,25 @@ Section~\ref{subsec:assumptions}.
 \subsection{Deployment}
 \label{subsec:deployment}
 
-The identifier runs as a single ROS~2 node at \SI{20}{\hertz} with a rolling
-FIFO buffer of the collected signals, cycling through four states: collect a
+The identifier runs as a single ROS~2 node whose acquisition and
+state-machine timer ticks at \SI{50}{\hertz} (the \SI{20}{\hertz} quoted
+elsewhere in this paper is the controller's period, not the identifier's),
+with a rolling FIFO buffer of the collected signals, cycling through four
+states: collect a
 full buffer, train, await the controller's acknowledgement of the submitted
 coefficients, then run---re-identifying every
 $T_{\mathrm{reid}}=\SI{30}{\second}$ from the newest buffer. Three interface
 details matter for reproducing the results. The achieved road-wheel angle is
 used when the platform publishes one and falls back to the commanded
 setpoint on staleness, with the substitution logged
-(Section~\ref{subsec:measurement}). The friction warm start is recomputed on
-\emph{every} cycle rather than once at startup, which is safe only because the
-static prior it floors is re-read from configuration each cycle and therefore
-cannot compound across cycles. Finally, the identified coefficients are
+(Section~\ref{subsec:measurement}). The friction warm start is applied on the
+\emph{first} identification cycle only; every later re-identification
+cold-starts $D$ from the static \texttt{pacejka\_model} prior of
+configuration. That restriction is the safety property, not an implementation
+shortcut: the warm start is both the solver's start point and, through the
+frozen prior of \eqref{eq:fitobj}, its regularisation target, so recomputing it
+each cycle would rewrite the tire model---and through it the MPC's reference
+speed profile---under the running controller. Finally, the identified coefficients are
 submitted over a service call and the node keeps the previous model if the call
 is not acknowledged, so a rejected identification degrades to the last accepted
 model rather than to no model; the peak-friction outputs are published on a

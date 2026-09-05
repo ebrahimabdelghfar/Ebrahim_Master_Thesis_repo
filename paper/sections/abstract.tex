@@ -1,35 +1,33 @@
 % === ABSTRACT & KEYWORDS =====================================================
 \begin{abstract}
 On-track system identification promises to learn tire models from ordinary
-racing laps instead of dedicated steady-state manoeuvres. We study the
-identifiability of one such residual-learning pipeline at full vehicle scale,
-in simulation, on a plant that publishes its own per-wheel slip angles, loads
-and lateral forces, so the estimator can be scored against the forces the plant
-actually generated. Transplanted unchanged from a small-scale platform, the
-pipeline converges on a tire with less than half the vehicle's peak grip and
-most Pacejka coefficients resting on their box constraints. This is not a
-solver, bounds or tuning failure but a loss of excitation created by the
-pipeline's own virtual-data step: the friction the synthetic rollout can
-demand, $\mu_{\mathrm{reach}}=v^{2}\delta_{\mathrm{sweep}}/(gL)$, is a property
-of the rollout configuration and not of the tire. We give that identifiability
-bound and verify it directly---on a grid over rollout speed and true peak
-factor with a known tire, every tire below $\mu_{\mathrm{reach}}\approx D$
-comes back as the same wrong number, independently of solver and start
-point---and correct the pipeline by setting the rollout speed from the measured
-lap, bounding the steering sweep to the observed range, freezing the
-regularisation target, identifying against achieved rather than commanded
-steering, and reading a friction floor from the \emph{curvature} of the axle
-force curve. Admissibility gates on derived physical quantities guard the
-model-to-controller boundary. Against the inherited configuration over three
-timed laps, no identified coefficient rests on a bound and the peak factor
-stays within \num{0.05} of the plant's effective friction, against \num{0.77}.
-All results are in simulation and each configuration is one run.
+racing laps instead of dedicated steady-state manoeuvres. We study one such
+residual-learning pipeline at full vehicle scale, in simulation, on a plant
+that publishes its own per-wheel slip angles, loads and forces as ground
+truth. Transplanted unchanged from a small-scale platform, it converges on a tire with
+less than half the vehicle's peak grip and most Pacejka coefficients on their
+box constraints---not a solver, bounds or tuning failure but a loss of
+excitation created by the pipeline's own virtual-data step. The friction the
+synthetic rollout can demand,
+$\mu_{\mathrm{reach}}=v^{2}\delta_{\mathrm{sweep}}/(gL)$, is a property of the
+rollout configuration, not of the tire. We verify that on a grid over rollout
+speed, sweep amplitude and true peak factor with a known tire: below the tire's
+own peak the fit returns the excitation rather than the tire, whatever the
+solver and start point. We then correct the pipeline---the
+rollout speed taken from the measured lap, the sweep bounded to the observed
+steering range, the regularisation target frozen---and gate the
+model-to-controller boundary on derived physical quantities rather than on
+per-coefficient bounds. Over three timed
+laps no identified coefficient rests on a bound and the corrected pipeline
+preserves a peak factor within \num{0.05} of the plant's effective friction,
+against \num{0.77} for the inherited configuration---though that factor is
+carried by the prior, not recovered from the lap. All results are in
+simulation, one run per configuration.
 \end{abstract}
 
 \begin{IEEEkeywords}
-System identification, tire modeling, Pacejka Magic Formula, identifiability,
-persistent excitation, vehicle dynamics, autonomous racing, simulation
-architecture.
+Autonomous vehicles, system identification, parameter estimation, vehicle
+dynamics, tires, predictive control, road vehicles, simulation.
 \end{IEEEkeywords}
 
 \IEEEpeerreviewmaketitle

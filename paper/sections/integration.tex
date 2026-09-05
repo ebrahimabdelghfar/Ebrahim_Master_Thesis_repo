@@ -59,7 +59,10 @@ model sub-steps adaptively, sizing the sub-step from the model's own fastest
 lateral mode
 $|\lambda|\approx(C_{f}+C_{r})/(mv_{x})+(l_{f}^{2}C_{f}+l_{r}^{2}C_{r})/(I_{z}v_{x})$
 so that $|\lambda|h\le1.5$, restoring $\rho\approx1.000$ across the speed range
-at \SIrange{2.3}{6.8}{\milli\second} per 100-stage horizon.
+over the shipped $N=20$ horizon. The cost is carried by the solve: over the
+reported runs the QP setup and solve took a median of
+\SI{0.36}{\milli\second} and a 95th percentile of \SI{0.62}{\milli\second}
+against the \SI{50}{\milli\second} control period.
 \end{enumerate}
 
 The gates are the contract between identification and control: an

@@ -7,7 +7,7 @@
 The Magic Formula of Bakker, Nyborg and Pacejka~\cite{pacejka1987sae} and its
 consolidation~\cite{pacejka1992magic,pacejka2012book} remains the standard
 empirical description of steady-state tire force generation and is the model
-identified here; its lateral form and the two structural properties this paper
+identified here; its lateral form and the two properties this paper
 relies on are stated in Section~\ref{sec:problem}. Classical characterisation
 obtains the coefficients from steady-state manoeuvres in a controlled space
 \cite{ontrack2025,amz2020}: clean data at high logistical cost. Direct fitting
@@ -28,13 +28,16 @@ On-track methods trade excitation quality for operational simplicity.
 Nonlinear least squares on lap data is the classical baseline and is brittle
 under noise \cite{ontrack2025}. The recursive alternative to a batch fit is a
 dual or joint filter that carries states and parameters together---Wenzel
-\emph{et al.}~\cite{wenzel2006dekf} is the canonical vehicle instance---and it
+\emph{et al.}~\cite{wenzel2006dekf} is the canonical vehicle instance, with
+Sierra \emph{et al.}~\cite{sierra2006cornering} the lateral-dynamics
+cornering-stiffness variant---and it
 is subject to the same excitation condition this paper is about: a filter run
 on a smooth racing line has as little information about the tire's peak as a
 batch fit of the same data, and expresses it as a parameter covariance that
 does not shrink rather than as a coefficient on a bound. Dedicated friction
 estimators make the excitation dependence explicit
-\cite{rajamani2012wheelfriction,ahn2013friction,acosta2017friction}, and Hsu
+\cite{rajamani2012wheelfriction,ahn2013friction,acosta2017friction,khaleghian2017survey},
+and Hsu
 \emph{et al.}~\cite{hsu2010trail} is the closest prior art to the warm start of
 Section~\ref{subsec:friction}: it recovers the friction limit below the peak
 from the \emph{curvature} of the force response, read through the pneumatic
