@@ -1,0 +1,126 @@
+% =============================================================================
+% Fig. 3 -- The corrected identification pipeline.
+%
+% Vector TikZ, drawn at the paper's own font sizes. Included by
+% sections/method.tex inside a figure* (full text width).
+%
+% Layout rules, so an edit does not undo them:
+%   * the four stage boxes sit on one row, equal width, gaps wide enough that
+%     an edge label fits BETWEEN two boxes instead of over their borders;
+%   * the three green correction boxes hang from one common baseline
+%     (\fixline), so they cannot look staggered;
+%   * the plant-telemetry box and the admissibility gate share a row, so the
+%     orange arrow between them is a straight horizontal line;
+%   * the re-nomination arrow closes the loop along the BOTTOM of the diagram.
+%     Any route through the middle passes behind the gate/telemetry boxes.
+%
+% Colour: green = this paper's changes; blue = the gated model interface;
+% orange = the plant's own force telemetry, scoring only, never in the loop.
+% =============================================================================
+
+\begin{tikzpicture}[
+  font=\scriptsize,
+  >={Stealth[length=1.7mm,width=1.5mm]},
+  blk/.style      = {draw, rounded corners=1pt, align=flush center,
+                     inner sep=3pt, text width=#1, fill=white,
+                     line width=0.35pt},
+  stage/.style    = {blk=30mm, fill=black!3},
+  meas/.style     = {blk=26mm, fill=black!5},
+  fix/.style      = {draw, rounded corners=1pt, align=flush left,
+                     inner sep=2.6pt, text width=30mm, font=\tiny,
+                     fill=green!12, draw=green!45!black, line width=0.4pt,
+                     anchor=south},
+  gate/.style     = {blk=26mm, fill=blue!10, draw=blue!60!black,
+                     line width=0.7pt},
+  gt/.style       = {blk=28mm, fill=orange!18, draw=orange!80!black,
+                     line width=0.7pt},
+  flow/.style     = {->, line width=0.5pt, black!65},
+  gateflow/.style = {->, line width=0.8pt, blue!60!black},
+  gtflow/.style   = {->, line width=0.8pt, dashed, orange!80!black},
+  fixlink/.style  = {-, line width=0.4pt, green!45!black, dashed},
+  elbl/.style     = {font=\tiny, inner sep=1pt, fill=white, midway, above}
+]
+
+\def\hgap{11mm}   % stage-to-stage gap: must clear the widest edge label
+
+% ------------------------- measurement chain -------------------------------
+\node[meas, anchor=north west] (lap) at (0,0)
+  {\textbf{Recorded lap}\\[1pt]
+   \SI{30}{\second} at \SI{50}{\hertz}\\
+   $[v_{x},v_{y},\omega,\delta]$};
+\node[meas, below=5mm of lap] (chain)
+  {\textbf{Measurement chain}\\[1pt]
+   achieved $\delta$; measured $m$, $l_{f}$, $l_{r}$; IMU $a_{x},a_{y}$};
+
+% ------------------------------ stage row ----------------------------------
+\node[stage, right=\hgap of lap] (s1)
+  {\textbf{1. Residual learning}\\[1pt]
+   $f_{NN}\!:[v_{x},v_{y},\omega,\delta]\!\mapsto\! e_{k}$\\
+   corrected model $\hat f\!+\!f_{NN}$};
+\node[stage, right=\hgap of s1] (s2)
+  {\textbf{2. Virtual rollout}\\[1pt]
+   constant $v$, steering ramp
+   $\delta:0\rightarrow\delta_{\mathrm{sweep}}$};
+\node[stage, right=\hgap of s2] (s3)
+  {\textbf{3. Pacejka fit}\\[1pt]
+   $F_{y}$ from \eqref{eq:ssforces};\\
+   bounded NLLS $\rightarrow\phip$};
+\node[stage, right=\hgap of s3] (s4)
+  {\textbf{4. Re-nomination}\\[1pt]
+   $\phip$ becomes the next\\ nominal model};
+
+\draw[flow] (lap.east) -- ++(3mm,0) |- (s1.west);
+\draw[flow] (chain.east) -- ++(3mm,0) |- (s1.west);
+\draw[flow] (s1) -- node[elbl]{$\hat f\!+\!f_{NN}$} (s2);
+\draw[flow] (s2) -- node[elbl]{$(\alpha,F_{y})$}    (s3);
+\draw[flow] (s3) -- (s4);
+
+% ------------------------- corrections (green) ------------------------------
+% One common baseline for all three, so they cannot look staggered.
+\coordinate (fixline) at ($(s1.north)+(0,8mm)$);
+\node[fix] (f1) at (s1.north |- fixline)
+  {\textbf{C0} friction warm start: per-axle brush $\mu$ as a \emph{floor} on
+   $D_{f}$, $D_{r}$};
+\node[fix] (f2) at (s2.north |- fixline)
+  {\textbf{C1} rollout speed from the measured lap, floored at
+   \SI{7}{\meter\per\second}; warns when \mbox{$\mu_{\mathrm{reach}}<D$}\\
+   \textbf{C2} sweep bounded at $1.5\,P_{99}(|\delta_{\mathrm{obs}}|)$};
+\node[fix] (f3) at (s3.north |- fixline)
+  {\textbf{C3} Tikhonov target frozen at $\phip^{0}$, start point still
+   tracking; multi-start, robust loss};
+
+\draw[fixlink] (f1.south) -- (s1.north);
+\draw[fixlink] (f2.south) -- (s2.north);
+\draw[fixlink] (f3.south) -- (s3.north);
+
+% ------------------- telemetry / gate row, then consumer ---------------------
+% Shared row y taken from the LOWER of s2/s4.south (their heights differ),
+% so both boxes land on one baseline and the orange arrow is straight.
+\path let \p1=(s2.south), \p2=(s4.south) in
+  coordinate (gaterow) at (0,{min(\y1,\y2)-11mm});
+\node[gt,   anchor=north] (truth) at (s2 |- gaterow)
+  {\textbf{Plant force telemetry}\\[1pt]
+   per-wheel $\alpha$, $F_{z}$, $F_{y}$, $\mu$ --- \emph{scoring only},
+   armed on the controller's ack};
+\node[gate, anchor=north] (gate) at (s4 |- gaterow)
+  {\textbf{Admissibility gate}\\[1pt]
+   grip ceiling vs.\ demand, understeer sign, stiffness};
+\node[blk=26mm, below=6mm of gate, fill=black!3] (mpc)
+  {\textbf{NMPC}\\[1pt] \texttt{acados}, $N=100$};
+
+\draw[gateflow] (s4.south) -- (gate.north);
+\draw[gateflow] (gate) -- node[elbl]{\texttt{sysid/update\_params}} (mpc);
+% truth is taller than gate, so their box-center anchors sit at different y;
+% route the arrow through gate's own center height instead, which still
+% falls inside truth's (taller) box since both share the same top edge.
+\draw[gtflow] (truth.east |- gate) -- (gate.west);
+
+% --------------------- re-nomination closes the loop ------------------------
+\coordinate (bot) at ($(mpc.south)+(0,-6mm)$);
+\draw[flow] (s4.east) -- ++(5mm,0) |- (bot) -| (s1.south);
+% Sits ON the loop-back line, white-filled so it masks it -- placed at s2's x
+% so it clears the elbow that rises at s1.south.
+\node[font=\tiny, fill=white, inner sep=1.6pt]
+  at ($(s2.south |- bot)$) {$N_{\mathrm{it}}=6$ co-identification iterations};
+
+\end{tikzpicture}

@@ -83,7 +83,7 @@ Drag coefficient               & 0.426 & ---\\
 
 \vspace{2pt}
 {\raggedright\footnotesize Configured values are set in the bridge's
-\texttt{carla\_interface\_\allowbreak config.yaml}; measured values are obtained
+configuration; measured values are obtained
 from the simulator's per-wheel telemetry.
 \textsuperscript{a}Total static wheel load divided by
 $g=\SI{9.81}{\meter\per\second\squared}$ ($\num{2644.5}/\num{9.81}=\num{269.6}$). This is the mass every equation in this paper uses, not the configured
@@ -215,7 +215,7 @@ are repeated states and the one-step residual target
 $e_{k}=\vecx_{k+1}-\hat\vecx_{k+1}$ carries a zero-order-hold artefact on those
 pairs. The second is between the physics step and the interval the one-step
 model of Section~\ref{subsec:model} is discretised at, which is set separately
-at $T_{s}=\SI{0.035}{\second}$ (\texttt{nn\_params.yaml: sample\_dt}) and is
+at $T_{s}=\SI{0.035}{\second}$ and is
 \SI{6}{\percent} longer than the step. $T_{s}$ is an empirical setting: it is
 neither the \SI{0.033}{\second} step nor the \SI{0.020}{\second} timer period,
 and it is carried because the identification proved insensitive to it over the

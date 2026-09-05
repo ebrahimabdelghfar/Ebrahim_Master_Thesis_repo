@@ -1,0 +1,68 @@
+% === IV. SIMULATION ARCHITECTURE =============================================
+\section{Simulation Architecture and Data}
+\label{sec:platform}
+
+The pipeline runs against a Formula Student vehicle model in
+CARLA~\cite{carla2017} through a C\texttt{++} ROS~2 bridge that drives the
+vehicle and republishes its state. Two properties of that architecture make
+the identifiability claims checkable. CARLA's PhysX solver computes each
+wheel's slip angle, normal load and lateral force internally, and the bridge
+republishes them on the same clock as the odometry the identifier consumes, so
+an identified tire model is scored against the forces the plant generated
+rather than against a second model; that channel never enters the
+identification loop. And the server runs synchronously at a fixed
+\SI{0.033}{\second} step with every sample stamped from the simulation clock,
+so the one-step residual target is well defined.
+
+The plant is the driverless Formula Student--class vehicle on the
+\texttt{silverstone} map (CARLA 0.9.16), whose lateral forces come from the
+PhysX tire model~\cite{physxvehicle} under a configured friction coefficient
+and lateral stiffness, not from a Magic Formula, so the simulator has no
+``true'' Pacejka coefficients to recover and the forces PhysX computes at each
+wheel are the ground truth instead. At zero longitudinal slip and zero camber
+that model collapses to
+\begin{equation}
+F_{y}(\alpha)=\mathrm{sgn}(\alpha)\,\mu F_{z}\,S_{1}(K),\qquad
+K=\frac{C_{\mathrm{lat}}|\tan\alpha|}{\mu F_{z}},
+\label{eq:physx}
+\end{equation}
+with $C_{\mathrm{lat}}=F_{z}^{\mathrm{rest}}k_{y}S_{1}(3\bar F_{z}/k_{x})$,
+$\bar F_{z}$ the normalised load and $S_{1}(K)=\min(1,K-K^{2}/3+K^{3}/27)$ the
+engine's smoothing function. It saturates at $\mu F_{z}$, first reached at $K=3$, and never falls off past
+that peak, so a Magic Formula can match it up to the peak and not beyond; its
+scale is set by $\mu$ and $C_{\mathrm{lat}}$, both published by the simulator,
+so the plant's curve is read off rather than fitted: $\mu=\num{1.05}$ effective (a configured
+wheel friction of \num{1.5} times the road surface's \num{0.70}, with a
+realised peak axle friction of \numrange{1.00}{1.05}), $k_{y}=\SI{17}{\per
+\radian}$, $k_{x}=\num{2.0}$, giving axle slopes of \num{20.4} and
+\SI{19.0}{\kilo\newton\per\radian} front and rear at $\bar F_{z}=1$ and the
+static axle loads $F_{z,f}=\SI{1373}{\newton}$, $F_{z,r}=\SI{1274}{\newton}$,
+and a peak first reached at \SI{12.0}{\degree} of slip. On 1804 ground-truth
+wheel samples from a live lap, each predicted from its own measured $\alpha$,
+$F_{z}$ and $\mu$, \eqref{eq:physx} returns $R^{2}=\num{0.99}$ at
+\SI{16.1}{\newton} RMSE front and \SI{14.7}{\newton} rear. The vehicle itself
+measures $m=\SI{269.6}{\kilo\gram}$ (total static wheel load
+\SI{2644.5}{\newton} over $g$, not the configured body mass of
+\SI{240.0}{\kilo\gram}), $L=\SI{1.5334}{\meter}$ with
+$l_{f}/l_{r}=\num{0.7381}/\SI{0.7953}{\meter}$, an assumed
+$I_{z}=\SI{51.1}{\kilo\gram\meter\squared}$, and \SI{16.0}{\degree} of
+road-wheel lock.
+
+
+
+The vehicle is driven around the reference raceline by a model-free
+pure-pursuit controller, which needs no tire knowledge---only the
+wheelbase---and is therefore a valid bootstrap, as in the
+baseline~\cite{ontrack2025}. Odometry, the achieved steering angle and the
+drive command are sampled into a ring buffer for \SI{30}{\second}, gated on
+$v_{x}>\SI{1}{\meter\per\second}$, matching the baseline's data budget;
+re-identification retriggers every \SI{30}{\second}. The model is
+discretised at $T_{s}=\SI{0.035}{\second}$, a setting carried because the
+identification proved insensitive to it: identifying at \SI{0.020}{\second}
+returns the same last accepted coefficient set to four decimal places in the
+corrected configuration, and leaves $D$ on its \num{2.0} bound in the inherited
+one, so the box-edge signature below is not an artefact of the step mismatch.
+Preprocessing follows the baseline: a zero-phase low-pass filter, then symmetry
+augmentation by mirroring
+$(v_{y},\omega,\delta)\rightarrow(-v_{y},-\omega,-\delta)$ at unchanged
+$v_{x}$.

@@ -1,0 +1,43 @@
+% === II. RELATED WORK ========================================================
+\section{Related Work and Position}
+\label{sec:related}
+
+The Magic Formula~\cite{pacejka2012book} is the standard
+empirical description of steady-state tire force generation and is the model
+identified here; classical characterisation obtains its coefficients from
+steady-state manoeuvres in a controlled space, clean data at high logistical
+cost~\cite{ontrack2025}. On-track methods trade excitation quality for operational simplicity, with
+nonlinear least squares on lap data as the classical baseline; the recursive
+alternative, a filter carrying states and parameters together, is subject to
+the same excitation condition, expressing a violation as a parameter
+covariance that does not shrink rather than as a coefficient on a bound. Among friction estimators, Hsu \emph{et al.}~\cite{hsu2010trail} is the
+closest prior art to our warm start: it recovers the friction limit below the
+peak from the \emph{curvature} of the force response, read through the
+pneumatic trail in steering torque; ours reads the same curvature on the axle
+force curve reconstructed from IMU and odometry, with no steering-torque
+sensor. Gaussian-process residuals are
+accurate but carry a continuing computational cost and are usually evaluated
+starting from an already accurate physical model~\cite{kabzan2019lbmpc}.
+
+Deep Dynamics~\cite{deepdynamics2024} is the closest work on the
+physics-constraint axis: it estimates Pacejka coefficients inside a neural
+network and adds a \emph{Physics Guard} layer clamping them into nominal
+ranges. Our gates share the motivation but differ in placement, and we report
+as a finding that per-coefficient box constraints are \emph{insufficient}: the
+degenerate fit that motivated this work satisfied every box constraint with
+five of eight coefficients exactly on a bound, and a later fit satisfied every
+box constraint while being pairwise oversteering and open-loop unstable above
+\SI{14.5}{\meter\per\second}. Wu \emph{et al.}~\cite{visionsysid2026} extend the
+same baseline concurrently and independently with a vision-based friction
+prior, an S4 residual and Nelder--Mead extraction; our pipeline independently
+contains an S4D residual~\cite{gu2022s4d}, a friction warm start and the same
+solver options, so we claim none of the three as contributions. Neither prior
+is the fix: the degeneracy is located in the rollout excitation, not in the
+initialisation, and to our knowledge the reachable-friction bound of
+Section~\ref{subsec:excitation} and its consequence for the virtual-data step
+have not previously been stated. CARLA~\cite{carla2017} supplies the simulation infrastructure; its native
+dynamics come from the PhysX wheeled-vehicle model~\cite{physxvehicle}, a
+saturating friction-and-stiffness law rather than a Magic Formula fit to
+measured data, so this study treats the simulator as a well-instrumented
+\emph{plant} to be identified and not as a source of ground-truth
+coefficients.

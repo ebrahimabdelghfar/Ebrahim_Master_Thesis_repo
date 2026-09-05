@@ -74,7 +74,7 @@ partial-condensing HPIPM. The identifier's acquisition and state-machine timer
 runs at \SI{50}{\hertz} (\SI{20}{\hertz} is the controller's period) with a
 \SI{30}{\second} buffer, six co-identification iterations, 200 training
 epochs, full-batch Adam at $5\times10^{-4}$. The one-step model is discretised
-at $T_{s}=\SI{0.035}{\second}$ (\texttt{nn\_params.yaml: sample\_dt}). This is
+at $T_{s}=\SI{0.035}{\second}$. This is
 an empirical value---it matches neither the server's \SI{0.033}{\second} step
 nor the \SI{50}{\hertz} acquisition timer---and is carried because the
 identification is insensitive to it over the range tested

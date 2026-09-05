@@ -1,0 +1,91 @@
+%==============================================================================
+% Excitation-Aware On-Track System Identification at Full Scale
+% ICRA 2027 submission version: IEEEtran conference class, 8 pages,
+% double-anonymous. Derived from the journal manuscript in paper/.
+% Build:  pdflatex main && bibtex main && pdflatex main && pdflatex main
+%==============================================================================
+
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{xcolor}
+\usepackage[pdftex]{graphicx}
+\graphicspath{{figures/}{../graphs/comparison/}}
+\DeclareGraphicsExtensions{.pdf,.jpeg,.jpg,.png}
+
+\usepackage[cmex10]{amsmath}
+\usepackage{amssymb}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{threeparttable}
+\usepackage{url}
+
+% --- units -------------------------------------------------------------------
+\newif\ifhavesiunitx
+\IfFileExists{siunitx.sty}{\havesiunitxtrue}{\havesiunitxfalse}
+\ifhavesiunitx
+  \usepackage{siunitx}
+  \sisetup{detect-all, per-mode=symbol}
+  \DeclareSIUnit{\g}{\textit{g}}
+\else
+  \input{units_fallback}
+\fi
+
+% Tighten float separation slightly (font size, margins and column widths are
+% the IEEEtran conference defaults and are untouched).
+\setlength{\textfloatsep}{9pt plus 2pt minus 2pt}
+\setlength{\dbltextfloatsep}{9pt plus 2pt minus 2pt}
+\setlength{\floatsep}{8pt plus 2pt minus 2pt}
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+
+\usepackage[hidelinks,breaklinks=true]{hyperref}
+\hyphenation{op-tical net-works semi-conduc-tor Pa-cej-ka iden-ti-fi-ca-tion}
+
+% --- convenience macros -------------------------------------------------------
+\newcommand{\vecx}{\mathbf{x}}
+\newcommand{\vecu}{\mathbf{u}}
+\newcommand{\vecz}{\mathbf{z}}
+\newcommand{\phip}{\Phi_{p}}
+\newcommand{\Fyf}{F_{y,f}}
+\newcommand{\Fyr}{F_{y,r}}
+\newcommand{\bridge}{\textsc{Sim-Bridge}}
+\newcommand{\sysid}{\textsc{On-Track-SysID}}
+
+%==============================================================================
+\begin{document}
+
+\title{Excitation-Aware On-Track System Identification\\at Full Scale: A Simulation Study}
+
+% NOTE: ICRA 2027 is double-anonymous. The author block below de-anonymises the
+% PDF -- swap it for the commented-out anonymous block before uploading to
+% PaperPlaza.
+\author{\IEEEauthorblockN{Ebrahim~Abdelghfar~Ebrahim\IEEEauthorrefmark{1},
+Hazem~Abuelanin\IEEEauthorrefmark{2},
+Mohamed~Abdelaziz\IEEEauthorrefmark{1},\\
+Mohamed~Omar~Mohamed~Elsayed\IEEEauthorrefmark{1},
+Sherif~Said\IEEEauthorrefmark{1}}
+\IEEEauthorblockA{\IEEEauthorrefmark{1}Faculty of Engineering, Ain Shams University, Cairo, Egypt,
+and the Autotronics Research Lab (ARL), Cairo, Egypt\\
+Corresponding author: Ebrahim Abdelghfar Ebrahim,
+\texttt{ebrahimabdelghfar550@gmail.com}}}
+% Anonymous block for double-anonymous submission:
+% \author{\IEEEauthorblockN{Anonymous submission}
+% \IEEEauthorblockA{Paper submitted to ICRA 2027 for double-anonymous review}}
+
+\maketitle
+
+\input{sections/abstract}
+\input{sections/intro}
+\input{sections/related_work}
+\input{sections/problem}
+\input{sections/platform}
+\input{sections/method}
+\input{sections/experiments}
+\input{sections/integration}
+\input{sections/discussion}
+\input{sections/conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{IEEEabrv,references}
+
+\end{document}

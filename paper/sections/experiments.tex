@@ -206,7 +206,7 @@ value & & 0.70 & 1.05 & 1.40 & 1.80\\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}[flushleft]\scriptsize
-\item Unregularised, started from the true coefficients. Each cell is $\hat D$ $\pm$ the half-width of its \SI{95}{\percent} $t$-interval over the five noise realisations, with the mean number of the eight coefficients resting on a box constraint in parentheses. The two axles of one rollout are not independent, so each realisation contributes the mean of its own $(\hat D_{f},\hat D_{r})$ and $n=5$; per-axle means and intervals are in \texttt{identifiability\_sweep\_summary.csv}.
+\item Unregularised, started from the true coefficients. Each cell is $\hat D$ $\pm$ the half-width of its \SI{95}{\percent} $t$-interval over the five noise realisations, with the mean number of the eight coefficients resting on a box constraint in parentheses. The two axles of one rollout are not independent, so each realisation contributes the mean of its own $(\hat D_{f},\hat D_{r})$ and $n=5$; per-axle means and intervals are in the supplementary material.
 \item $\mu_{\mathrm{reach}}$ is \eqref{eq:mureach} at $L=\SI{1.5334}{\meter}$; the inherited configuration is the first row of (a). It is the Ackermann \emph{upper} bound, and above $\mu_{\mathrm{reach}}\approx2$ it detaches from what the rollout realises: at $v=\SI{20}{\meter\per\second}$ it reads \num{10.64} while the rollout's realised $\max|v_{x}\omega|/g$ is \numrange{1.40}{2.18} across the four tires. A large $\mu_{\mathrm{reach}}$ means ``far past saturation'', not a demand the tire ever sees.
 \end{tablenotes}
 \end{threeparttable}
@@ -353,28 +353,14 @@ $v_{y}$ persistence RMSE [\si{\meter\per\second}] & 0.009 & 0.009\\
 $\omega$ persistence RMSE [\si{\radian\per\second}] & 0.005 & 0.005\\
 Skill vs.\ persistence, $v_{y}$ & $-2.0$ & $\mathbf{-1.4}$\\
 Skill vs.\ persistence, $\omega$ & $\mathbf{-5.4}$ & $-12.6$\\
-\addlinespace
-\multicolumn{3}{@{}l}{\emph{Identified coefficients, last accepted set}}\\
-Front $B$ & 7.076 & 4.804\\
-Front $C$ & 1.346 & 1.448\\
-Front $D$ & \textbf{1.009} & 2.000$^{\dagger}$\\
-Front $E$ & $-$2.000 & $-$2.264\\
-Rear $B$ & 7.873 & 4.836\\
-Rear $C$ & 1.383 & 1.467\\
-Rear $D$ & \textbf{1.002} & 2.000$^{\dagger}$\\
-Rear $E$ & $-$1.024 & $-$1.361\\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}[flushleft]\scriptsize
-\item Source: \texttt{graphs/\allowbreak comparison/\allowbreak comparison\_\allowbreak summary.csv}. Bold is the better of the two where the metric has a direction.
-\item Lap times are recorded on the ROS wall clock while the simulator advances a fixed \SI{0.033}{\second} step faster than real time, and the two runs did not hold the same real-time factor, so they are reported as recorded and not bolded.
-\item Max $|e_{y}|$ is the same acquisition transient in both runs---the pure-pursuit out-lap, before either identified model is in the loop---and agrees to \SI{9}{\milli\meter}.
-\item ITAE is not scale-free and the two runs differ in length, so $\mathrm{IAE}/T$ and $\mathrm{ITAE}/(T^{2}/2)$ are given beside it; all three are computed from the same exported error series.
+\item Bold is the better of the two where the metric has a direction.
+\item Lap times are on the ROS wall clock; the two runs did not hold the same real-time factor, so they are reported as recorded and not bolded.
+\item Max $|e_{y}|$ is the same pure-pursuit out-lap transient in both runs, before either identified model is in the loop, and agrees to \SI{9}{\milli\meter}. ITAE is not scale-free and the runs differ in length, hence $\mathrm{IAE}/T$ and $\mathrm{ITAE}/(T^{2}/2)$ beside it.
 \item The persistence rows are the reference baseline---next state equals last measured state---not a result.
-\item \textbf{Every value is a single run per configuration: no row carries a confidence interval, and the directional rows should be read as one paired observation, not as an estimate of a mean difference (Section~\ref{subsec:limits}).}
-\item $^{\dagger}$On the box constraint $D\le\num{2.0}$. Only $D$ has an
-external reference (the plant's $\mu=\num{1.05}$) and is bolded on that basis;
-$B$, $C$ and $E$ are reported without one.
+\item \textbf{Every value is a single run per configuration: no row carries a confidence interval, and the directional rows are one paired observation, not an estimate of a mean difference (Section~\ref{subsec:limits}).}
 \end{tablenotes}
 \end{threeparttable}
 \end{table}
@@ -426,7 +412,7 @@ $l_{r}C_{r}=\SI{14.38}{\kilo\newton\meter\per\radian}$, an understeer margin of
 \SI{2}{\percent}, where \texttt{Ours} keeps \SI{12}{\percent}
 ($\num{9.74}$ against $\num{11.06}$). A set that lands \SI{2}{\percent} from an
 oversteering pair on a coefficient it did not identify is the case the gate
-exists for, and no per-coefficient bounds check sees it. and only
+exists for, and no per-coefficient bounds check sees it. Of the two sets, only
 \texttt{Baseline-NN-MSE}'s grip ceiling is a claim the plant cannot honour:
 \eqref{eq:gripceiling} gives \SI{2.00}{\g} for it against \SI{1.01}{\g} for
 \texttt{Ours} and $\approx\SI{1.0}{\g}$ measured.
@@ -517,7 +503,7 @@ better. At \SI{2.2}{\degree} of slip both curves are far below their peaks, so
 a peak factor on its box constraint costs nothing here while a
 \SI{35}{\percent} slope deficit costs \SI{71}{\newton} of front-axle RMSE. The metric that
 separates the two models is therefore not the force at the slip angles the lap
-visits but the friction ceiling those forces do not probe---which is precisely
+visits but the grip ceiling those forces do not probe---which is precisely
 what a controller planning a speed profile consumes.
 
 \subsection{One-step state prediction}
@@ -556,8 +542,7 @@ Level~3 of the validation protocol completes on the regenerated trajectory.
 Both runs finish three timed laps with zero emergency halts and the same
 finite-state sequence---bootstrap pure pursuit, running pure pursuit, handover,
 running MPC---with one transition of each kind and no fallback to pure pursuit
-after handover. The sequence is read off each run's exported state timeline
-(\texttt{graphs/control/*/fsm\_\allowbreak state\_\allowbreak timeline.csv}),
+after handover. The sequence is read off each run's exported state timeline,
 which records the handover at $t=\SI{81.4}{\second}$ for \texttt{Ours} and
 $t=\SI{66.0}{\second}$ for \texttt{Baseline-NN-MSE} and no state change
 thereafter; the aggregated \texttt{transitions} column of the cross-run summary

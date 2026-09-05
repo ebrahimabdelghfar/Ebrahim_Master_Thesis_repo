@@ -1,0 +1,65 @@
+% === I. INTRODUCTION =========================================================
+\section{Introduction}
+
+Model-based controllers for autonomous racing derive their performance from the
+fidelity of the vehicle model they carry~\cite{kabzan2019lbmpc}, and in the
+lateral channel that fidelity is dominated by the tire: the physical bound on
+manoeuvrability and the least accessible component to
+measure~\cite{pacejka2012book}. Classical characterisation removes the vehicle
+from the track---steady-state manoeuvres yield clean data at a logistical cost
+a race weekend rarely affords~\cite{ontrack2025}. On-track identification
+removes the logistics but reintroduces transients, noise and, critically, the
+fact that a racing line is a poor excitation signal for a nonlinear model.
+
+Dikici \emph{et al.}~\cite{ontrack2025} propose the hybrid remedy that is the
+starting point of this paper. A small residual network is trained on
+\SI{30}{\second} of ordinary lap data to predict the one-step error of a
+nominal single-track model; the corrected model is rolled out through a
+\emph{synthetic}, quasi-steady steering sweep; and Pacejka coefficients are
+fitted to that sweep. Because the sweep is generated rather than driven it can
+be made steady and noise-free, and because the network only has to interpolate
+within its training distribution its generalisation weakness is contained. The
+procedure iterates, each fit becoming the next nominal model, and on a 1:10
+platform it reports a \num{3.3}$\times$ lower one-step RMSE than nonlinear
+least squares under noise.
+
+This paper asks what the pipeline identifies when it moves from a
+\SI{3.7}{\kilo\gram}, \SI{0.32}{\meter}-wheelbase platform to a full-scale
+Formula Student vehicle: \SI{269.6}{\kilo\gram}, \SI{1.53}{\meter} wheelbase,
+\SI{16}{\degree} of road-wheel lock, on a reference profile of
+\SIrange{9.6}{25.8}{\meter\per\second}. The question is identifiability rather
+than parameter transfer, and two scale-dependent mechanisms, both latent at
+1:10, break the estimate. First, excitation collapses inside the
+virtual-data step: the Pacejka fit never sees the recorded lap, only the
+synthetic rollout, whose reachable friction
+$\mu_{\mathrm{reach}}\!\approx\!v^{2}\delta_{\mathrm{sweep}}/(gL)$ is a
+property of the rollout configuration and not of the tire. A rollout speed inherited from the scaled platform caps it at $0.43$ here;
+below the tire's peak the Magic Formula degenerates to $F_{y}\approx
+F_{z}(BCD)\alpha$, only $BCD$ is identifiable, and the bounded optimiser
+resolves the remaining freedom on a box edge~\cite{ljung1999sysid}. Second, lateral
+demand scales as $v^{2}$, so a bad grip estimate is silent until it is
+catastrophic: one identified set with a peak friction coefficient of \num{0.40}
+tracked at \SI{0.16}{\meter} of cross-track error at
+\SI{11.1}{\meter\per\second} and \SI{41.89}{\meter} at
+\SI{27}{\meter\per\second} (Section~\ref{sec:integration}), and a scaled
+platform never reaches the speed at which that error becomes observable.
+
+A third difference is an opportunity. Because the study is conducted in the
+CARLA simulator~\cite{carla2017} through a purpose-built ROS~2 interface, the
+simulator's own per-wheel telemetry---slip angle, normal load, lateral
+force---is available as ground truth, so an on-track identifier can be scored
+against the forces the plant actually generated. Our contributions are: an identifiability analysis of the virtual-data step
+(Section~\ref{subsec:excitation}) giving the bound above and an excitation-
+aware rollout, verified in Section~\ref{subsec:sweep} on a grid over rollout
+speed, sweep amplitude and true peak factor with a known tire; the corrections
+it implies on both sides of the fit---an extrapolation-bounded sweep, a frozen
+regularisation target, and a measurement chain built on the achieved road-
+wheel angle, measured mass and geometry, and a friction warm start applied
+only as a floor (Sections~\ref{subsec:iterative}--\ref{subsec:measurement});
+admissibility gates on derived physical quantities rather than on per-
+coefficient bounds (Section~\ref{sec:integration}); and a closed-loop
+evaluation against the plant's own forces, in which the corrected pipeline
+preserves a peak factor within \num{0.05} of the plant's effective friction
+where the inherited configuration rails on its box constraint, and halves the
+lateral tracking error under MPC. All results are in simulation, one run per
+configuration.

@@ -9,7 +9,8 @@
 \label{sup:physinputs}
 The baseline residual reads $\vecz=[v_{x},v_{y},\omega,\delta]$ and predicts
 $[e_{v_{y}},e_{\omega}]$. The quantity it corrects, however, reaches the plant
-only through the slip angles of (3): the tire law (4) is
+only through the slip angles of (3) of the main paper: the tire law (4)
+there is
 a function of $(\alpha,F_{z})$ and of nothing else in $\vecz$, so the target
 $e$ is, to the extent the single-track structure holds at all, a function of
 $(\alpha_{f},\alpha_{r},F_{z,f},F_{z,r})$ plus the genuinely unmodelled terms.
@@ -17,7 +18,8 @@ The network is therefore asked to reconstruct
 $\alpha_{f},\alpha_{r}$ from $\vecz$ before it can represent anything.
 
 That reconstruction is the worst part of the map to leave to a small network.
-Equation~(3) composes a division by $v_{x}$ with an arctangent; a
+Equation~(3) of the main paper composes a division by $v_{x}$ with an
+arctangent; a
 one-hidden-layer piecewise-linear network approximates a \emph{ratio} only by
 tiling the $(v_{y},\omega,v_{x})$ domain, and this vehicle's identification
 data spans \SIrange{9.2}{26.5}{\meter\per\second}, a $2.9\times$ range of the
@@ -29,9 +31,9 @@ rollout at a single speed and a steering ramp, i.e.\ exactly in the region
 where such a residual has no reason to be consistent, and stage~3 then reads
 the result as tire force.
 
-Appending $\alpha_{f},\alpha_{r}$, computed from (3) with the
+Appending $\alpha_{f},\alpha_{r}$, computed from main-paper (3) with the
 \emph{measured} geometry of Table~I of the main paper, hands the network the two
-arguments of (4) directly. Three properties motivated the choice.
+arguments of main-paper (4) directly. Three properties motivated the choice.
 (i)~The speed dependence becomes explicit rather than learned: a residual
 expressed in $\alpha$ transfers between the recorded lap's speed and the
 rollout speed by construction, which matters because
@@ -77,6 +79,7 @@ one-step MSE,
 +\lambda_{s}\mathcal{L}_{\mathrm{steady}}
 +\lambda_{m}\mathcal{L}_{\mathrm{sym}}
 +\lambda_{g}\mathcal{L}_{\mathrm{smooth}},
+\label{eq:pinnloss}
 \end{equation}
 with $\lambda_{s}=0.1$, $\lambda_{m}=0.05$, $\lambda_{g}=10^{-4}$. Each answers
 a specific weakness of training a residual on one lap of ordinary driving.
@@ -84,8 +87,8 @@ a specific weakness of training a residual on one lap of ordinary driving.
 \paragraph{Dynamics consistency}
 $\mathcal{L}_{\mathrm{steady}}$ substitutes the \emph{corrected} next state
 $\vecx_{k+1}=\hat\vecx_{k+1}+e_{k}$ back into
-(1)--(2), with the axle forces re-evaluated through
-(4) at the corrected slip angles, and penalises the squared lateral
+(1)--(2) of the main paper, with the axle forces re-evaluated
+through (4) there at the corrected slip angles, and penalises the squared lateral
 and yaw balance residuals. Its purpose is to keep the two residual channels
 consistent with each other: nothing in the data term prevents an
 $e_{v_{y}}$ and an $e_{\omega}$ that individually reduce one-step error while
@@ -93,7 +96,7 @@ jointly implying an axle force pair no tire could produce, and it is that force
 pair, not the state prediction, that stage~3 subsequently fits. The term is
 applied only on a quasi-steady mask ($|\dot v_{y}|<\SI{0.8}{\meter\per\second\squared}$,
 $|\dot\omega|<\SI{6}{\radian\per\second\squared}$), because
-(1)--(2) neglect load transfer and transient tire
+main-paper (1)--(2) neglect load transfer and transient tire
 relaxation and therefore hold as written only where those terms are small;
 penalising the balance during a transient would ask the network to absorb the
 model's known omissions rather than the plant's unmodelled dynamics.
@@ -120,10 +123,10 @@ extrapolation bound of Section~V-C of the main paper decides \emph{where} the
 sweep stops asking, and the gradient penalty decides \emph{how fast} the
 residual is allowed to grow inside that range.
 
-The nominal-model half of \eqref{sup:pinnloss}---the nominal rollout, the
+The nominal-model half of \eqref{eq:pinnloss}---the nominal rollout, the
 mirrored inputs and the constant terms of the symmetry residual---depends only
-on quantities fixed for the whole training call and is precomputed once (see
-the supplementary material).
+on quantities fixed for the whole training call and is precomputed once per
+call (Section~\ref{sup:s4cost}).
 
 \section{Temporal Residual and Its Cost}
 \label{sup:s4}
@@ -153,7 +156,7 @@ Figure~\ref{fig:pipelines4} shows stage~1 in this configuration.
 vector (Section~\ref{sup:physinputs}) and the S4D temporal residual
 (Section~\ref{sup:s4}). Green marks what differs from the baseline MLP
 residual. (a) The four measured signals are augmented with the two slip angles
-of (3) and cut into $W=20$ sample windows. (b) The residual stack:
+of main-paper (3) and cut into $W=20$ sample windows. (b) The residual stack:
 input projection to $H$ channels, S4D blocks with a diagonal state-transition
 matrix, and an output projection to $[e_{v_{y}},e_{\omega}]$. (c) The same
 linear time-invariant system is evaluated two ways---as a causal convolution
@@ -216,7 +219,7 @@ $<10^{-9}$ in double precision.
 End to end this takes a six-iteration identification from \SI{181.4}{\second}
 to \SI{20.9}{\second} (\num{8.7}$\times$) on the same synthetic
 \SI{30}{\second} lap, with the identified Pacejka coefficients agreeing to four
-decimal places (Table~\ref{sup:runtime}). We deliberately did \emph{not} touch
+decimal places (Table~\ref{sup:tabruntime}). We deliberately did \emph{not} touch
 the knobs that trade accuracy for speed---epoch count, iteration count, early
 stopping, warm-starting the network from the previous iteration's weights, or
 dropping the smoothness term---because those change the identified tire and are
@@ -228,7 +231,7 @@ a modelling decision, not a free speedup.
 \subsection{Identification cost}
 
 Section~\ref{sup:s4cost}'s claim is that the temporal residual is affordable
-on the hardware a vehicle carries; Table~\ref{sup:runtime} is the measurement,
+on the hardware a vehicle carries; Table~\ref{sup:tabruntime} is the measurement,
 on a synthetic \SI{30}{\second} lap and the same six co-identification
 iterations throughout. The per-stage rows and the end-to-end totals were
 measured separately and are not a decomposition of each other: the stage rows
@@ -288,7 +291,7 @@ of those two penalties.
 \subsection{Baseline pipeline versus this work}
 \label{sup:baselinecmp}
 
-Table~\ref{sup:baseline} places the pipeline as published~\cite{ontrack2025}
+Table~\ref{sup:tabbaseline} places the pipeline as published~\cite{ontrack2025}
 beside the pipeline as it stands here, on the axes that changed. The residual
 model, the data budget, the four-stage loop and the steady-state force recovery
 are inherited unchanged; what differs is the configuration of the virtual-data
@@ -301,6 +304,7 @@ four settings and not the rollout.
 \begin{table}[t]
 \caption{The baseline pipeline~\cite{ontrack2025} against this work, on the
 axes that differ.}
+\label{sup:tabbaseline}
 \centering
 \begin{threeparttable}
 \scriptsize
@@ -329,13 +333,13 @@ options\\
 Output contract & Per-coefficient box constraints & Gates on derived
 quantities at the controller interface\\
 Residual objective & One-step MSE & MSE plus quasi-steady balance, left/right
-symmetry and input-gradient penalties, \eqref{sup:pinnloss}\\
+symmetry and input-gradient penalties, \eqref{eq:pinnloss}\\
 Residual inputs & State, command & \emph{inherited} plus axle slip angles
 (Sec.~\ref{sup:physinputs})\\
 Residual model & MLP, 58 parameters & \emph{inherited} as default; S4D
 temporal residual shipped\\
 Residual cost & Not reported & S4D identification \SI{181.4}{\second}
-$\rightarrow$ \SI{20.9}{\second}, exact (Table~\ref{sup:runtime})\\
+$\rightarrow$ \SI{20.9}{\second}, exact (Table~\ref{sup:tabruntime})\\
 Data budget & \SI{30}{\second}, one controller-free lap & \emph{inherited}\\
 Force recovery & Quasi-steady yaw balance & \emph{inherited}\\
 Ground truth & Steady-state manoeuvre in a large space &

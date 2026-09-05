@@ -30,11 +30,11 @@ under noise \cite{ontrack2025}. The recursive alternative to a batch fit is a
 dual or joint filter that carries states and parameters together---Wenzel
 \emph{et al.}~\cite{wenzel2006dekf} is the canonical vehicle instance, with
 Sierra \emph{et al.}~\cite{sierra2006cornering} the lateral-dynamics
-cornering-stiffness variant---and it
-is subject to the same excitation condition this paper is about: a filter run
-on a smooth racing line has as little information about the tire's peak as a
-batch fit of the same data, and expresses it as a parameter covariance that
-does not shrink rather than as a coefficient on a bound. Dedicated friction
+cornering-stiffness variant. The recursive form is subject to the same
+excitation condition this paper is about. A filter run on a smooth racing line
+has as little information about the tire's peak as a batch fit of the same
+data; it merely expresses that as a parameter covariance that does not shrink,
+rather than as a coefficient on a bound. Dedicated friction
 estimators make the excitation dependence explicit
 \cite{rajamani2012wheelfriction,ahn2013friction,acosta2017friction,khaleghian2017survey},
 and Hsu
@@ -42,10 +42,10 @@ and Hsu
 Section~\ref{subsec:friction}: it recovers the friction limit below the peak
 from the \emph{curvature} of the force response, read through the pneumatic
 trail in steering torque. Our estimator uses the same observation on a
-different signal---the axle force curve reconstructed from the IMU and
+different signal: the axle force curve reconstructed from the IMU and
 odometry, with no steering-torque sensor and no assumption about the steering
-system---and is gated and applied as a one-way floor, which is a property of
-the interface to the controller rather than of the estimator. Gaussian-process approaches learn the mismatch
+system. It is then gated and applied as a one-way floor---a property of the
+interface to the controller rather than of the estimator. Gaussian-process approaches learn the mismatch
 of a nominal model and have been used both for identification and inside the
 controller \cite{hewing2018cautious,hewing2020cautious,kabzan2019lbmpc}; they
 are accurate but carry a continuing computational cost and, as

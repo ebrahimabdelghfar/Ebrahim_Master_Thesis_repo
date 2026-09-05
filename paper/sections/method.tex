@@ -107,15 +107,15 @@ exactly. The \emph{objective}
 \label{eq:pinnloss}
 \end{equation}
 with $\lambda_{s}=0.1$, $\lambda_{m}=0.05$, $\lambda_{g}=10^{-4}$, adds three
-penalties to the one-step MSE~\cite{raissi2019pinn,deepdynamics2024}, each
-answering a weakness of training a residual on one lap of ordinary driving:
+penalties to the one-step MSE~\cite{raissi2019pinn,deepdynamics2024}. Each
+answers a weakness of training a residual on one lap of ordinary driving.
 $\mathcal{L}_{\mathrm{steady}}$ keeps the two residual channels jointly
 consistent with \eqref{eq:vydot}--\eqref{eq:omdot} on a quasi-steady mask, so
-they cannot imply an axle force pair no tire could produce---and it is that
-force pair, not the state prediction, that stage~3 fits;
+they cannot imply an axle force pair no tire could produce; it is that force
+pair, not the state prediction, that stage~3 fits.
 $\mathcal{L}_{\mathrm{sym}}$ enforces the odd symmetry
 $e(-\vecz)=-e(\vecz)$ that a laterally symmetric vehicle has, supplying from
-geometry the half of the input domain a circuit under-covers; and
+geometry the half of the input domain a circuit under-covers.
 $\mathcal{L}_{\mathrm{smooth}}$ is a soft Lipschitz bound that decides how fast
 the residual may grow inside the range the extrapolation bound of
 Section~\ref{subsec:iterative} allows it to be queried over. The derivations,
@@ -282,10 +282,10 @@ for the force division; the two disagreeing is a silent bias.
 The third correction is to where the peak factor's prior comes from. The
 inherited pipeline had none: $D$ started from a configuration constant and was
 left to the fit. What follows recovers a prior for it from the sensors the
-vehicle already carries---axle forces and slip angles from the body's own
-motion (a), a two-parameter brush fit that reads $\mu$ from the
-\emph{curvature} of those forces rather than from their asymptote (b), the
-release gate that says when that reading means anything (c), and the rule that
+vehicle already carries. Four steps: axle forces and slip angles from the
+body's own motion (a); a two-parameter brush fit that reads $\mu$ from the
+\emph{curvature} of those forces rather than from their asymptote (b); the
+release gate that says when that reading means anything (c); and the rule that
 the released value may only ever raise $D$ (d).
 
 \paragraph{Axle forces and slip angles without a force sensor}
@@ -342,7 +342,7 @@ itself already slightly nonlinear.
 Equation~\eqref{eq:brushinv} also states its own failure mode:
 $\mathrm{d}\mu/\mathrm{d}r$ grows without bound as $r\to1$, i.e.\ as the tire
 curve stays linear. The estimate is therefore released only when three
-conditions hold---peak grip utilisation
+conditions hold---peak friction utilisation
 $\max|F_{y}|/(\hat\mu F_{z})\ge\num{0.40}$, relative precision
 $\sigma_{\hat\mu}/\hat\mu\le\num{0.15}$ from the Gauss--Newton covariance, and
 $\hat\mu$ not resting on its own search bound---and otherwise the module logs
@@ -352,11 +352,10 @@ The $\mu$ in the utilisation test is the \emph{fitted} $\hat\mu$ of the same
 least-squares call, not an independent one, so that test is on its own
 circular: a fit that underestimates $\mu$ inflates its own utilisation and
 passes itself. It is therefore never used alone. The two companion conditions
-are what break the circularity---a fit driven low by data that is still linear
-returns a wide $\sigma_{\hat\mu}$, and a fit driven onto its search bound is
-rejected as railed---and the floor of Section~\ref{subsec:frictionfloor} makes
-whatever still slips through one-sided, since an underestimate cannot lower
-$D$. The \SI{40}{\percent} floor is not tuned here: it is the excitation level the
+break the circularity: a fit driven low by data that is still linear returns a
+wide $\sigma_{\hat\mu}$, and a fit driven onto its search bound is rejected as
+railed. Whatever still slips through is made one-sided by the floor of
+Section~\ref{subsec:frictionfloor}, since an underestimate cannot lower $D$. The \SI{40}{\percent} floor is not tuned here: it is the excitation level the
 lateral-dynamics friction-estimation literature converges on, as surveyed by
 Acosta \emph{et al.}~\cite{acosta2017friction}, whose review reports estimators
 failing below $|a_{y}|=\SI{0.4}{\g}$ ``due to the proximity of the tyre force
