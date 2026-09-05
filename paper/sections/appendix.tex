@@ -88,6 +88,125 @@ population draw from an unseeded generator: the reported identifications are
 reproducible in distribution but not bit for bit. The sweep of
 Table~\ref{tab:sweep} is seeded explicitly and is bit-reproducible.
 
+\section{Simulator--ROS~2 Interface}
+\label{sec:iface}
+
+\subsection*{Command path}
+The bridge runs in \texttt{ackermann\_drive} mode, subscribing to a single
+\texttt{ack\-er\-mann\_msgs/AckermannDriveStamped} on \texttt{/drive} and
+forwarding speed and steering angle to CARLA's native Ackermann controller,
+whose server-side cascaded PID loops are configured once at startup. No
+client-side steering PID is present---the commanded road-wheel angle passes
+through in radians---so the achieved/\allowbreak commanded ratio of
+Table~\ref{tab:vehicle} is a property of the vehicle and its steering curve
+rather than of a tuning choice in the bridge.
+
+\subsection*{Feedback path}
+Table~\ref{tab:topics} lists the interface consumed by the identifier and its
+validation. One property of it is specific to this architecture.
+
+\begin{table}[t]
+\caption{ROS~2 interface used by the identification and validation pipeline.
+Namespace is \texttt{/sim} unless marked absolute.}
+\label{tab:topics}
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}p{2.4cm}p{2.75cm}p{2.5cm}@{}}
+\toprule
+Topic & Type & Role\\
+\midrule
+\texttt{/odom} & \texttt{nav\_msgs/Odometry} & State $v_{x},v_{y},\omega$; twist is body-frame\\
+\texttt{feedback/\allowbreak steering\_angle} & \texttt{std\_msgs/Float32} (deg) & Achieved road-wheel angle $\delta$\\
+\texttt{feedback/imu} & \texttt{sensor\_msgs/Imu} & $a_{x},a_{y}$ for the friction warm-start\\
+\texttt{feedback/\allowbreak tire\_forces} & \texttt{sim\_manager\_\allowbreak msgs/\allowbreak TireForces} & Per-wheel $\alpha$, $F_{z}$, $F_{y}$, $\mu$, $\omega_{w}$, $\kappa$: \textbf{ground truth}\\
+\texttt{feedback/\allowbreak vehicle\_physics} & \texttt{std\_msgs/String} (JSON) & Live wheel parameters of \eqref{eq:physx}\\
+\texttt{feedback/speed} & \texttt{std\_msgs/Float32} & Forward speed echo\\
+\texttt{feedback/motors} & \texttt{std\_msgs/String} (JSON) & Per-wheel speed/torque/brake\\
+\texttt{/drive} & \texttt{ackermann\_msgs/\allowbreak Ackermann\allowbreak Drive\allowbreak Stamped} & Control command in\\
+\texttt{control/\allowbreak tire\_friction} & \texttt{std\_msgs/Float32} & Runtime grip override\\
+\texttt{/clock} \emph{(abs.)} & \texttt{rosgraph\_msgs/\allowbreak Clock} & Simulation time base\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Per-wheel ground truth}
+\texttt{feedback/\allowbreak tire\_forces} carries CARLA's own
+\texttt{Wheel\-TelemetryData}: per-wheel lateral slip angle, normal load,
+lateral force, effective friction coefficient, wheel speed, longitudinal force
+and wheel torque, in wheel order [FL, FR, RL, RR]. No analytic tire model
+exists inside the bridge, so nothing on this topic can disagree with the
+physics the vehicle is driven by. This topic is what allows an on-track
+identifier to be scored against the forces the plant generated. Four properties
+of it were established by measurement and bound what may be read off it.
+(i)~Only \texttt{lateral\_force} is force ground truth; it is the channel every
+validation in this paper uses. (ii)~\texttt{longitudinal\_force} is a
+friction-capacity report rather than a measurement---it tracks
+$\mu F_{z}$ and correlates with $ma_{x}$ at \num{0.04}---and
+\texttt{wheel\_torque} is an exact identity of it, so neither carries
+independent information. (iii)~Below \SI{0.5}{\meter\per\second} the publisher
+zeroes slip angle and both forces while the normal load stays live, so a
+load-only gate admits standstill frames as perfect $(0,0)$ samples; the
+identifier gates on the all-zero pattern as well. (iv)~The slip angle needs no
+sign change across the boundary, which was verified rather than assumed.
+
+Figure~\ref{fig:frames} states the conventions the rest of the paper assumes.
+The simulator and the identification stack do not share a handedness: CARLA
+inherits Unreal's left-handed world (\mbox{$X$ east}, $Y$ \emph{south}, $Z$ up,
+yaw positive clockwise), while every ROS~2 topic follows
+REP-103~\cite{rep103}---right-handed ENU for the world, forward-left-up for the
+body---and the identification equations of Section~\ref{sec:method} are written
+in the body frame with $\alpha$ and $F_{y}$ positive to the left, the SAE-style
+axis convention~\cite{saej670,pacejka2012book}. The bridge is where the two
+meet, and it is a per-channel conversion rather than a single transform:
+position and yaw flip sign, twist is additionally rotated into the body frame
+by $q^{-1}$, the IMU's $a_{y}$ flips, the steering \emph{command} flips on the
+way out, and the tire telemetry's slip angle does \emph{not}, because the frame
+flip and CARLA's own sign convention for \texttt{lat\_slip} cancel. That last
+one is the trap: a sign error there is invisible in the states and inverts the
+identified curve, so it was checked against a slip angle rebuilt from the
+chassis state in a steady \SI{4}{\meter\per\second} turn at
+\SI{0.20}{\radian}---equal magnitude to within \SI{2}{\percent} front and
+\SI{15}{\percent} rear.
+
+\begin{figure*}[t]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/frames}}
+\caption{Frame and sign conventions across the simulator--ROS~2 boundary.
+(a) All identification quantities are defined in the body frame:
+$x$ forward, $y$ left, $\omega$ and $\delta$ positive counter-clockwise, and
+slip angle and lateral force positive to the left, so that a positive $\alpha$
+produces a positive $F_{y}$~\cite{saej670}. (b) The conversion applied per
+channel. The slip angle of the tire telemetry is the one exception that needs
+no sign change, because the frame flip and CARLA's own convention cancel.}
+\label{fig:frames}
+\end{figure*}
+
+\subsection*{Extensions made for identification}
+Six changes support this study and are listed for reproducibility: the
+existing but unsubscribed \texttt{feedback/\allowbreak steering\_angle} is now
+consumed by the identifier (with configurable units, scale and staleness
+timeout, falling back to the \texttt{/drive} setpoint); runtime overrides
+\texttt{control/\allowbreak tire\_friction} and
+\texttt{control/\allowbreak drag\_coefficient} write straight to the live
+\texttt{VehiclePhysicsControl}, so surface friction can change within a run
+without respawning; the torque curve, zero-throttle damping and wheel
+\texttt{tire\_friction} were tuned against a low-speed hold test (a wheel
+friction above $\approx$2.0 on a steered wheel scrubs hard enough at creep
+speed to stall the drivetrain intermittently), and these values define the
+plant being identified; telemetry runs on a dedicated \SI{10}{\hertz}
+thread off the control loop, since each tick costs several blocking CARLA RPCs;
+\texttt{feedback/\allowbreak tire\_forces} was extended with the effective
+friction coefficient, the wheel speed and a kinematically recomputed slip ratio
+$\kappa=(\omega_{w}r_{w}-v)/v$, the last because CARLA's own
+\texttt{long\_slip} field is inconsistent with the wheel speed and radius the
+same message reports (\num{+0.177}, i.e.\ hard braking, on a wheel turning
+\SI{8.99}{\radian\per\second} at a steady \SI{2.33}{\meter\per\second} cruise,
+whose kinematic ratio is \num{-0.034}); and the live wheel parameters of
+\eqref{eq:physx} are published on
+\texttt{feedback/\allowbreak vehicle\_physics}, so the reference curve of
+Table~\ref{tab:ref} cannot go stale when the vehicle configuration changes.
+
 \section{Reference Implementation}
 \label{sec:refimpl}
 

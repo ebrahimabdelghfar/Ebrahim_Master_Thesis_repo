@@ -39,7 +39,7 @@
 \node[sig, anchor=north west] (raw) at (0,0)
   {\textbf{Measured}\\[1pt] $[v_{x},v_{y},\omega,\delta]_{k}$};
 \node[aug, below=\vgap of raw] (slip)
-  {\textbf{Derived}\\[1pt] $\alpha_{f},\alpha_{r}$ from \eqref{eq:slip}};
+  {\textbf{Derived}\\[1pt] $\alpha_{f},\alpha_{r}$ from (3) of the main paper};
 \node[blk=34mm, below=\vgap of slip, fill=black!3] (win)
   {\textbf{Window}\\[1pt] $W=20$ (\SI{0.4}{\second}); no window crosses the
    mirrored-copy seam};
@@ -99,7 +99,7 @@
    500-step sweep. Strictly sequential, so launch-latency bound: it runs on a
    CPU copy.};
 \node[note, below=\vgap of rec] (cost)
-  {\textbf{Measured (Table~\ref{tab:runtime})}\\[1pt]
+  {\textbf{Measured (Table~\ref{sup:tabruntime})}\\[1pt]
    epoch \SI{125.7}{\milli\second} $\to$ \SI{16.6}{\milli\second};
    rollout \SI{898}{\milli\second} (GPU) $\to$ \SI{204}{\milli\second}
    (CPU); 6-iteration loop \SI{181.4}{\second} $\to$ \SI{20.9}{\second}.

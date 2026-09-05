@@ -8,7 +8,10 @@ Section~\ref{subsec:residual} covers the residual model,
 virtual-data step that constitute the paper's central methodological
 contribution, \ref{subsec:fit} the fit itself, \ref{subsec:measurement} the
 measurement chain, and \ref{subsec:validation} the validation protocol.
-Figure~\ref{fig:pipeline} summarises the loop.
+Figure~\ref{fig:pipeline} summarises the loop and
+Algorithm~\ref{alg:loop} states it in the form needed to reimplement it; the
+lines marked $\triangleright$ are this paper's changes to the inherited
+pipeline.
 
 \begin{figure*}[t]
 \centering
@@ -28,6 +31,37 @@ controller has acknowledged the submitted model
 \label{fig:pipeline}
 \end{figure*}
 
+\begin{algorithm}[t]
+\footnotesize
+\caption{Corrected on-track identification cycle. $\triangleright$ marks a
+change to the inherited pipeline~\cite{ontrack2025}.}
+\label{alg:loop}
+\hrule\vspace{2pt}
+\algline{in}{buffer $\mathcal{D}=\{v_{x},v_{y},\omega,\delta^{\mathrm{ach}}\}_{1:K}$ ($\SI{30}{\second}$), prior $\phip^{0}$, bounds $[\phip^{-},\phip^{+}]$}
+\algline{out}{$\phip$, or \textsc{unidentified}}
+\vspace{2pt}\hrule\vspace{2pt}
+\algline{1}{$\delta \leftarrow$ achieved road-wheel angle, command on staleness \hfill$\triangleright$}
+\algline{2}{$m,l_{f},l_{r} \leftarrow$ measured static wheel loads \hfill$\triangleright$}
+\algline{3}{\textbf{if} first cycle \textbf{then} \hfill$\triangleright$}
+\algline{4}{\algin{1.5}$\hat\mu_{f},\hat\mu_{r} \leftarrow \textsc{BrushFit}(\mathcal{D})$; release only if gated}
+\algline{5}{\algin{1.5}$D^{0}_{a} \leftarrow \max(D^{0}_{a},\hat\mu_{a})$ \quad(floor only, never a replacement)}
+\algline{6}{$\phip^{\mathrm{tik}} \leftarrow \phip^{0}$ \quad(frozen for all iterations) \hfill$\triangleright$}
+\algline{7}{$v \leftarrow \mathrm{clip}(\overline{v_{x}}(\mathcal{D}),\,v_{\min},\,\infty)$ \hfill$\triangleright$}
+\algline{8}{$\delta_{\mathrm{sweep}} \leftarrow \mathrm{clip}(1.5\,P_{99}(|\delta|),\,\delta_{\min},\,\delta_{\max})$ \hfill$\triangleright$}
+\algline{9}{$\mu_{\mathrm{reach}} \leftarrow v^{2}\delta_{\mathrm{sweep}}/(gL)$; \textbf{warn if} $\mu_{\mathrm{reach}}<\max_{a} D^{0}_{a}$ \hfill$\triangleright$}
+\algline{10}{$\phip \leftarrow \phip^{0}$}
+\algline{11}{\textbf{for} $i=1$ \textbf{to} $N_{\mathrm{it}}$ \textbf{do}}
+\algline{12}{\algin{1.5}$f_{NN} \leftarrow \textsc{TrainResidual}(\mathcal{D},\phip)$ \quad(re-initialised each $i$)}
+\algline{13}{\algin{1.5}$\mathcal{S} \leftarrow \textsc{Rollout}(\phip,f_{NN},v,\delta_{\mathrm{sweep}})$}
+\algline{14}{\algin{1.5}$\phip \leftarrow \arg\min \|F_{y}(\phip;\mathcal{S})-\hat F_{y}(\mathcal{S})\|^{2} + \lambda\|\phip-\phip^{\mathrm{tik}}\|^{2}$}
+\algline{15}{\algin{1.5}\quad subject to $\phip\in[\phip^{-},\phip^{+}]$, started from $\phip$ of $i-1$}
+\algline{16}{\textbf{if} any $\phip$ component on a bound \textbf{then} report the degeneracy \hfill$\triangleright$}
+\algline{17}{\textbf{if not} \textsc{Gates}$(\phip)$ \textbf{then return} \textsc{unidentified} \hfill$\triangleright$}
+\algline{18}{submit $\phip$; keep the previous model until acknowledged \hfill$\triangleright$}
+\vspace{2pt}\hrule\vspace{2pt}
+\algline{}{\textsc{Gates}: axle stiffness sign and magnitude; $l_{f}C_{f}<l_{r}C_{r}$ and $v_{\mathrm{crit}}$ outside the speed range; grip ceiling $\ge$ the trajectory's lateral demand (Section~\ref{sec:integration}).}
+\end{algorithm}
+
 \subsection{Residual model}
 \label{subsec:residual}
 
@@ -35,9 +69,9 @@ The residual carries whatever the nominal model
 \eqref{eq:vydot}--\eqref{eq:mf} does not represent, and how that map is
 parameterised is a modelling decision rather than a hyperparameter. Two
 decisions are made here, both of the same kind: known vehicle physics is used
-to shape the residual's \emph{input space}
-(Section~\ref{subsec:physinputs}) and, optionally, its \emph{objective}
-(Section~\ref{subsec:pinnloss}), so that the network's small capacity is spent
+to shape the residual's \emph{input space} and, optionally, its
+\emph{objective} (Section~\ref{subsec:physinputs}), so that the network's small
+capacity is spent
 on what is genuinely unmodelled instead of on rediscovering structure that
 \eqref{eq:slip} and \eqref{eq:vydot}--\eqref{eq:omdot} already state exactly.
 The rest of this subsection states both and why they were chosen; both are
@@ -57,73 +91,14 @@ identifiability statements of
 Sections~\ref{subsec:excitation}--\ref{subsec:iterative} are not confounded
 with a change of residual.
 
-\subsubsection{Physics-augmented inputs: the slip angles}
+\subsubsection{Physics-augmented inputs and objective}
 \label{subsec:physinputs}
-The baseline residual reads $\vecz=[v_{x},v_{y},\omega,\delta]$ and predicts
-$[e_{v_{y}},e_{\omega}]$. The quantity it corrects, however, reaches the plant
-only through the slip angles of \eqref{eq:slip}: the tire law \eqref{eq:mf} is
-a function of $(\alpha,F_{z})$ and of nothing else in $\vecz$, so the target
-$e$ is, to the extent the single-track structure holds at all, a function of
-$(\alpha_{f},\alpha_{r},F_{z,f},F_{z,r})$ plus the genuinely unmodelled terms.
-The network is therefore asked to reconstruct
-$\alpha_{f},\alpha_{r}$ from $\vecz$ before it can represent anything.
-
-That reconstruction is the worst part of the map to leave to a small network.
-Equation~\eqref{eq:slip} composes a division by $v_{x}$ with an arctangent; a
-one-hidden-layer piecewise-linear network approximates a \emph{ratio} only by
-tiling the $(v_{y},\omega,v_{x})$ domain, and this vehicle's identification
-data spans \SIrange{9.2}{26.5}{\meter\per\second}, a $2.9\times$ range of the
-denominator. Eight LeakyReLU units cannot tile that, so the fitted residual
-represents the same tire nonlinearity independently at each speed it happened
-to observe, with nothing tying those representations together. The consequence
-is specific to this pipeline: stage~2 evaluates the network along a synthetic
-rollout at a single speed and a steering ramp, i.e.\ exactly in the region
-where such a residual has no reason to be consistent, and stage~3 then reads
-the result as tire force.
-
-Appending $\alpha_{f},\alpha_{r}$, computed from \eqref{eq:slip} with the
-\emph{measured} geometry of Table~\ref{tab:vehicle}, hands the network the two
-arguments of \eqref{eq:mf} directly. Three properties motivated the choice.
-(i)~The speed dependence becomes explicit rather than learned: a residual
-expressed in $\alpha$ transfers between the recorded lap's speed and the
-rollout speed by construction, which matters because
-Section~\ref{subsec:excitation} deliberately drives those two apart.
-(ii)~It costs 16 weights ($58\rightarrow74$ parameters) and no new sensor,
-against the several hundred a network would need to tile the division;
-augmentation is the cheaper way to buy the same function.
-(iii)~It is compatible with the symmetry argument of
-Section~\ref{subsec:pinnloss}: $\alpha_{f},\alpha_{r}$ are odd in
-$(v_{y},\omega,\delta)$, so the mirrored batch mirrors the augmented inputs too
-and the symmetry penalty remains exact.
-
-The raw four inputs are retained rather than replaced, because the effects the
-residual exists to absorb---load transfer, actuator dynamics, aerodynamic load,
-combined slip---are not functions of $\alpha$ alone, and $v_{x}$ in particular
-carries the load-dependent part. The geometry used for the augmentation is the
-same $l_{f},l_{r}$ the fit and the force recovery use, which is why
-$l_{wb}\equiv l_{f}+l_{r}$ is enforced (Section~\ref{subsec:measurement}): an
-augmentation computed from a different wheelbase than the one
-\eqref{eq:ssforces} assumes would inject a bias exactly where the network is
-meant to remove one.
-
-This is the physics-informed idea of
-\cite{raissi2019pinn,deepdynamics2024} applied at the input rather than at the
-loss, and the placement is deliberate: an input augmentation carries no penalty
-weight to tune, cannot trade against the data term, and costs nothing at
-inference, whereas a loss term buys the same structure only softly and only
-where the data supports it. Deep Dynamics~\cite{deepdynamics2024} makes the
-complementary choice of constraining coefficients \emph{inside} the network;
-here the network is left unconstrained and its input space is made physical
-instead. The augmentation is available on its own (\texttt{physics\_inputs})
-and combined with the temporal residual (\textbf{s4} with
-\texttt{use\_physics\_inputs}), and is rank-agnostic, so the same code path
-serves a flat batch and a windowed sequence batch.
-
-\subsubsection{Physics-informed objective}
-\label{subsec:pinnloss}
-The optional physics-informed
-objective~\cite{raissi2019pinn,deepdynamics2024} adds three penalties to the
-one-step MSE,
+Two options shape the residual with known vehicle physics rather than with
+capacity. The \emph{input space} is augmented with the axle slip angles of
+\eqref{eq:slip}: the tire law \eqref{eq:mf} is a function of $(\alpha,F_{z})$
+and of nothing else in $\vecz$, so supplying $\alpha_{f},\alpha_{r}$ directly
+spares the network from rediscovering a relation the model already states
+exactly. The \emph{objective}
 \begin{equation}
 \mathcal{L}=\mathcal{L}_{\mathrm{data}}
 +\lambda_{s}\mathcal{L}_{\mathrm{steady}}
@@ -131,147 +106,35 @@ one-step MSE,
 +\lambda_{g}\mathcal{L}_{\mathrm{smooth}},
 \label{eq:pinnloss}
 \end{equation}
-with $\lambda_{s}=0.1$, $\lambda_{m}=0.05$, $\lambda_{g}=10^{-4}$. Each answers
-a specific weakness of training a residual on one lap of ordinary driving.
-
-\paragraph{Dynamics consistency}
-$\mathcal{L}_{\mathrm{steady}}$ substitutes the \emph{corrected} next state
-$\vecx_{k+1}=\hat\vecx_{k+1}+e_{k}$ back into
-\eqref{eq:vydot}--\eqref{eq:omdot}, with the axle forces re-evaluated through
-\eqref{eq:mf} at the corrected slip angles, and penalises the squared lateral
-and yaw balance residuals. Its purpose is to keep the two residual channels
-consistent with each other: nothing in the data term prevents an
-$e_{v_{y}}$ and an $e_{\omega}$ that individually reduce one-step error while
-jointly implying an axle force pair no tire could produce, and it is that force
-pair, not the state prediction, that stage~3 subsequently fits. The term is
-applied only on a quasi-steady mask ($|\dot v_{y}|<\SI{0.8}{\meter\per\second\squared}$,
-$|\dot\omega|<\SI{6}{\radian\per\second\squared}$), because
-\eqref{eq:vydot}--\eqref{eq:omdot} neglect load transfer and transient tire
-relaxation and therefore hold as written only where those terms are small;
-penalising the balance during a transient would ask the network to absorb the
-model's known omissions rather than the plant's unmodelled dynamics.
-
-\paragraph{Left/right symmetry}
-The vehicle is laterally symmetric, so the true residual map is odd:
-$e(-v_{y},-\omega,-\delta)=-e(v_{y},\omega,\delta)$.
-$\mathcal{L}_{\mathrm{sym}}$ penalises
-$\|f_{NN}(\vecz)+f_{NN}(-\vecz)\|^{2}$ over the sign-mirrored batch. A circuit
-is rarely balanced in its corner directions, so \SI{30}{\second} of lap data
-covers one sign of $\delta$ far better than the other, and the synthetic sweep
-of stage~2 is run in one direction only. The mirror supplies the missing half
-of the input domain from geometry rather than from data, at no data cost; the
-same mirroring is applied to the recorded trace before windowing
-(Section~\ref{subsec:s4}), so the two uses are consistent.
-
-\paragraph{Input-gradient smoothness}
-$\mathcal{L}_{\mathrm{smooth}}$ penalises
-$\|\partial e/\partial\vecz\|^{2}$, a soft Lipschitz bound on the residual.
-Stage~2 queries the network beyond the steering range it was trained on, and
-Section~\ref{subsec:iterative} shows what an unconstrained extrapolation there
-costs. The two mechanisms are complementary and both are kept: the
-extrapolation bound of Section~\ref{subsec:iterative} decides \emph{where} the
-sweep stops asking, and the gradient penalty decides \emph{how fast} the
-residual is allowed to grow inside that range.
-
-The nominal-model half of \eqref{eq:pinnloss}---the nominal rollout, the
-mirrored inputs and the constant terms of the symmetry residual---depends only
-on quantities fixed for the whole training call and is precomputed once
-(Section~\ref{subsec:s4cost}).
+with $\lambda_{s}=0.1$, $\lambda_{m}=0.05$, $\lambda_{g}=10^{-4}$, adds three
+penalties to the one-step MSE~\cite{raissi2019pinn,deepdynamics2024}, each
+answering a weakness of training a residual on one lap of ordinary driving:
+$\mathcal{L}_{\mathrm{steady}}$ keeps the two residual channels jointly
+consistent with \eqref{eq:vydot}--\eqref{eq:omdot} on a quasi-steady mask, so
+they cannot imply an axle force pair no tire could produce---and it is that
+force pair, not the state prediction, that stage~3 fits;
+$\mathcal{L}_{\mathrm{sym}}$ enforces the odd symmetry
+$e(-\vecz)=-e(\vecz)$ that a laterally symmetric vehicle has, supplying from
+geometry the half of the input domain a circuit under-covers; and
+$\mathcal{L}_{\mathrm{smooth}}$ is a soft Lipschitz bound that decides how fast
+the residual may grow inside the range the extrapolation bound of
+Section~\ref{subsec:iterative} allows it to be queried over. The derivations,
+the masks and the precomputation that makes the nominal-model half of
+\eqref{eq:pinnloss} free are in the supplementary material.
 
 \subsubsection{Temporal residual}
 \label{subsec:s4}
-The \texttt{s4} architecture is an S4D diagonal state-space
-residual~\cite{gu2022s4d} over a sliding window of $W=20$ samples
-(\SI{0.7}{\second} at $T_{s}=\SI{0.035}{\second}$). The length is a
-configured value rather than a derived one: it spans roughly \num{30} times the
-time constant of the model's fastest lateral mode at the identification speeds,
-so every window contains the transient the residual has to reproduce. Windows are cut so
-that none straddles the seam between the recorded trace and its mirrored copy.
-Each block carries $H=4$ independent single-input single-output channels of
-complex state dimension $N=4$, initialised in the S4D-Lin form
-($\mathrm{Re}(A_{n})=-\tfrac{1}{2}$, $\mathrm{Im}(A_{n})=\pi n$) that
-approximates the HiPPO-LegS operator~\cite{gu2020hippo} in closed form, with a
-learnable per-channel discretisation step. As stated in
-Section~\ref{sec:related}, the S4-family residual overlaps with concurrent
-work~\cite{visionsysid2026} and is not claimed as a contribution;
-Section~\ref{subsec:s4cost} reports what we did change, which is its cost.
-Figure~\ref{fig:pipelines4} shows stage~1 in this configuration.
-
-\begin{figure*}[t]
-\centering
-\resizebox{0.98\textwidth}{!}{\input{figures/pipeline_s4}}
-\caption{Stage~1 of Fig.~\ref{fig:pipeline} with the physics-augmented input
-vector (Section~\ref{subsec:physinputs}) and the S4D temporal residual
-(Section~\ref{subsec:s4}). Green marks what differs from the baseline MLP
-residual. (a) The four measured signals are augmented with the two slip angles
-of \eqref{eq:slip} and cut into $W=20$ sample windows. (b) The residual stack:
-input projection to $H$ channels, S4D blocks with a diagonal state-transition
-matrix, and an output projection to $[e_{v_{y}},e_{\omega}]$. (c) The same
-linear time-invariant system is evaluated two ways---as a causal convolution
-with the closed-form impulse response for training, and as a recurrence for
-stage~2's stateful rollout---which is what makes the architecture affordable on
-a CPU without changing a single identified coefficient
-(Section~\ref{subsec:s4cost}).}
-\label{fig:pipelines4}
-\end{figure*}
-
-\subsubsection{Evaluating the temporal residual at CPU cost}
-\label{subsec:s4cost}
-A temporal residual is only usable on-vehicle if it fits inside the
-re-identification period on the hardware the car carries, which is typically a
-CPU. Profiled as first written, the S4D path cost \SI{125.7}{\milli\second} per
-epoch on a GPU and \SI{898}{\milli\second} per stage-2 rollout, putting a
-six-iteration identification at \SI{181.4}{\second}---longer than the
-\SI{30}{\second} data window it consumes. Three changes remove that cost
-without altering the arithmetic. None is novel as a technique; what matters
-here is that the resulting pipeline is real-time-plausible on commodity
-hardware, and that the equivalence was verified rather than assumed.
-
-\paragraph{Closed-form kernel instead of a scan}
-A diagonal $A$ makes the block's impulse response available in closed form,
-\begin{equation}
-K_{l}=\mathrm{Re}\big(C\,e^{A\Delta t\,l}\,\bar B\big),\qquad l=0,\dots,W-1,
-\label{eq:s4kernel}
-\end{equation}
-so a length-$W$ window is one Vandermonde product followed by a causal Toeplitz
-matrix product, rather than $W$ sequential steps~\cite{gu2022s4d}. At $W=20$
-the dense Toeplitz product is cheaper than the FFT convolution of the original
-S4~\cite{gu2022s4} and than a parallel associative scan~\cite{smith2023s5};
-both are the right choice at sequence lengths orders of magnitude longer than
-this one. Because the stack's output layer reads only the window's last
-timestep, that layer contracts the reversed kernel straight onto the window and
-skips $W-1$ of its outputs. Cost: \SI{125.7}{\milli\second} to
-\SI{26.7}{\milli\second} per epoch.
-
-\paragraph{Loop-invariant physics-loss terms}
-Under the physics-informed objective, the nominal Pacejka rollout, the mirrored
-batch and the constant terms of the symmetry residual depend on the nominal
-model only, which is fixed for the whole training call, so they are precomputed
-once per call instead of once per epoch. The three forward passes the objective
-used to make (data, mirror, smoothness) collapse into one pass over a
-double-length batch, with the smoothness Jacobian taken off the same graph.
-Cost: \SI{26.7}{\milli\second} to \SI{16.6}{\milli\second} per epoch, with the
-loss value unchanged bit for bit.
-
-\paragraph{The rollout belongs on a CPU}
-Stage~2 is 500 strictly sequential single-sample steps carrying the S4D hidden
-state, each with a host synchronisation. That is pure kernel-launch latency on
-a GPU: \SI{898}{\milli\second} on CUDA against \SI{204}{\milli\second} on a CPU
-copy of the same weights. The rollout is therefore run on a CPU copy whatever
-device training used---the recurrent path of Fig.~\ref{fig:pipelines4}(c)---and
-only the full-batch training stays on the GPU where it is \num{2.4}$\times$
-faster than a CPU. This is the one place where the two evaluation paths of the
-same system have to agree exactly, and they are pinned by a regression test to
-$<10^{-9}$ in double precision.
-
-End to end this takes a six-iteration identification from \SI{181.4}{\second}
-to \SI{20.9}{\second} (\num{8.7}$\times$) on the same synthetic
-\SI{30}{\second} lap, with the identified Pacejka coefficients agreeing to four
-decimal places (Table~\ref{tab:runtime}). We deliberately did \emph{not} touch
-the knobs that trade accuracy for speed---epoch count, iteration count, early
-stopping, warm-starting the network from the previous iteration's weights, or
-dropping the smoothness term---because those change the identified tire and are
-a modelling decision, not a free speedup.
+The \texttt{s4} architecture replaces the memoryless MLP with an S4D diagonal
+state-space residual~\cite{gu2022s4d} over a sliding window of $W=20$ samples
+(\SI{0.7}{\second} at $T_{s}=\SI{0.035}{\second}$), so the residual can carry
+the tire-relaxation and yaw-damping dynamics that a per-sample map cannot. The
+architecture is not claimed as a contribution---it is also in concurrent
+work~\cite{visionsysid2026}---and neither is the \num{8.7}$\times$ reduction in
+its training cost, which is an exact algebraic rewrite of the same forward pass
+and changes no identified coefficient. Both are specified, derived and measured
+in the supplementary material; nothing in the argument of this paper depends on
+them, and the identifiability result of Section~\ref{subsec:excitation} holds
+for either residual architecture.
 
 \subsection{Excitation-aware virtual rollout}
 \label{subsec:excitation}

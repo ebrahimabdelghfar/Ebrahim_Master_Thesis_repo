@@ -75,6 +75,12 @@ written from the artefact rather than from the expectation:
   Ackermann upper bound: the realised max\|v_x ω\|/g saturates near the tire's
   peak while μ_reach keeps growing (10.64 against a realised 1.40–2.18 at
   v = 20 m/s). Against the realised demand the two axes do behave alike.
+- Fig. 7 was rebuilt after the first version proved unreadable: a 7×5 in 2×2 grid
+  crushed into a 3.4 in column, with log-scaled x ticks and eight overlapping series.
+  It is now a two-column `figure*`, 7.16×2.25 in, three panels, linear axes, and the
+  redundant box-edge panel dropped (those counts are already the parenthesised column of
+  Table V). `make_identifiability_sweep.py --plot-only` re-renders from the summary CSV
+  without refitting.
 - §VI-B now says μ_reach is a screening bound — conclusive when it falls below
   D — and not a measure of achieved excitation, and records that with the
   residual network zeroed the model structure is exactly matched, so the real
@@ -84,6 +90,55 @@ written from the artefact rather than from the expectation:
 
 | # | Status | Notes |
 |---|---|---|
-| F13 cut to ≤ 14 pages, 3–4 contributions | **open** | 27 pages, six contributions. Merging 2 and 3, demoting 4 and the S4D cost half of 5, and moving §V-A3–A4, Table VII and Table IX to supplementary are author decisions; `.wolf/STATUS.md` already lists the contribution merge as open |
+| F13 contributions 6 → 4 | done | `sections/intro.tex` §I-B | (1) the identifiability bound; (2) the corrections it implies, merging the old 2 and 3; (3) the admissibility gates; (4) the architecture that supplies the ground truth, merged with the closed-loop evaluation |
+| F13 every listed move | done | see below | §V-A3–A4 + Table IX, Table VII, §V-A1–A2 and ten §VI figures now live in `paper/supplement_main.pdf` (7 pages); §IV-D's interface detail is Appendix~B; §II-C is one paragraph; Algorithm 1 states the corrected loop |
+| F13 ≤ 14 pages | **partial — 27 → 23** | — | every move the review listed is applied and the main paper is 23 pages. The remaining 9 are not a formatting problem: §VI alone is 7 pages and §V is 4. Getting to 14 means deciding what the paper stops claiming, which is an author call — the menu is at the end of this file |
 | F14 title | **done** | now *Excitation-Aware On-Track System Identification at Full Scale: A Simulation Study* |
 | F14 keywords | **done** | redrawn from the IEEE taxonomy: autonomous vehicles, system identification, parameter estimation, vehicle dynamics, tires, predictive control, road vehicles, simulation |
+
+
+## What the last 9 pages would cost (F13)
+
+Page map of the 23-page main paper, from `main.aux`:
+
+| Section | Pages |
+|---|---|
+| I Introduction | 1–2 |
+| II Related work | 2–3 |
+| III Identification problem | 3–4 |
+| IV Simulation architecture | 4–6 |
+| V Identification methodology | 6–10 |
+| VI Experiments and results | 10–17 |
+| VII Integration with the controller | 17 |
+| VIII Discussion and limitations | 17–18 |
+| IX Conclusion | 18–19 |
+| Appendices A–C | 19–21 |
+| References | 21–23 |
+
+The supplement (`paper/supplement_main.pdf`, 7 pages) already holds: the
+residual model's physics-augmented inputs and objective, the temporal residual
+and its cost, Table IX, Table VII, and ten §VI figures.
+
+Four candidate cuts, largest first. Each is a decision about what the paper
+claims, not a formatting change:
+
+1. **§VI, 7 → 3 pages.** Keep §VI-A (setup and prior provenance), §VI-B (the
+   identifiability sweep — the primary result), the cross-run table, and the
+   closed-loop subsection. Move the per-metric narrative of §VI-E to §VI-I to
+   the supplement, leaving one paragraph that reads the table. Costs the
+   axle-by-axle and one-step-prediction discussion, which is where the paper is
+   most candid about where the baseline wins.
+2. **§V, 4 → 2.5 pages.** Algorithm 1 already states the loop; §V-D and §V-E
+   could be cut to the bound, the two corrections and the two numbers, with the
+   derivations in the supplement. Costs the reader's ability to follow the
+   argument without the supplement.
+3. **Appendices A–C, 2 → 0.5 pages.** A1–A9 assumptions become one paragraph
+   plus a pointer; Appendix B (the interface) moves to the supplement with the
+   rest of the architecture. Costs the reproducibility disclosure the review
+   asked for elsewhere.
+4. **References, 2.5 → 2 pages.** 57 entries. IEEE T-IV does not cap them, and
+   cutting here is the worst value per page.
+
+1 + 2 + 3 lands at roughly 14–15. A cheaper alternative, if the venue allows
+it: T-IV accepts longer regular papers with overlength charges, and the paper
+as it stands is a coherent 23 pages.

@@ -165,55 +165,72 @@ def summarise(rows):
 
 
 def plot(table, path):
+    """Three panels at IEEE two-column width.
+
+    (a) and (b) are the two configuration axes; (c) is the point of the figure
+    - both axes read against the demand the rollout actually realises. The
+    box-edge counts are not plotted: they are already the parenthesised column
+    of the table, and a fourth panel of eight crossing series was unreadable.
+    """
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(2, 2, figsize=(7.0, 5.0), constrained_layout=True)
-    (a_v, a_d), (a_rail, a_col) = ax
-    for d in D_TRUE:
-        spd = [t for t in table if t['D_true'] == d and t['axis'] == 'speed']
-        dlt = [t for t in table if t['D_true'] == d and t['axis'] == 'delta']
-        a_v.errorbar([t['v_rollout_mps'] for t in spd],
-                     [t['D_mean'] for t in spd],
-                     yerr=[t['D_ci95'] for t in spd], marker='o', capsize=2,
-                     label=f'$D={d}$')
-        a_v.axhline(d, linestyle=':', linewidth=0.8, color='0.6')
-        a_d.errorbar([t['delta_sweep_rad'] for t in dlt],
-                     [t['D_mean'] for t in dlt],
-                     yerr=[t['D_ci95'] for t in dlt], marker='s', capsize=2,
-                     label=f'$D={d}$')
-        a_d.axhline(d, linestyle=':', linewidth=0.8, color='0.6')
-        for sel, mark, lbl in ((spd, 'o', 'vary $v$'), (dlt, 's',
-                                                        r'vary $\delta_{sweep}$')):
-            a_rail.plot([t['mu_realised'] / d for t in sel],
-                        [t['railed_mean'] for t in sel], marker=mark,
-                        linestyle='-' if mark == 'o' else '--',
-                        color=f'C{D_TRUE.index(d)}',
-                        label=lbl if d == D_TRUE[0] else None)
-            a_col.plot([t['mu_realised'] / d for t in sel],
-                       [t['D_mean'] / d for t in sel], marker=mark,
-                       linestyle='-' if mark == 'o' else '--',
-                       color=f'C{D_TRUE.index(d)}',
-                       label=lbl if d == D_TRUE[0] else None)
+    plt.rcParams.update({'font.size': 7, 'axes.titlesize': 8,
+                         'axes.labelsize': 7.5, 'legend.fontsize': 6.5,
+                         'xtick.labelsize': 7, 'ytick.labelsize': 7})
+    fig, (a_v, a_d, a_col) = plt.subplots(
+        1, 3, figsize=(7.16, 2.25), constrained_layout=True)
 
-    a_v.set(xlabel='rollout speed [m/s]', ylabel='identified $D$',
-            title=r'vary $v$ at $\delta_{sweep}=%.2f$ rad' % DELTA_SWEEP)
-    a_d.set(xlabel=r'$\delta_{sweep}$ [rad]', ylabel='identified $D$',
-            title=r'vary $\delta_{sweep}$ at $v=%.0f$ m/s' % V_FIXED)
-    a_rail.set(xlabel=r'realised $\mu_{demand}/D$',
-               ylabel='coefficients on a bound (of 8)',
-               title='box-edge signature')
-    a_col.set(xlabel=r'realised $\mu_{demand}/D$', ylabel=r'$\hat D/D$',
-              title='both axes against the bound')
-    a_col.axhline(1.0, linestyle=':', linewidth=0.8, color='0.4')
-    for a in (a_rail, a_col):
-        a.axvline(1.0, linestyle=':', linewidth=0.8, color='0.4')
-        a.set_xscale('log')
-    a_v.legend(fontsize=7)
-    a_col.legend(fontsize=7)
-    for a in ax.ravel():
-        a.grid(alpha=0.3)
+    for i, d in enumerate(D_TRUE):
+        c = f'C{i}'
+        spd = sorted((t for t in table if t['D_true'] == d and t['axis'] == 'speed'),
+                     key=lambda t: t['v_rollout_mps'])
+        dlt = sorted((t for t in table if t['D_true'] == d and t['axis'] == 'delta'),
+                     key=lambda t: t['delta_sweep_rad'])
+        a_v.errorbar([t['v_rollout_mps'] for t in spd], [t['D_mean'] for t in spd],
+                     yerr=[t['D_ci95'] for t in spd], color=c, marker='o',
+                     markersize=3, linewidth=1.1, capsize=1.5, label=f'$D={d}$')
+        a_v.axhline(d, color=c, linestyle=':', linewidth=0.7, alpha=0.7)
+        a_d.errorbar([t['delta_sweep_rad'] for t in dlt], [t['D_mean'] for t in dlt],
+                     yerr=[t['D_ci95'] for t in dlt], color=c, marker='s',
+                     markersize=3, linewidth=1.1, capsize=1.5)
+        a_d.axhline(d, color=c, linestyle=':', linewidth=0.7, alpha=0.7)
+        # (c) markers only: the x axis is a derived quantity, so joining the
+        # points would draw a path the experiment never walked.
+        for sel, mark, fill in ((spd, 'o', True), (dlt, 's', False)):
+            a_col.plot([t['mu_realised'] / d for t in sel],
+                       [t['D_mean'] / d for t in sel],
+                       linestyle='none', marker=mark, markersize=4,
+                       color=c, markerfacecolor=c if fill else 'none',
+                       markeredgecolor=c, markeredgewidth=1.0)
+
+    a_v.set(xlabel='rollout speed $v$ [m/s]', ylabel='identified $D$',
+            title=r'(a) vary $v$  ($\delta_{\mathrm{sweep}}=0.40$ rad)')
+    a_d.set(xlabel=r'$\delta_{\mathrm{sweep}}$ [rad]', ylabel='identified $D$',
+            title=r'(b) vary $\delta_{\mathrm{sweep}}$  ($v=15$ m/s)')
+    a_col.set(xlabel=r'realised demand $\mu_{\mathrm{demand}}/D$',
+              ylabel=r'$\hat D/D$',
+              title='(c) both axes against the bound')
+    for ax in (a_v, a_d):
+        ax.set_ylim(0.3, 2.1)
+    a_col.axhline(1.0, color='0.35', linestyle='--', linewidth=0.8)
+    a_col.axvline(1.0, color='0.35', linestyle='--', linewidth=0.8)
+    a_col.set_xlim(0.1, 2.25)
+    a_col.set_ylim(0.15, 1.55)
+
+    handles = [plt.Line2D([], [], color=f'C{i}', marker='o', markersize=3,
+                          linewidth=1.1, label=f'$D={d}$')
+               for i, d in enumerate(D_TRUE)]
+    a_v.legend(handles=handles, loc='lower right', framealpha=0.9)
+    a_col.legend(handles=[
+        plt.Line2D([], [], color='0.3', marker='o', linestyle='none',
+                   markersize=4, label=r'vary $v$'),
+        plt.Line2D([], [], color='0.3', marker='s', linestyle='none',
+                   markersize=4, markerfacecolor='none', label=r'vary $\delta_{\mathrm{sweep}}$'),
+    ], loc='lower right', framealpha=0.9)
+    for ax in (a_v, a_d, a_col):
+        ax.grid(alpha=0.25, linewidth=0.5)
     fig.savefig(path)
     print('wrote', path)
 
@@ -221,7 +238,17 @@ def plot(table, path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out-dir', default=os.path.dirname(os.path.abspath(__file__)))
+    ap.add_argument('--plot-only', action='store_true',
+                    help='re-render the figure from the existing summary CSV')
     args = ap.parse_args()
+
+    if args.plot_only:
+        summ = os.path.join(args.out_dir, 'identifiability_sweep_summary.csv')
+        with open(summ, newline='') as f:
+            table = [{k: (v if k == 'axis' else float(v)) for k, v in r.items()}
+                     for r in csv.DictReader(f)]
+        plot(table, os.path.join(args.out_dir, 'identifiability_sweep.pdf'))
+        return
 
     rows = run()
     raw = os.path.join(args.out_dir, 'identifiability_sweep.csv')

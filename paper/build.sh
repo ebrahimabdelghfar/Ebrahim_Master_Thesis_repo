@@ -13,3 +13,15 @@ echo "built main.pdf ($(pdfinfo main.pdf | awk '/^Pages/{print $2}') pages)"
 grep -cE '^! ' main.log | xargs -I{} echo "errors: {}"
 grep -cE 'Overfull \\hbox' main.log | xargs -I{} echo "overfull hboxes: {}"
 grep -cE 'LaTeX Warning' main.log | xargs -I{} echo "latex warnings: {}"
+
+# Supplementary material (moved-out sections). Independent document; it quotes
+# the main paper's section numbers as text, so rebuild it after main.tex.
+pdflatex -interaction=nonstopmode -halt-on-error supplement_main.tex
+bibtex supplement_main
+pdflatex -interaction=nonstopmode -halt-on-error supplement_main.tex
+pdflatex -interaction=nonstopmode -halt-on-error supplement_main.tex
+echo
+echo "built supplement_main.pdf ($(pdfinfo supplement_main.pdf | awk '/^Pages/{print $2}') pages)"
+grep -cE '^! ' supplement_main.log | xargs -I{} echo "  errors: {}"
+grep -cE 'Overfull \\hbox' supplement_main.log | xargs -I{} echo "  overfull hboxes: {}"
+grep -cE 'LaTeX Warning' supplement_main.log | xargs -I{} echo "  latex warnings: {}"
