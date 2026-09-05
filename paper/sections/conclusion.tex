@@ -3,7 +3,7 @@
 \label{sec:conclusion}
 
 This paper studied the identifiability of a learning-based on-track Pacejka
-identification pipeline~\cite{ontrack2024} at full vehicle scale, using a CARLA
+identification pipeline~\cite{ontrack2025} at full vehicle scale, using a CARLA
 simulation architecture that exposes the plant's own per-wheel forces as ground
 truth. Transplanted unchanged from a 1:10 platform, the pipeline fails in a
 specific, diagnosable and correctable way. The failure is not a solver, bounds
@@ -20,12 +20,12 @@ frozen regularisation target, identification against the achieved rather than
 the commanded road-wheel angle, measured mass and geometry, and a friction
 warm start identified from the curvature of the axle force curve and applied
 only as a floor---produces identifications with no railed coefficient and a
-peak factor of \numrange{1.002}{1.165} against a plant realising \num{1.05},
+peak factor of \num{1.009}/\num{1.002} against a plant realising \num{1.05},
 with the correct understeer sign. Run against the inherited configuration over
-three timed laps on a static surface, it holds that peak factor to \num{0.057}
-and \num{0.052} RMSE where the inherited configuration settles on its
+three timed laps on a static surface, it holds that peak factor to \num{0.041}
+and \num{0.048} RMSE where the inherited configuration starts and ends on its
 \num{2.0} box constraint, and halves the MPC's lateral tracking error, from
-\SI{0.183}{\meter} to \SI{0.093}{\meter} RMS, at unchanged solver cost. The
+\SI{0.177}{\meter} to \SI{0.092}{\meter} RMS, at unchanged solver cost. The
 inherited configuration is better on front-axle force and on lateral-velocity
 prediction, because the lap reaches \SI{2.2}{\degree} of slip and a wrong peak
 factor is not observable there---which is the same identifiability statement
@@ -48,11 +48,11 @@ earns it. The runtime objection to the temporal arm is removed
 (Section~\ref{subsec:runtime}).
 \item Excite the peak. Every result here is obtained at
 $P_{99}(|\alpha|)=\SI{2.2}{\degree}$ against a plant whose curve peaks at
-\SI{11.5}{\degree}, which is why a peak factor on its box constraint costs
+\SI{12.0}{\degree}, which is why a peak factor on its box constraint costs
 almost nothing in axle force. A trajectory or an injected manoeuvre that
 reaches further up the curve would make the two models separable on force as
 well as on friction.
-\item Run the noise sweep of~\cite{ontrack2024} on this platform using the
+\item Run the noise sweep of~\cite{ontrack2025} on this platform using the
 bridge's odometry noise model, with a nonlinear least-squares identification of
 the same data as the comparison arm.
 \item Cross-check the friction warm start against the simulator's per-wheel
@@ -69,16 +69,13 @@ lap time unusable as a comparison metric (Section~\ref{subsec:resultsclosedloop}
 
 \paragraph{Beyond}
 \begin{enumerate}
-\item \textbf{Surface-change adaptation.} The bridge changes tire friction at
-runtime without respawning, making a step-change-in-grip experiment cheap:
-change $\mu$ mid-run and measure the identifier's convergence time and the
-controller's transient. This is the scenario on-track identification exists
-for, and it is difficult to stage on hardware.
 \item \textbf{Excitation-aware data collection.} Equation~\eqref{eq:mureach}
 inverts into a requirement on the manoeuvre. A controller that deliberately
 inserts bounded slalom or ramp-steer excitation when the identifier reports
 insufficient slip-angle coverage would move the pipeline from passive on-track
-identification toward active, safety-bounded on-track experiment design.
+identification toward active, safety-bounded on-track experiment design---which
+is optimal input design~\cite{goodwin1977design} under a safety constraint, and
+is where the literature for this step already exists.
 \item \textbf{Uncertainty-aware output.} The gates of
 Section~\ref{subsec:gates} are binary. Reporting a posterior over the
 coefficients---the Bayesian variational path already implemented alongside the

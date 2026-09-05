@@ -187,7 +187,7 @@ that none straddles the seam between the recorded trace and its mirrored copy.
 Each block carries $H=4$ independent single-input single-output channels of
 complex state dimension $N=4$, initialised in the S4D-Lin form
 ($\mathrm{Re}(A_{n})=-\tfrac{1}{2}$, $\mathrm{Im}(A_{n})=\pi n$) that
-approximates the HiPPO-LegS operator~\cite{gu2021hippo} in closed form, with a
+approximates the HiPPO-LegS operator~\cite{gu2020hippo} in closed form, with a
 learnable per-channel discretisation step. As stated in
 Section~\ref{sec:related}, the S4-family residual overlaps with concurrent
 work~\cite{visionsysid2026} and is not claimed as a contribution;
@@ -330,7 +330,17 @@ $\delta_{\mathrm{sweep}}=\mathrm{clip}\big(\lambda_{e}\cdot
 P_{99}(|\delta_{\mathrm{obs}}|),\,\delta_{\min},\,\delta_{\max}\big)$ with
 $\lambda_{e}=1.5$, $\delta_{\min}=\SI{0.05}{\radian}$,
 $\delta_{\max}=\SI{0.34}{\radian}$, so the network is never queried more than
-\SI{50}{\percent} beyond the steering range it was trained on.
+\SI{50}{\percent} beyond the steering range it was trained on. Both
+$\delta_{\max}$ and the inherited $\delta_{\mathrm{sweep}}=\SI{0.4}{\radian}$
+lie above the plant's \SI{16.0}{\degree} ($\SI{0.279}{\radian}$) mechanical
+lock. That is deliberate: the sweep is a \emph{virtual} rollout of the
+corrected model, and clamping it to the lock would cap
+$\mu_{\mathrm{reach}}$ in \eqref{eq:mureach} for a second time---by the
+actuator instead of by the rollout speed---which is the failure this section
+exists to remove. The binding limit in practice is the data-driven
+$\lambda_{e}P_{99}(|\delta_{\mathrm{obs}}|)$ term, not $\delta_{\max}$; the
+residual is nonetheless evaluated outside the plant's reachable steering set,
+which is the extrapolation recorded in Section~\ref{subsec:assumptions}, A6.
 \item \textbf{Frozen prior.} The Tikhonov target is frozen at the configured
 prior $\phip^{0}$ for all iterations, while the optimiser's \emph{start point}
 continues to track the previous iteration. The per-axle objective is
@@ -358,12 +368,12 @@ trust-region reflective~\cite{branch1999trust}, all through the same
 optimisation library~\cite{virtanen2020scipy}. The prior carries the measured
 tire of Table~\ref{tab:ref}.
 
-Neither (i) nor (ii) addresses the degeneracy, and both were verified as
-secondary: with the rollout speed left at \SI{4}{\meter\per\second}, a
-synthetic $D=1.5$ tire fits back as $D_{f}=0.753$, $D_{r}=0.737$ with three
-coefficients railed regardless of solver or start point; at
-\SIrange{8}{20}{\meter\per\second} the same tire fits back as
-$D=\numrange{1.40}{1.61}$ with nothing railed.
+Neither (i) nor (ii) addresses the degeneracy, and both are verified as
+secondary in Section~\ref{subsec:sweep}, which sweeps rollout speed against
+true $D$ on a known tire: with the rollout speed left at
+\SI{4}{\meter\per\second} every tire tested fits back as
+$\hat D\approx\num{0.5}$ with coefficients railed, and the answer does not move
+with the multi-start seed or with a jitter seven times wider.
 
 \subsection{Measurement-side corrections}
 \label{subsec:measurement}
@@ -375,10 +385,13 @@ $\alpha_{f}$ in \eqref{eq:slip} was built from the \texttt{/drive} setpoint.
 The measured achieved/commanded ratio is \num{0.76}, so $\alpha_{f}$ was
 systematically $\approx\SI{25}{\percent}$ too large and the fitted front
 stiffness $\approx\SI{20}{\percent}$ too small
-(\SI{13725}{\newton\per\radian} against the simulator's
-\SI{17198}{\newton\per\radian} on the same run). Using
+(\SI{13725}{\newton\per\radian} against \SI{17198}{\newton\per\radian} fitted
+to the simulator's own per-wheel forces over the same run). Using
 \texttt{feedback/\allowbreak steering\_angle} recovers
-\SI{18486}{\newton\per\radian}.
+\SI{18486}{\newton\per\radian}. All three are effective slopes fitted over that
+run's load range and are therefore below the $\bar F_{z}=1$ closed-form value
+of Table~\ref{tab:ref}; the comparison is between them and not against the
+tabulated slope.
 
 \subsubsection{Mass and geometry}
 $m$ and $l_{wb}$ are taken from the measured static wheel loads
@@ -389,8 +402,16 @@ for the force division; the two disagreeing is a silent bias.
 
 \subsubsection{Proprioceptive friction warm-start}
 \label{subsec:friction}
+The third correction is to where the peak factor's prior comes from. The
+inherited pipeline had none: $D$ started from a configuration constant and was
+left to the fit. What follows recovers a prior for it from the sensors the
+vehicle already carries---axle forces and slip angles from the body's own
+motion (a), a two-parameter brush fit that reads $\mu$ from the
+\emph{curvature} of those forces rather than from their asymptote (b), the
+release gate that says when that reading means anything (c), and the rule that
+the released value may only ever raise $D$ (d).
 
-\subsubsection{Axle forces and slip angles without a force sensor}
+\paragraph{Axle forces and slip angles without a force sensor}
 Newton--Euler on the single-track body of
 \eqref{eq:vydot}--\eqref{eq:omdot}, solved for the axle forces rather than for
 the accelerations, gives
@@ -411,7 +432,7 @@ already collected. Where no IMU is available the accelerations are
 differentiated from the states by the same filter, and where one is available
 the RMS difference between the two is logged as a bias diagnostic.
 
-\subsubsection{Joint fit of stiffness and peak friction}
+\paragraph{Joint fit of stiffness and peak friction}
 Per axle, both the cornering stiffness and the peak friction are fitted to the
 Fiala brush model~\cite{fiala1954,svendenius2004brush,pacejka2012book}
 \begin{equation}
@@ -440,16 +461,25 @@ excitation diagnostics; $C_{\alpha}$ and $\mu$ are fitted jointly, because a
 two-stage fit would inherit the bias of estimating $C_{\alpha}$ on data that is
 itself already slightly nonlinear.
 
-\subsubsection{The gate is the feature}
+\paragraph{The gate is the feature}
 Equation~\eqref{eq:brushinv} also states its own failure mode:
 $\mathrm{d}\mu/\mathrm{d}r$ grows without bound as $r\to1$, i.e.\ as the tire
 curve stays linear. The estimate is therefore released only when three
 conditions hold---peak grip utilisation
-$\max|F_{y}|/(\mu F_{z})\ge\num{0.40}$, relative precision
-$\sigma_{\mu}/\mu\le\num{0.15}$ from the Gauss--Newton covariance, and $\mu$
-not resting on its own search bound---and otherwise the module logs which
-condition failed and falls back to the utilisation bound. The
-\SI{40}{\percent} floor is not tuned here: it is the excitation level the
+$\max|F_{y}|/(\hat\mu F_{z})\ge\num{0.40}$, relative precision
+$\sigma_{\hat\mu}/\hat\mu\le\num{0.15}$ from the Gauss--Newton covariance, and
+$\hat\mu$ not resting on its own search bound---and otherwise the module logs
+which condition failed and falls back to the utilisation bound.
+
+The $\mu$ in the utilisation test is the \emph{fitted} $\hat\mu$ of the same
+least-squares call, not an independent one, so that test is on its own
+circular: a fit that underestimates $\mu$ inflates its own utilisation and
+passes itself. It is therefore never used alone. The two companion conditions
+are what break the circularity---a fit driven low by data that is still linear
+returns a wide $\sigma_{\hat\mu}$, and a fit driven onto its search bound is
+rejected as railed---and the floor of Section~\ref{subsec:frictionfloor} makes
+whatever still slips through one-sided, since an underestimate cannot lower
+$D$. The \SI{40}{\percent} floor is not tuned here: it is the excitation level the
 lateral-dynamics friction-estimation literature converges on, as surveyed by
 Acosta \emph{et al.}~\cite{acosta2017friction}, whose review reports estimators
 failing below $|a_{y}|=\SI{0.4}{\g}$ ``due to the proximity of the tyre force
@@ -461,7 +491,7 @@ correction would need is not observable from this sensor set; samples below
 ill-conditioned there; and samples whose force opposes their own slip angle are
 dropped as sign errors or noise.
 
-\subsubsection{Applied as a floor, unconditionally}
+\paragraph{Applied as a floor, unconditionally}
 \label{subsec:frictionfloor}
 The per-axle $\mu$ replaces the scalar bound as the initial guess for $D_{f}$
 and $D_{r}$ where it is released, but---for either input, and however confident
@@ -483,13 +513,14 @@ not an accuracy one. A wrong mass, a wrong yaw inertia, an IMU bias or a road
 bank all fit tightly and wrongly through \eqref{eq:newtoneuler}, since axle
 force scales linearly with $m$. On this vehicle the configuration file's
 \SI{240.0}{\kilo\gram} against the \SI{269.8}{\kilo\gram} the wheels actually
-carry biased $\mu$ \SI{12}{\percent} low on its own until the measured value
-replaced it (Table~\ref{tab:vehicle}); that is measurement-chain work
+carry biased $\mu$ \SI{11}{\percent} low on its own---the \SI{29.8}{\kilo\gram}
+shortfall taken on the \SI{269.8}{\kilo\gram} the wheels carry---until the
+measured value replaced it (Table~\ref{tab:vehicle}); that is measurement-chain work
 (Section~\ref{subsec:measurement}) and not something a confidence interval can
 see. The same holds for the friction the result is compared against: the
 configured \num{1.5} is not the \num{1.05} the physics step uses, and an
-estimate validated against the former would be judged \SI{43}{\percent} short
-while being correct. Of the inputs to \eqref{eq:newtoneuler}, only $I_{z}$ now
+estimate validated against the former would be judged \SI{30}{\percent} short
+($0.45/1.5$) while being correct. Of the inputs to \eqref{eq:newtoneuler}, only $I_{z}$ now
 remains unmeasured on this vehicle; it enters $F_{y,f}$ at the
 \SI{10}{\percent} level and is listed among the assumptions of
 Section~\ref{subsec:assumptions}.

@@ -1,9 +1,9 @@
-[INFO] [launch]: All log files can be found below /home/ebrahim/.ros/log/2026-09-05-01-08-33-970915-ebrahim-msi-62894
+[INFO] [launch]: All log files can be found below /home/ebrahim/.ros/log/2026-09-05-12-03-02-335471-ebrahim-msi-36261
 [INFO] [launch]: Default logging verbosity is set to INFO
-[INFO] [raceline_publisher_node-1]: process started with pid [62911]
-[raceline_publisher_node-1] [INFO] [1788559714.548393158] [raceline_publisher]: Loaded 2916 waypoints from /home/ebrahim/Ebrahim_Master_Thesis_repo/traj_race_cl.csv (psi_offset_rad=+1.5707963)
-[raceline_publisher_node-1] [INFO] [1788559714.554113435] [raceline_publisher]: Heading convention OK (mean |psi_rad - tangent| offset -0.0014 rad)
-[raceline_publisher_node-1] [INFO] [1788559714.571893011] [raceline_publisher]: Published latched waypoints and markers to /raceline_waypoints
+[INFO] [raceline_publisher_node-1]: process started with pid [36278]
+[raceline_publisher_node-1] [INFO] [1788598982.980409336] [raceline_publisher]: Loaded 2916 waypoints from /home/ebrahim/Ebrahim_Master_Thesis_repo/traj_race_cl.csv (psi_offset_rad=+1.5707963)
+[raceline_publisher_node-1] [INFO] [1788598982.984429971] [raceline_publisher]: Heading convention OK (mean |psi_rad - tangent| offset -0.0014 rad)
+[raceline_publisher_node-1] [INFO] [1788598983.001574298] [raceline_publisher]: Published latched waypoints and markers to /raceline_waypoints
 [WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
 [ERROR] [raceline_publisher_node-1]: process[raceline_publisher_node-1] failed to terminate '5' seconds after receiving 'SIGINT', escalating to 'SIGTERM'
 [INFO] [raceline_publisher_node-1]: sending signal 'SIGTERM' to process[raceline_publisher_node-1]
@@ -36,4 +36,4 @@
 [raceline_publisher_node-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
 [raceline_publisher_node-1]     self.__context.shutdown()
 [raceline_publisher_node-1] rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
-[ERROR] [raceline_publisher_node-1]: process has died [pid 62911, exit code 1, cmd '/home/ebrahim/Ebrahim_Master_Thesis_repo/install/raceline_publisher/lib/raceline_publisher/raceline_publisher_node --ros-args -r __node:=raceline_publisher --params-file /home/ebrahim/Ebrahim_Master_Thesis_repo/install/raceline_publisher/share/raceline_publisher/config/raceline_publisher.yaml --params-file /tmp/launch_params_pt6i31od'].
+[ERROR] [raceline_publisher_node-1]: process has died [pid 36278, exit code 1, cmd '/home/ebrahim/Ebrahim_Master_Thesis_repo/install/raceline_publisher/lib/raceline_publisher/raceline_publisher_node --ros-args -r __node:=raceline_publisher --params-file /home/ebrahim/Ebrahim_Master_Thesis_repo/install/raceline_publisher/share/raceline_publisher/config/raceline_publisher.yaml --params-file /tmp/launch_params_ptcuzerb'].

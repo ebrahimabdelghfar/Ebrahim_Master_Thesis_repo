@@ -7,8 +7,7 @@
 
 \documentclass[journal]{IEEEtran}
 
-\usepackage{xcolor,soul,framed}
-\colorlet{shadecolor}{yellow}
+\usepackage{xcolor}
 
 \usepackage[pdftex]{graphicx}
 \graphicspath{{figures/}{pdf/}{photo/}{../graphs/comparison/}}
@@ -22,6 +21,7 @@
 \usepackage{eqparbox}
 \usepackage{tabularx}
 \usepackage{booktabs}
+\usepackage{threeparttable}
 \usepackage{url}
 \usepackage{tikz}
 \usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
@@ -40,6 +40,12 @@
   \input{units_fallback}
 \fi
 
+% --- hyperlinks ---------------------------------------------------------------
+% Loaded after every other package, as hyperref requires. All URLs, citations,
+% and cross-references become clickable; hidelinks keeps the printed page free
+% of coloured boxes.
+\usepackage[hidelinks,breaklinks=true]{hyperref}
+
 \hyphenation{op-tical net-works semi-conduc-tor Pa-cej-ka iden-ti-fi-ca-tion}
 
 % --- convenience macros -------------------------------------------------------
@@ -51,12 +57,11 @@
 \newcommand{\Fyr}{F_{y,r}}
 \newcommand{\bridge}{\textsc{Carla\_ASU\_Bridge}}
 \newcommand{\sysid}{\textsc{On-Track-SysID}}
-\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
 
 %==============================================================================
 \begin{document}
 
-\title{High Speed On-Track System Identification\\
+\title{Excitation-Aware On-Track System Identification\\
 at Full Scale}
 
 \author{Ebrahim~Abdelghfar~Ebrahim$^{1}$,
@@ -68,7 +73,7 @@ at Full Scale}
 University, Cairo, Egypt, and the Autotronics Research Lab (ARL), Cairo, Egypt.}
 \thanks{Corresponding author: Ebrahim Abdelghfar Ebrahim (e-mail: ebrahimabdelghfar550@gmail.com).}}
 
-\markboth{Preprint --- Draft for internal review}%
+\markboth{IEEE Transactions on Intelligent Vehicles}%
 {Abdelghfar \MakeLowercase{\textit{et al.}}: Excitation-Aware On-Track System Identification at Full Scale}
 
 \maketitle
@@ -90,9 +95,34 @@ University, Cairo, Egypt, and the Autotronics Research Lab (ARL), Cairo, Egypt.}
 
 \section*{Acknowledgment}
 The \sysid{} pipeline studied here originates from the ForzaETH Race Stack and
-the work of Dikici \emph{et al.}~\cite{ontrack2024}, released under an
+the work of Dikici \emph{et al.}~\cite{ontrack2025}, released under an
 open-source licence; this paper reports a port, a correction, and an extension
 of that work rather than a reimplementation from scratch.
+
+\section*{Funding}
+This work received no specific grant from any funding agency in the public,
+commercial, or not-for-profit sectors.
+
+\section*{Conflict of Interest}
+The authors declare no conflict of interest.
+
+\section*{Ethics}
+All results in this paper are obtained in simulation. No experiment involved
+human subjects, personal data, or the operation of a physical vehicle, so no
+human-subjects approval and no vehicle-safety protocol were required.
+
+\section*{Data and Code Availability}
+The identification package, the ROS~2 bridge, the MPC and the benchmarking
+packages, the scenario definitions, the exported result CSVs behind every
+figure and table of Section~\ref{sec:results}, and the sweep generator behind
+Table~\ref{tab:sweep} are in the repositories listed in
+Appendix~\ref{sec:refimpl}; the top-level project repository is
+\url{https://github.com/ebrahimabdelghfar/Ebrahim_Master_Thesis_repo/tree/feat-follow-premade-racing-track}. \sysid{} is an extension of the ForzaETH release
+of~\cite{ontrack2025} and inherits its licence; \bridge{} is GPL-3.0. The two
+are used as separate ROS~2 overlays communicating only over ROS~2 topics and
+services, and neither links against the other, so no combined-work obligation
+arises between them; the identification and control packages in this work are
+released under the terms the \sysid{} upstream requires.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}

@@ -7,7 +7,7 @@
 The reachable-friction bound~\eqref{eq:mureach} is kinematic: it involves no
 tire parameter, no simulator-specific quantity and no property of the residual
 model, so it applies to any implementation of the virtual-steady-state-data
-strategy of~\cite{ontrack2024}, in simulation or on hardware. Its practical
+strategy of~\cite{ontrack2025}, in simulation or on hardware. Its practical
 content is a design rule---\emph{the rollout must be configured to demand at
 least the friction one intends to identify}---and, where it cannot, $D$ should
 be reported as unidentified rather than as fitted. The diagnostic signature,
@@ -51,26 +51,18 @@ achieved actuator state, is general and standard practice; the magnitude is
 not.
 
 \subsection{Limitations}
+\label{subsec:limits}
 
 \begin{enumerate}
-\item \textbf{Closed-loop evidence is three laps on one trajectory.}
-Level 3 of Section~\ref{subsec:validation} completes
-(Section~\ref{subsec:resultsclosedloop}), but on a single raceline whose peak
-demand is \SI{0.51}{\g}---about half the plant's grip---so the comparison is
-made where the tire is far from saturation and says nothing about limit
-handling. Lap time is not usable as a metric here at all: it is recorded on
-the ROS wall clock against a simulator running faster than real time, at a
-ratio that differed between the two runs.
-\item \textbf{No noise sweep.} The baseline's robustness claim---a
-\num{3.3}$\times$ RMSE advantage over nonlinear least squares under injected
-noise~\cite{ontrack2024}---has not been reproduced here. The bridge's odometry
-noise model exists and is disabled for these runs, so the experiment is
-available; it has not been run, and our results are therefore not directly
-comparable to the baseline's robustness figures.
-\item \textbf{No same-data NLS baseline.} We compare against the plant's own
-telemetry rather than against a nonlinear least-squares identification of the
-same data. That comparison would strengthen the paper and is straightforward to
-add.
+\item \textbf{One run per configuration, so no metric in
+Table~\ref{tab:comparison} carries an uncertainty.} Every value there is a
+point estimate from a single \SI{591.4}{\second} and a single
+\SI{564.1}{\second} run. The \SI{0.092}{\meter} against \SI{0.177}{\meter} RMS
+tracking difference, in particular, has no confidence interval attached and no
+evidence that it exceeds run-to-run variation, which is not measured here.
+Nothing about the experiment prevents repetition---the sweep is one command and
+the scenario file already carries the per-arm parameter sets---so this is a
+gap in the evidence rather than in the method.
 \item \textbf{Single surface, vehicle and trajectory.} All results come from
 one vehicle configuration on one map with the friction held static at
 \num{1.05}. The runtime friction override supports a surface-change adaptation
@@ -87,7 +79,13 @@ simulator's per-wheel forces.
 (Table~\ref{tab:scenarios}), so Section~\ref{sec:results} attributes nothing
 to the residual architecture, the loss, the solver or the warm start
 individually; in particular we do not claim to reproduce the S4 improvement
-of~\cite{visionsysid2026}. What is claimed about the S4D residual on its own
+of~\cite{visionsysid2026}. The excitation-aware rollout---the paper's central
+contribution---is active in \emph{both} arms, so the closed-loop comparison of
+Section~\ref{subsec:resultsclosedloop} is a comparison of the four secondary
+settings and is not evidence for the identifiability correction. The evidence
+for that correction is the rollout-speed sweep of
+Section~\ref{subsec:sweep}.
+What is claimed about the S4D residual on its own
 is its cost and the exactness of the reduction (Table~\ref{tab:runtime}), a
 statement about the implementation rather than about the tire it identifies.
 \item \textbf{Longitudinal dynamics are out of scope.} As in the baseline only

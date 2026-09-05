@@ -32,8 +32,9 @@ identification data is stamped from the simulation clock
 
 \textbf{Full-scale vehicle and racing-track support.}
 The target class is a full-scale Formula Student car on a closed circuit.
-CARLA accepts custom vehicle assets here the Formula AI vehicle on the
-silverstone map and offers a client that the bridge links against directly.
+CARLA accepts custom vehicle assets---here the Formula AI vehicle on the
+\texttt{silverstone} map---and offers a client that the bridge links against
+directly.
 Surveys of open self-driving simulators place CARLA at the state of the art for end-to-end
 stack testing on exactly these grounds~\cite{kaur2021simsurvey}.
 
@@ -64,38 +65,46 @@ those forces rather than against any coefficient the simulator holds
 (Section~\ref{subsec:measurement}).
 
 \begin{table}[t]
-\caption{Vehicle configuration and measured plant properties. Configured values
-are set in the bridge's \texttt{carla\_interface\_\allowbreak config.yaml};
-measured values are obtained from the simulator's per-wheel telemetry.}
+\caption{Vehicle configuration and measured plant properties.}
 \label{tab:vehicle}
 \centering
 \footnotesize
 \setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}llll@{}}
+\begin{tabular}{@{}lll@{}}
 \toprule
 Quantity  & Value & Unit\\
 \midrule
-Body mass                      & 240.0 & \si{\kilo\gram}\\
+Body mass (configured) & 240.0 & \si{\kilo\gram}\\
 Static wheel load (total)      & 2644.5 & \si{\newton}\\
-Unsprung mass                  & 269.8 & \si{\kilo\gram}\\
+Total (kerb) mass $m$\textsuperscript{a} & 269.8 & \si{\kilo\gram}\\
+Unsprung mass\textsuperscript{b} & 29.8 & \si{\kilo\gram}\\
 Front/rear static split        & 51.2 / 48.8 & \si{\percent}\\
 Wheelbase $L$                  & 1.5334 & \si{\meter}\\
 $l_{f}$ / $l_{r}$              & 0.7381 / 0.7953 & \si{\meter}\\
-Yaw inertia $I_{z}$            & 51.1 & \si{\kilo\gram\meter\squared}\\
+Yaw inertia $I_{z}$\textsuperscript{c} & 51.1 & \si{\kilo\gram\meter\squared}\\
 Wheel radius                   & 0.25 & \si{\meter}\\
 Max road-wheel angle           & 16.0 & \si{\degree}\\
-Wheel friction                 & 1.05 & ---\\
+Configured wheel friction & 1.5 & ---\\
+Road-surface factor & 0.70 & ---\\
+Effective friction\textsuperscript{d} & 1.05 & ---\\
 Realised peak axle friction    & 1.00--1.05 & ---\\
 Drag coefficient               & 0.426 & ---\\
 \bottomrule
 \end{tabular}
 
 \vspace{2pt}
-{\raggedright\footnotesize\textsuperscript{a}Total static wheel load divided by
-$g$; see text. \textsuperscript{b}Assumed; see
-Section~\ref{subsec:assumptions}. \textsuperscript{c}Configured wheel friction
+{\raggedright\footnotesize Configured values are set in the bridge's
+\texttt{carla\_interface\_\allowbreak config.yaml}; measured values are obtained
+from the simulator's per-wheel telemetry.
+\textsuperscript{a}Total static wheel load divided by
+$g$. This is the mass every equation in this paper uses, not the configured
+body mass. \textsuperscript{b}Total minus body mass; not measured
+independently. \textsuperscript{c}Assumed; see
+Section~\ref{subsec:assumptions}. \textsuperscript{d}Configured wheel friction
 multiplied by the road surface's own coefficient, as reported per wheel by
-\texttt{feedback/\allowbreak tire\_forces}.\par}
+\texttt{feedback/\allowbreak tire\_forces}. It is the effective value, not the
+configured one, that the identifier is scored against
+(Section~\ref{subsec:frictionfloor}).\par}
 \end{table}
 
 \subsection{The plant's tire curve, in closed form}
@@ -124,24 +133,31 @@ simulator publishes, so the curve of Table~\ref{tab:ref} is read off the plant
 rather than fitted to it.
 
 \begin{table}[t]
-\caption{The plant's lateral tire curve. Upper block: the parameters of
-\eqref{eq:physx}, read from the simulator's own wheel configuration and
-telemetry.}
+\caption{The plant's lateral tire curve: the parameters of \eqref{eq:physx}, read from the simulator's own wheel configuration and telemetry.}
 \label{tab:ref}
 \centering
+\begin{threeparttable}
 \footnotesize
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lll@{}}
 \toprule
 Quantity & Value & Unit\\
 \midrule
-friction $\mu$          & 1.05 & ---\\
+Effective friction $\mu$ & 1.05 & ---\\
 Lateral stiffness $k_{y}$         & 17.0 & \si{\per\radian}\\
 Max normalised load $k_{x}$       & 2.0 & ---\\
-Initial slope $\partial F_{y}/\partial\alpha$ & 14.80\,$F_{z}$ & \si{\newton\per\radian}\\
-Peak reached at                   & 11.5 & \si{\degree}\\
+Initial slope $C_{\mathrm{lat}}$ at $\bar F_{z}=1$ & 14.875\,$F_{z}^{\mathrm{rest}}$ & \si{\newton\per\radian}\\
+\quad front axle, $F_{z,f}=\SI{1373}{\newton}$ & 20.4 & \si{\kilo\newton\per\radian}\\
+\quad rear axle, $F_{z,r}=\SI{1274}{\newton}$ & 19.0 & \si{\kilo\newton\per\radian}\\
+Peak reached at, $\bar F_{z}=1$, $\mu=1.05$ & 12.0 & \si{\degree}\\
 \bottomrule
 \end{tabular}
+\begin{tablenotes}[flushleft]\scriptsize
+\item The initial slope is set by the \emph{rest} load and by the normalised load through $S_{1}$, not by $F_{z}$ alone: $C_{\mathrm{lat}}=k_{y}S_{1}(3\bar F_{z}/k_{x})\,F_{z}^{\mathrm{rest}}$ evaluates to $14.875\,F_{z}^{\mathrm{rest}}$ at $\bar F_{z}=1$ and falls monotonically with $\bar F_{z}$.
+\item Every axle slope quoted in this paper is therefore taken at $\bar F_{z}=1$ and at the static axle loads listed here (the geometric split $l_{r}/L$, $l_{f}/L$ of the total wheel load; see Section~\ref{subsec:assumptions}, A2, for its \SI{1.4}{\percent} disagreement with the measured load split of Table~\ref{tab:vehicle}).
+\item The peak angle follows from $K=3$ in \eqref{eq:physx}, i.e.\ $\tan\alpha_{\mathrm{peak}}=3\mu/\big(k_{y}S_{1}(3\bar F_{z}/k_{x})\big)$, and therefore moves with $\mu$: \SI{12.0}{\degree} at the effective $\mu=\num{1.05}$.
+\end{tablenotes}
+\end{threeparttable}
 \end{table}
 
 That the closed form is the right one was checked rather than assumed. On 1804
@@ -186,7 +202,7 @@ rather than of a tuning choice in the bridge.
 
 \subsubsection{Feedback path}
 Table~\ref{tab:topics} lists the interface consumed by the identifier and its
-validation. Three properties are specific to this architecture.
+validation. One property of it is specific to this architecture.
 
 \begin{table}[t]
 \caption{ROS~2 interface used by the identification and validation pipeline.
@@ -220,9 +236,18 @@ lateral force, effective friction coefficient, wheel speed, longitudinal force
 and wheel torque, in wheel order [FL, FR, RL, RR]. No analytic tire model
 exists inside the bridge, so nothing on this topic can disagree with the
 physics the vehicle is driven by. This topic is what allows an on-track
-identifier to be scored against the forces the plant generated, and the
-channels it validates against are the lateral ones. Four properties of the
-channel were established by measurement and bound what may be read off it.
+identifier to be scored against the forces the plant generated. Four properties
+of it were established by measurement and bound what may be read off it.
+(i)~Only \texttt{lateral\_force} is force ground truth; it is the channel every
+validation in this paper uses. (ii)~\texttt{longitudinal\_force} is a
+friction-capacity report rather than a measurement---it tracks
+$\mu F_{z}$ and correlates with $ma_{x}$ at \num{0.04}---and
+\texttt{wheel\_torque} is an exact identity of it, so neither carries
+independent information. (iii)~Below \SI{0.5}{\meter\per\second} the publisher
+zeroes slip angle and both forces while the normal load stays live, so a
+load-only gate admits standstill frames as perfect $(0,0)$ samples; the
+identifier gates on the all-zero pattern as well. (iv)~The slip angle needs no
+sign change across the boundary, which was verified rather than assumed.
 
 Figure~\ref{fig:frames} states the conventions the rest of the paper assumes.
 The simulator and the identification stack do not share a handedness: CARLA
@@ -287,10 +312,30 @@ Table~\ref{tab:ref} cannot go stale when the vehicle configuration changes.
 The vehicle is driven around the reference raceline by a model-free
 pure-pursuit controller, which requires no tire knowledge---only the
 wheelbase---and is therefore a valid bootstrap, as in the baseline
-\cite{ontrack2024,forzaeth2024}. Odometry, the achieved steering angle and the
-drive command are sampled into a ring buffer at \SI{50}{\hertz}
-($T_{s}=\SI{0.02}{\second}$) for \SI{30}{\second}, gated on
-$v_{x}>\SI{1}{\meter\per\second}$. Preprocessing follows the baseline: a
+\cite{ontrack2025,forzaeth2024}. Odometry, the achieved steering angle and the
+drive command are sampled into a ring buffer by a \SI{50}{\hertz} timer for
+\SI{30}{\second}, gated on $v_{x}>\SI{1}{\meter\per\second}$. The timer runs on
+the simulation clock, which advances only at the server's \SI{0.033}{\second}
+step, so the buffer cannot acquire a new state faster than the physics produces
+one and the achieved acquisition rate is the step rate, not the timer rate. The
+interval the one-step model of Section~\ref{subsec:model} is discretised at is
+therefore set separately, at $T_{s}=\SI{0.035}{\second}$, to match the physics
+step rather than the timer. The residual \SI{6}{\percent} mismatch between the
+two is not free of consequence in principle---a timer faster than the step
+returns repeated states, and the one-step residual target
+$e_{k}=\vecx_{k+1}-\hat\vecx_{k+1}$ then carries a zero-order-hold artefact---so
+the identification was repeated at both settings. The same two configurations
+identified at $T_{s}=\SI{0.020}{\second}$ and at $T_{s}=\SI{0.035}{\second}$
+return the \emph{same} last accepted coefficient set to four decimal places in
+the corrected configuration ($B,C,D,E=\num{7.076},\num{1.346},\num{1.009},
+\num{-2.000}$ front and $\num{7.873},\num{1.383},\num{1.002},\num{-1.024}$
+rear), and in the inherited configuration the coefficients move
+($B_{f}$ \num{4.72}$\rightarrow$\num{4.80}, $E_{f}$
+\num{-2.44}$\rightarrow$\num{-2.26}) while $D$ stays on its \num{2.0} bound on
+both axles at both settings. The identified tire is therefore insensitive to
+the mismatch, and the box-edge signature is not an artefact of it. Results in
+Section~\ref{sec:results} are reported at $T_{s}=\SI{0.035}{\second}$. Preprocessing follows the
+baseline: a
 zero-phase low-pass filter, then symmetry augmentation by mirroring
 $(v_{y},\omega,\delta)\rightarrow(-v_{y},-\omega,-\delta)$ at unchanged
 $v_{x}$, which doubles the data and removes the cornering bias of a circuit.
@@ -301,8 +346,9 @@ Re-identification retriggers every \SI{30}{\second} by default.
 The four stages of the identification pipeline map onto the architecture as
 follows. \emph{Acquisition} uses \texttt{/odom},
 \texttt{feedback/\allowbreak steering\_angle} and \texttt{/drive}, all stamped
-on the simulation clock, so that the sampling interval used by the one-step
-model is the interval the physics actually advanced. \emph{Preprocessing} and
+on the simulation clock, so that the interval the one-step model is discretised
+at can be matched to the interval the physics actually advanced
+(Section~\ref{subsec:data}) rather than to the acquisition timer. \emph{Preprocessing} and
 \emph{fitting} run inside the identification node against that buffer.
 \emph{Validation} draws on \texttt{feedback/\allowbreak tire\_forces} and
 \texttt{feedback/imu}, which never enter the identification loop, so the

@@ -64,8 +64,10 @@ slip is $F_{z}BCD$: the cornering stiffness depends on the coefficients only
 through that product, and $E$ drops out. Second, and decisively, if the data
 does not approach the peak then \eqref{eq:mf} linearises to
 $F_{y}\approx F_{z}(BCD)\alpha$ and $B$, $C$, $D$ become mutually
-unidentifiable. This is the standard persistent-excitation argument
-\cite{ljung1999sysid} and is not claimed as novel. What we claim, and
+unidentifiable. This is a structural-identifiability statement in the sense of
+Bellman and {\AA}str{\"o}m~\cite{bellman1970structural} combined with the
+standard persistent-excitation argument~\cite{ljung1999sysid}, and neither is
+claimed as novel. What we claim, and
 demonstrate in Section~\ref{subsec:excitation}, is that the baseline pipeline's
 virtual-data step can silently violate it, and that a bounded optimiser then
 resolves the remaining freedom by sliding onto a box edge---so the violation is
@@ -75,7 +77,7 @@ reported as a converged fit rather than as a failure.
 \label{subsec:baseline}
 
 The baseline proceeds in four stages, repeated for $N_{\mathrm{it}}$
-iterations \cite{ontrack2024}:
+iterations \cite{ontrack2025}:
 
 \begin{enumerate}
 \item \textbf{Residual learning.} A small network $f_{NN}$ is trained on the

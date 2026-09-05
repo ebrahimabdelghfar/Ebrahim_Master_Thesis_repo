@@ -1,13 +1,12 @@
 %==============================================================================
 % references.bib
 %
-% Every entry below corresponds to a real, verifiable publication or software
-% release. Where a work exists both as a preprint and as a journal article,
-% both identifiers are recorded in the entry.
+% Where a work exists both as a preprint and as a journal article, both
+% identifiers are recorded in the entry.
 %==============================================================================
 
 % --- The baseline this paper extends -----------------------------------------
-@article{ontrack2024,
+@article{ontrack2025,
   author    = {Dikici, Onur and Ghignone, Edoardo and Hu, Cheng and
                Baumann, Nicolas and Xie, Lei and Carron, Andrea and
                Magno, Michele and Corno, Matteo},
@@ -108,7 +107,8 @@
   year    = {2019},
   volume  = {4},
   number  = {4},
-  pages   = {3363--3370}
+  pages   = {3363--3370},
+  doi     = {10.1109/LRA.2019.2926677}
 }
 
 @inproceedings{hewing2018cautious,
@@ -247,14 +247,6 @@
   url       = {https://arxiv.org/abs/2101.05337}
 }
 
-@misc{fsds2021,
-  author       = {{Formula Student Team Delft and MIT Driverless and FSEast}},
-  title        = {Formula Student Driverless Simulator},
-  year         = {2021},
-  howpublished = {Software, MIT license; built on Unreal Engine~4 and the
-                  {AirSim} plugin},
-  note         = {\url{https://github.com/FS-Driverless/Formula-Student-Driverless-Simulator}}
-}
 
 % --- Racing platforms and full stacks ----------------------------------------
 @inproceedings{f1tenth2020,
@@ -336,7 +328,11 @@
   title   = {{HPIPM}: A High-Performance Quadratic Programming Framework for
              Model Predictive Control},
   journal = {IFAC-PapersOnLine (Proc. 21st IFAC World Congress)},
-  year    = {2020}
+  year    = {2020},
+  volume  = {53},
+  number  = {2},
+  pages   = {6563--6569},
+  doi     = {10.1016/j.ifacol.2020.12.073}
 }
 
 % --- Software ----------------------------------------------------------------
@@ -370,12 +366,15 @@
   year    = {1954}
 }
 
-@article{svendenius2004brush,
-  author  = {Svendenius, Jacob and Gafvert, Magnus},
-  title   = {A Brush-Model-Based Semi-Empirical Tire-Model for Combined Slips},
-  journal = {SAE Technical Paper 2004-01-1064},
-  year    = {2004},
-  doi     = {10.4271/2004-01-1064}
+@techreport{svendenius2004brush,
+  author      = {Svendenius, Jacob and G{\aa}fvert, Magnus},
+  title       = {A Brush-Model-Based Semi-Empirical Tire-Model for Combined
+                 Slips},
+  institution = {SAE International},
+  type        = {SAE Technical Paper},
+  number      = {2004-01-1064},
+  year        = {2004},
+  doi         = {10.4271/2004-01-1064}
 }
 
 @article{acosta2017friction,
@@ -478,7 +477,7 @@
 }
 
 % --- Structured state-space models -------------------------------------------
-@inproceedings{gu2021hippo,
+@inproceedings{gu2020hippo,
   author    = {Gu, Albert and Dao, Tri and Ermon, Stefano and Rudra, Atri and
                R{\'e}, Christopher},
   title     = {{HiPPO}: Recurrent Memory with Optimal Polynomial Projections},
@@ -493,16 +492,6 @@
   year      = {2023}
 }
 
-@misc{llampc2025,
-  author        = {AL-Sunni, Maitham F. and Almubarak, Hassan and
-                   Horng, Katherine and Dolan, John M.},
-  title         = {{LLA-MPC}: Fast Adaptive Control for Autonomous Racing},
-  year          = {2025},
-  eprint        = {2505.19512},
-  archivePrefix = {arXiv},
-  primaryClass  = {cs.RO},
-  url           = {https://arxiv.org/abs/2505.19512}
-}
 
 % --- Conventions and simulator tire model ------------------------------------
 @techreport{rep103,
@@ -527,9 +516,94 @@
 
 @misc{physxvehicle,
   author       = {{NVIDIA Corporation}},
-  title        = {{PhysX} {SDK} 3.4 Documentation: Vehicles ---
-                  Tire Force Computation ({PxVehicleComputeTireForceDefault})},
+  title        = {{PhysX} {SDK} Documentation: Vehicles --- Tire Force
+                  Computation ({PxVehicleComputeTireForceDefault})},
   year         = {2018},
   howpublished = {Software documentation},
   note         = {\url{https://nvidia-omniverse.github.io/PhysX/physx/}}
+}
+
+% --- Recursive state/parameter estimation and friction estimation ------------
+@article{wenzel2006dekf,
+  author  = {Wenzel, Thomas A. and Burnham, Keith J. and
+             Blundell, Mike V. and Williams, R. A.},
+  title   = {Dual Extended {Kalman} Filter for Vehicle State and Parameter
+             Estimation},
+  journal = {Vehicle System Dynamics},
+  year    = {2006},
+  volume  = {44},
+  number  = {2},
+  pages   = {153--171},
+  doi     = {10.1080/00423110500385949}
+}
+
+@article{hsu2010trail,
+  author  = {Hsu, Yung-Hsiang Judy and Laws, Shad M. and Gerdes, J. Christian},
+  title   = {Estimation of Tire Slip Angle and Friction Limits Using Steering
+             Torque},
+  journal = {IEEE Transactions on Control Systems Technology},
+  year    = {2010},
+  volume  = {18},
+  number  = {4},
+  pages   = {896--907},
+  doi     = {10.1109/TCST.2009.2031099}
+}
+
+@article{rajamani2012wheelfriction,
+  author  = {Rajamani, Rajesh and Piyabongkarn, Damrongrit and
+             Lew, Jae Y. and Yi, Kyongsu and Phanomchoeng, Gridsada},
+  title   = {Algorithms for Real-Time Estimation of Individual Wheel
+             Tire-Road Friction Coefficients},
+  journal = {IEEE/ASME Transactions on Mechatronics},
+  year    = {2012},
+  volume  = {17},
+  number  = {6},
+  pages   = {1183--1195},
+  doi     = {10.1109/TMECH.2011.2159240}
+}
+
+@article{ahn2013friction,
+  author  = {Ahn, Changsun and Peng, Huei and Tseng, H. Eric},
+  title   = {Robust Estimation of Road Friction Coefficient},
+  journal = {IEEE Transactions on Control Systems Technology},
+  year    = {2013},
+  volume  = {21},
+  number  = {1},
+  pages   = {1--13}
+}
+
+@article{farroni2018tripid,
+  author  = {Farroni, Flavio and Lamberti, Raffaele and
+             Mancinelli, Nicol{\`o} and Timpone, Francesco},
+  title   = {{TRIP-ID}: A Tool for a Smart and Interactive Identification of
+             {Magic Formula} Tyre Model Parameters from Experimental Data
+             Acquired on Track or Test Rig},
+  journal = {Mechanical Systems and Signal Processing},
+  year    = {2018},
+  volume  = {102},
+  pages   = {1--22},
+  doi     = {10.1016/j.ymssp.2017.07.025}
+}
+
+% --- Identifiability and input design ----------------------------------------
+@article{bellman1970structural,
+  author  = {Bellman, Richard and {\AA}str{\"o}m, Karl Johan},
+  title   = {On Structural Identifiability},
+  journal = {Mathematical Biosciences},
+  year    = {1970},
+  volume  = {7},
+  number  = {3},
+  pages   = {329--339},
+  doi     = {10.1016/0025-5564(70)90132-X}
+}
+
+@book{goodwin1977design,
+  author    = {Goodwin, Graham C. and Payne, Robert L.},
+  title     = {Dynamic System Identification: Experiment Design and Data
+               Analysis},
+  series    = {Mathematics in Science and Engineering},
+  volume    = {136},
+  publisher = {Academic Press},
+  address   = {New York, NY, USA},
+  year      = {1977}
 }

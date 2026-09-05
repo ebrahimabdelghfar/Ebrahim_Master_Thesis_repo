@@ -28,7 +28,17 @@ rejects any identification whose $a_{y}^{\max}$ from \eqref{eq:gripceiling}
 falls below it. On the earlier trajectory the degenerate fit reported a
 \SI{0.40}{\g} ceiling against a \SI{1.22}{\g} demand and produced
 \SI{41.89}{\meter} of cross-track error at \SI{27}{\meter\per\second},
-against \SI{0.03}{\meter} for a physically plausible set. The gate is
+against \SI{0.03}{\meter} for a physically plausible set ($D=\num{1.5}$) on the
+same trajectory, at the same speed and through the same controller. Both
+figures come from an offline closed-loop harness---\SI{20}{\second} on
+the reference with the handover at $t=\SI{5}{\second}$---and not from a
+controlled pair of simulator runs; they are quoted as the observation that
+motivated the gate, not as a result. They are not confounded with the
+transport-delay correction below, which was already in place when they were
+measured. The same identified set on the same trajectory gives
+\SI{0.16}{\meter} at \SI{11.1}{\meter\per\second} and \SI{0.43}{\meter} at
+\SI{15}{\meter\per\second}, which is the $v^{2}$ scaling the
+Introduction describes. The gate is
 one-sided by construction and only catches a ceiling that is too low:
 \texttt{Baseline-NN-MSE}'s \SI{2.00}{\g}
 (Section~\ref{subsec:resultstire}) passes it, since it exceeds every demand
@@ -39,7 +49,9 @@ speed range makes the prediction model open-loop unstable, and the resulting
 $\rho(A_{d})>1$ is raised to $\rho^{N}$ in the condensed QP. An observed set
 gave $C_{f}=\SI{37031}{\newton\per\radian}$ against
 $C_{r}=\SI{11691}{\newton\per\radian}$, i.e.\
-$v_{\mathrm{crit}}=\SI{17.4}{\meter\per\second}$.
+$v_{\mathrm{crit}}=\SI{14.5}{\meter\per\second}$ at the measured geometry and
+mass of Table~\ref{tab:vehicle}, inside the controller's speed range on every
+trajectory in this paper.
 \item \textbf{Integration stiffness.} Even a stable set can be stiff relative
 to the control period: a single explicit RK4 step at $dt=\SI{0.05}{\second}$
 gave $\rho(A_{d})=547$ at \SI{5}{\meter\per\second} for one identified set. The

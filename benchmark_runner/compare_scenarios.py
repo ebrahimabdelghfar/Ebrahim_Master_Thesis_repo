@@ -169,9 +169,12 @@ class Comparison:
         self.written = []
 
     def save(self, fig, basename, header, rows):
-        png = self.out_dir / f'{basename}.png'
         fig.tight_layout()
-        fig.savefig(png, dpi=150)
+        # PDF is what the paper includes (IEEE wants >= 300 dpi and these are
+        # line plots, so vector is both smaller and exact); the PNG stays for
+        # quick viewing outside LaTeX.
+        fig.savefig(self.out_dir / f'{basename}.pdf')
+        fig.savefig(self.out_dir / f'{basename}.png', dpi=150)
         self.plt.close(fig)
         with (self.out_dir / f'{basename}.csv').open('w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
@@ -312,7 +315,8 @@ def build(scenarios, out_dir):
     out_dir.mkdir(parents=True, exist_ok=True)
     # Overwrite means overwrite: the sweep that produced this directory may have
     # had more scenarios than the one producing it now.
-    for stale in list(out_dir.glob('*.png')) + list(out_dir.glob('*.csv')):
+    for stale in (list(out_dir.glob('*.png')) + list(out_dir.glob('*.pdf'))
+                  + list(out_dir.glob('*.csv'))):
         stale.unlink()
 
     cmp = Comparison(out_dir, plt)

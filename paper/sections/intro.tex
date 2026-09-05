@@ -12,13 +12,13 @@ between sessions \cite{pacejka2012book,amz2020}.
 Classical characterisation resolves this by removing the vehicle from the
 track---steady-state circular or ramp-steer manoeuvres in a large open space
 yield clean data at a logistical cost a race weekend rarely affords
-\cite{ontrack2024}. On-track identification removes the logistics but
+\cite{ontrack2025}. On-track identification removes the logistics but
 reintroduces transients, noise and, critically, the fact that a racing line is
 a poor excitation signal for a nonlinear model; nonlinear least squares applied
 directly to lap data is known to be brittle in exactly this regime
-\cite{ontrack2024}.
+\cite{ontrack2025}.
 
-Dikici \emph{et al.}~\cite{ontrack2024} propose the hybrid remedy that is the
+Dikici \emph{et al.}~\cite{ontrack2025} propose the hybrid remedy that is the
 starting point of this paper. A small residual network is trained on
 \SI{30}{\second} of ordinary lap data to predict the one-step error of a
 nominal single-track model; the corrected model is then rolled out through a
@@ -29,7 +29,7 @@ only has to interpolate within its training distribution its generalisation
 weakness is contained. The procedure iterates, each fit becoming the next
 nominal model. On a 1:10 platform it reports a \num{3.3}$\times$ lower one-step
 RMSE than nonlinear least squares under noise, from \SI{30}{\second} of driving
-\cite{ontrack2024}.
+\cite{ontrack2025}.
 
 \subsection{Problem statement}
 
@@ -52,11 +52,15 @@ is identifiable and the bounded optimiser resolves the remaining freedom on a
 box edge \cite{ljung1999sysid,pacejka2012book}.
 
 \item \textbf{Lateral demand scales as $v^{2}$, so a bad grip estimate is
-silent until it is catastrophic.} On an earlier, faster reference trajectory,
-an identified peak friction coefficient of \num{0.40} produced
-\SI{0.03}{\meter} of cross-track error at \SI{11}{\meter\per\second} and
-\SI{41.89}{\meter} at \SI{27}{\meter\per\second}. The scaled platform never
-reaches the speed at which the error becomes observable.
+silent until it is catastrophic.} Driven through the same controller on an
+earlier, faster reference trajectory, one identified set with a peak friction
+coefficient of \num{0.40} tracked at \SI{0.16}{\meter} of cross-track error at
+\SI{11.1}{\meter\per\second}, \SI{0.43}{\meter} at
+\SI{15}{\meter\per\second} and \SI{41.89}{\meter} at
+\SI{27}{\meter\per\second}. The scaled platform never reaches the speed at
+which the error becomes observable. The figures are from an offline
+closed-loop harness rather than from a controlled simulator run and are
+reported as such throughout (Section~\ref{subsec:gates}).
 \end{enumerate}
 
 A third difference is an opportunity. Because the study is conducted in the
@@ -75,7 +79,11 @@ implies, and the simulation architecture that makes both verifiable.
 (Section~\ref{subsec:excitation}), giving the closed-form reachable-friction
 bound above and an \emph{excitation-aware rollout} that selects the rollout
 speed from the measured lap and warns whenever the configuration cannot reach
-the prior's peak. This corrects the baseline method~\cite{ontrack2024} at any
+the prior's peak. The bound is verified directly in
+Section~\ref{subsec:sweep}, on a grid over rollout speed and true peak factor
+with a known tire: below $\mu_{\mathrm{reach}}\approx D$ the fit returns the
+excitation rather than the tire, at every grip level tested and independently
+of the solver. This corrects the baseline method~\cite{ontrack2025} at any
 scale; it is latent at 1:10 because a \SIrange{2}{4}{\meter\per\second} rollout
 is representative there and is not here.
 
@@ -112,8 +120,9 @@ set.
 configuration} (Section~\ref{sec:results}), on a static \num{1.05} friction
 surface over three timed laps, scored throughout against the simulator's own
 per-wheel forces. The corrected pipeline holds its peak factor within
-\num{0.06} of the plant's effective friction where the inherited configuration
-sits on its box constraint, and halves the lateral tracking error under MPC. We
+\num{0.05} of the plant's effective friction where the inherited configuration
+starts and ends on its box constraint, and halves the lateral tracking error
+under MPC. We
 report the two axes on which the inherited configuration is better, and the
 reason: the lap reaches \SI{2.2}{\degree} of slip, where a wrong peak factor
 costs nothing.

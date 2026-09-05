@@ -269,3 +269,57 @@ figure carries two numbers that fit in Table V.
 
 Authoritative numbering comes from `grep newlabel main.aux`, not from this
 table.
+
+---
+
+## Fig. 7 — `identifiability_sweep.pdf` — Rollout-speed identifiability sweep  ✅ DONE
+
+**Type:** two-panel line plot with error bars. Vector PDF, included by
+`sections/experiments.tex` §VI-B at `\columnwidth`, beside Table V
+(`tab:sweep`).
+
+**Generator:** `make_identifiability_sweep.py`. It **extends**
+`On-Track-SysID/test/test_pacejka_identifiability.py` — that module owns the
+rollout (`_rollout`, i.e. `simulated_data_gen()` with the residual network
+zeroed), the vehicle dict (`_vehicle`) and the bound test (`_on_bound`). Do not
+fork them; the whole point is that the figure and the regression test exercise
+the same code path.
+
+```bash
+python3 paper/figures/make_identifiability_sweep.py     # ~200 s, no ROS, no torch
+```
+
+Writes `identifiability_sweep.csv` (one row per speed × true D × noise seed),
+`identifiability_sweep_summary.csv` (the numbers in Table V) and
+`identifiability_sweep.pdf`. Needs only numpy, scipy, yaml and matplotlib, so
+it runs in the bare system python.
+
+**Grid:** rollout speed {4, 6, 8, 10, 13, 15, 20} m/s × true `D`
+{0.70, 1.05, 1.40, 1.80} × 5 noise seeds, unregularised
+(`pacejka_prior_weight: 0`), started from the true coefficients,
+`num_starts: 8`.
+
+**Why the repetition is over noise and not over the solver:** the noise-free fit
+is exactly seed-invariant here — five multi-start seeds return the same
+coefficients to four decimal places, and so does a jitter width seven times
+wider. That measurement *is* the "not a solver problem" claim, so it is stated
+in the text rather than hidden. The intervals therefore come from Gaussian
+noise injected on the rolled-out states at the two CARLA runs' own one-step
+persistence RMSE, σ_vy = 0.010 m/s and σ_ω = 0.006 rad/s, read from
+`graphs/comparison/comparison_summary.csv`.
+
+**If the shipped tire, bounds or rollout change:** re-run it. The numbers in
+Table V are transcribed from `identifiability_sweep_summary.csv` and there is
+no build step that keeps them in step automatically.
+
+---
+
+## Results figures — format
+
+`benchmark_runner/compare_scenarios.py::Comparison.save` writes a **vector PDF**
+next to each PNG. `sections/experiments.tex` includes the comparison figures
+**without an extension**, so `\DeclareGraphicsExtensions{.pdf,...}` picks the
+PDF when it exists and falls back to the PNG until the next
+`make compare_benchmark_scenarios`. Keep it that way: at IEEE single-column
+width the 150 dpi rasters were ~257 dpi effective, under the 300 dpi floor.
+`fig2.png` is a screenshot and stays a raster.
