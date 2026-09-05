@@ -53,13 +53,14 @@ not.
 \subsection{Limitations}
 
 \begin{enumerate}
-\item \textbf{Closed-loop validation is incomplete.} Level 3 of
-Section~\ref{subsec:validation} has not been run end to end, because the
-admissibility gate correctly rejects the model for the raceline in hand
-(Section~\ref{subsec:negative}). Until a feasible raceline is regenerated this
-paper reports open-loop accuracy and closed-loop \emph{consequence}
-(Table~\ref{tab:closedloop}), not closed-loop racing performance. We consider
-stating this preferable to relaxing the gate.
+\item \textbf{Closed-loop evidence is three laps on one trajectory.}
+Level 3 of Section~\ref{subsec:validation} completes
+(Section~\ref{subsec:resultsclosedloop}), but on a single raceline whose peak
+demand is \SI{0.51}{\g}---about half the plant's grip---so the comparison is
+made where the tire is far from saturation and says nothing about limit
+handling. Lap time is not usable as a metric here at all: it is recorded on
+the ROS wall clock against a simulator running faster than real time, at a
+ratio that differed between the two runs.
 \item \textbf{No noise sweep.} The baseline's robustness claim---a
 \num{3.3}$\times$ RMSE advantage over nonlinear least squares under injected
 noise~\cite{ontrack2024}---has not been reproduced here. The bridge's odometry
@@ -71,33 +72,24 @@ telemetry rather than against a nonlinear least-squares identification of the
 same data. That comparison would strengthen the paper and is straightforward to
 add.
 \item \textbf{Single surface, vehicle and trajectory.} All results come from
-one vehicle configuration on one map. The runtime friction override supports a
-surface-change adaptation experiment---arguably the strongest argument for
-on-track identification---but it is not performed here.
-\item \textbf{Yaw inertia is assumed, not measured}
-(Section~\ref{subsec:assumptions}). This bears directly on the friction warm
-start: the axle forces of \eqref{eq:newtoneuler} scale linearly with $m$ and
-carry $I_{z}\dot\omega$ as a $\approx\SI{10}{\percent}$ term, so both feed
-straight into $\mu$ without widening its confidence interval
-(Section~\ref{subsec:frictionfloor}). The estimator additionally assumes a flat
-road, an IMU at the centre of gravity and pure lateral slip; a road bank leaks
-$g\sin\phi$ into $a_{y}$, a longitudinal IMU offset $x$ adds $\dot\omega x$,
-and combined-slip samples are dropped rather than corrected because the axle
-longitudinal force split a friction-ellipse correction needs is not observable
-from this sensor set.
-\item \textbf{The friction estimator is validated on a synthetic plant, not yet
-in CARLA} (Table~\ref{tab:mu}). It is a synthetic plant chosen precisely
-because $\mu$ is known there and excitation can be swept independently of it,
-but the CARLA cross-check against the simulator's own per-wheel forces
-(Figs.~\ref{fig:mufit}--\ref{fig:mucycles}) is not collected, and the shipped
-configuration therefore still selects the utilisation bound by default.
-\item \textbf{Ablations not completed}, so no claim is made about the accuracy
-of the S4D residual, the augmented inputs or the physics-informed loss on this
-platform (Section~\ref{subsec:ablation}); in particular we do not claim to
-reproduce the S4 improvement of~\cite{visionsysid2026}. What is claimed about
-the S4D residual here is its cost and the exactness of the reduction
-(Table~\ref{tab:runtime}), which is a statement about the implementation and
-says nothing about whether the architecture identifies a better tire.
+one vehicle configuration on one map with the friction held static at
+\num{1.05}. The runtime friction override supports a surface-change adaptation
+experiment---arguably the strongest argument for on-track identification---but
+it is not performed here.
+\item \textbf{The friction estimator's excitation sweep is synthetic}
+(Table~\ref{tab:mu}). The synthetic plant was chosen because $\mu$ is known
+there and excitation can be swept independently of it. On the CARLA runs the
+warm start is exercised only at the one excitation level the lap happens to
+supply, and only through the floor it puts under $D$ on the first
+identification, so its excitation dependence is not verified against the
+simulator's per-wheel forces.
+\item \textbf{The two configurations differ in four settings at once}
+(Table~\ref{tab:scenarios}), so Section~\ref{sec:results} attributes nothing
+to the residual architecture, the loss, the solver or the warm start
+individually; in particular we do not claim to reproduce the S4 improvement
+of~\cite{visionsysid2026}. What is claimed about the S4D residual on its own
+is its cost and the exactness of the reduction (Table~\ref{tab:runtime}), a
+statement about the implementation rather than about the tire it identifies.
 \item \textbf{Longitudinal dynamics are out of scope.} As in the baseline only
 lateral dynamics are identified; combined slip and load transfer are neglected,
 and the simulator's longitudinal wheel force channel is drivetrain torque

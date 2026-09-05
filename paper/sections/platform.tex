@@ -149,7 +149,7 @@ ground-truth wheel samples from a live lap ($P_{99}(|\alpha|)=\SI{3.66}{\degree}
 each predicted from its own measured $\alpha$, $F_{z}$ and $\mu$,
 \eqref{eq:physx} returns $R^{2}=\num{0.99}$ with \SI{16.1}{\newton} RMSE on the
 front axle and \SI{14.7}{\newton} on the rear, at biases of \SI{+2.0}{\newton}
-and \SI{+0.8}{\newton}. Section~\ref{subsec:corrected} uses this curve to
+and \SI{+0.8}{\newton}. Section~\ref{subsec:resultstire} uses this curve to
 separate the error of the identified fit from the error of representing
 \eqref{eq:physx} in the form \eqref{eq:mf} that the controller requires.
 
@@ -309,6 +309,6 @@ model is the interval the physics actually advanced. \emph{Preprocessing} and
 estimator is scored against a channel it did not observe. \emph{Deployment}
 pushes the fitted coefficients over a ROS~2 service to the controller behind
 the gates of Section~\ref{sec:integration}. Only the last stage leaves the
-architecture, which is what makes the negative result of
-Section~\ref{subsec:negative} a statement about the trajectory rather than
-about the interface.
+architecture, which is what lets Section~\ref{sec:results} attribute a
+closed-loop difference to the identified model rather than to the interface
+that carries it.

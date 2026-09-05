@@ -40,8 +40,9 @@ to shape the residual's \emph{input space}
 (Section~\ref{subsec:pinnloss}), so that the network's small capacity is spent
 on what is genuinely unmodelled instead of on rediscovering structure that
 \eqref{eq:slip} and \eqref{eq:vydot}--\eqref{eq:omdot} already state exactly.
-The rest of this subsection states both and why they were chosen; their
-measured effect is an open ablation axis (Section~\ref{subsec:ablation}).
+The rest of this subsection states both and why they were chosen; both are
+active in the configuration evaluated in Section~\ref{sec:results}, and
+neither is scored on its own.
 
 The default residual is the baseline multilayer perceptron: 4 inputs, one
 hidden layer of 8 units, 2 outputs, LeakyReLU, 58 parameters, full-batch
@@ -71,7 +72,7 @@ That reconstruction is the worst part of the map to leave to a small network.
 Equation~\eqref{eq:slip} composes a division by $v_{x}$ with an arctangent; a
 one-hidden-layer piecewise-linear network approximates a \emph{ratio} only by
 tiling the $(v_{y},\omega,v_{x})$ domain, and this vehicle's identification
-data spans \SIrange{11}{27}{\meter\per\second}, a $2.5\times$ range of the
+data spans \SIrange{9.2}{26.5}{\meter\per\second}, a $2.9\times$ range of the
 denominator. Eight LeakyReLU units cannot tile that, so the fitted residual
 represents the same tire nonlinearity independently at each speed it happened
 to observe, with nothing tying those representations together. The consequence
@@ -286,8 +287,8 @@ Equation~\eqref{eq:mureach} contains no tire parameter: it is a property of the
 rollout configuration alone. If $\mu_{\mathrm{reach}}<D$, the synthetic data
 never leaves the linear ramp of \eqref{eq:mf}, only the product $BCD$ is
 identifiable (Section~\ref{subsec:identifiability}), and the bounded optimiser
-resolves the residual freedom on a box edge---precisely the signature reported
-in Section~\ref{subsec:failure}.
+resolves the residual freedom on a box edge---the signature measured in
+Section~\ref{subsec:resultstire}.
 
 The baseline implementation selects the rollout speed as
 $v=\mathrm{clip}(\overline{v_{x}},\,2,\,4)\,\si{\meter\per\second}$, a value
@@ -303,7 +304,7 @@ $\mu_{\mathrm{reach}}\approx2.0$ and the pathology is invisible.
 \label{subsec:rollout}
 The rollout speed is now taken from the speed the vehicle was actually driven
 at, clamped by configuration bounds (lower bound
-\SI{7}{\meter\per\second}, no upper bound), and the pipeline warns whenever
+\SI{15}{\meter\per\second}, no upper bound), and the pipeline warns whenever
 \eqref{eq:mureach} evaluates below the prior's $D$---turning a silent
 degeneracy into a startup diagnostic. The same bound is the right tool for
 choosing a data-collection speed: identification data should be gathered at
@@ -549,11 +550,12 @@ $F_{y}$, and against the plant's own curve~\eqref{eq:physx} evaluated at the
 same points (Table~\ref{tab:ref}), which separates the error of the fit from
 the error of representing a PhysX tire.
 \item \textbf{Closed-loop tracking} under the MPC using the identified model:
-lap time, mean and maximum lateral deviation, steering sign reversals per
-control step, and RMS steering rate against the rate limit. Lap timing runs
-from the first crossing of the raceline's $s=0$, so the drive from the spawn
-point up to the start line is an untimed out-lap. This level is
-\emph{not} completed here; see Section~\ref{subsec:negative}.
+mean and maximum lateral deviation, its time-weighted integral, heading error
+and solver cost, split by the active controller so that the pure-pursuit
+acquisition phase is not scored against a model it does not use. Lap counting
+runs from the first crossing of the raceline's $s=0$, so the drive from the
+spawn point up to the start line is an untimed out-lap
+(Section~\ref{subsec:resultsclosedloop}).
 \end{enumerate}
 
 All three levels score the \emph{accepted} model only, for the reason given in

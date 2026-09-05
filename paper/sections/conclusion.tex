@@ -19,41 +19,50 @@ Correcting this---together with an extrapolation bound on the steering sweep, a
 frozen regularisation target, identification against the achieved rather than
 the commanded road-wheel angle, measured mass and geometry, and a friction
 warm start identified from the curvature of the axle force curve and applied
-only as a floor---produces identifications with no
-railed coefficient, peak friction coefficients of \numrange{1.05}{1.18} against
-a measured \numrange{1.00}{1.05}, axle cornering stiffnesses within
-\SIrange{10}{20}{\percent} of the simulator's own, correct understeer sign, and
-one-step $R^{2}$ of \num{0.97}/\num{0.99}. We further argue that
-per-coefficient box constraints are not a sufficient admissibility criterion
-for handing a model to a model-based controller, and place gates on derived
-physical quantities at that interface instead. The corrected identifier's first
-useful act was to reject the reference trajectory: the raceline in hand demands
-\SI{1.22}{\g} from a vehicle that sustains \SI{1.0}{\g}. We report this rather
-than relaxing the gate.
+only as a floor---produces identifications with no railed coefficient and a
+peak factor of \numrange{1.002}{1.165} against a plant realising \num{1.05},
+with the correct understeer sign. Run against the inherited configuration over
+three timed laps on a static surface, it holds that peak factor to \num{0.057}
+and \num{0.052} RMSE where the inherited configuration settles on its
+\num{2.0} box constraint, and halves the MPC's lateral tracking error, from
+\SI{0.183}{\meter} to \SI{0.093}{\meter} RMS, at unchanged solver cost. The
+inherited configuration is better on front-axle force and on lateral-velocity
+prediction, because the lap reaches \SI{2.2}{\degree} of slip and a wrong peak
+factor is not observable there---which is the same identifiability statement
+seen from the metric side. We further argue that per-coefficient box
+constraints are not a sufficient admissibility criterion for handing a model to
+a model-based controller, and place gates on derived physical quantities at
+that interface instead; the earlier reference trajectory, which demanded
+\SI{1.22}{\g} from a vehicle sustaining \SI{1.0}{\g}, was regenerated because
+that gate refused it rather than loosened for it.
 
 \subsection{Future work}
 
 \paragraph{Immediate}
 \begin{enumerate}
-\item Regenerate the raceline for the \emph{measured} vehicle
-($m=\SI{269.8}{\kilo\gram}$, $\mu_{\mathrm{peak}}=1.0$,
-$v_{\max}\approx\SIrange{13}{14}{\meter\per\second}$) and run the closed-loop
-validation: lap time, mean and maximum lateral deviation, and steering sign
-reversals per control step, against a hand-tuned prior model as control.
+\item Separate the four settings of Table~\ref{tab:scenarios}. The comparison
+reported here moves the residual architecture, the objective, the solver and
+the warm start together, so it establishes that the shipped configuration is
+better on the metrics that matter to a controller without saying which change
+earns it. The runtime objection to the temporal arm is removed
+(Section~\ref{subsec:runtime}).
+\item Excite the peak. Every result here is obtained at
+$P_{99}(|\alpha|)=\SI{2.2}{\degree}$ against a plant whose curve peaks at
+\SI{11.5}{\degree}, which is why a peak factor on its box constraint costs
+almost nothing in axle force. A trajectory or an injected manoeuvre that
+reaches further up the curve would make the two models separable on force as
+well as on friction.
 \item Run the noise sweep of~\cite{ontrack2024} on this platform using the
 bridge's odometry noise model, with a nonlinear least-squares identification of
 the same data as the comparison arm.
-\item Complete the residual-architecture, input-augmentation and loss-mode
-ablations of Section~\ref{subsec:ablation}, and a factorial ablation over the
-corrections of Table~\ref{tab:defects}. The runtime objection to the
-temporal arm is removed (Section~\ref{subsec:runtime}).
-\item Collect the friction-estimator diagnostics of
-Figs.~\ref{fig:mufit}--\ref{fig:mucycles} on the CARLA plant. The estimator is
-so far validated against a synthetic brush-tire plant, where $\mu$ is known
-exactly (Table~\ref{tab:mu}); what is missing is the same comparison against
-the simulator's per-wheel forces across a pace sweep, including the
-$\sigma_{\mu}/\mu$ gate boundary and the IMU-versus-kinematics cross-check that
-guards the mass and inertia assumptions.
+\item Cross-check the friction warm start against the simulator's per-wheel
+forces across a pace sweep, including the $\sigma_{\mu}/\mu$ gate boundary and
+the IMU-versus-kinematics cross-check that guards the mass and inertia
+assumptions. It is so far validated against a synthetic brush-tire plant, where
+$\mu$ is known exactly (Table~\ref{tab:mu}).
+\item Report lap time on the simulator's own clock. Lap timing currently runs
+on the ROS wall clock against a faster-than-real-time simulator, which makes
+lap time unusable as a comparison metric (Section~\ref{subsec:resultsclosedloop}).
 \item Measure $I_{z}$ rather than assuming it
 (Section~\ref{subsec:assumptions}).
 \end{enumerate}

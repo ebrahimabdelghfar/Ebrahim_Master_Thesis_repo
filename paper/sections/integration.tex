@@ -25,10 +25,14 @@ unusable. We observed three distinct ways, each requiring a gate on a
 \item \textbf{Grip ceiling versus trajectory demand.} The controller computes
 $\max_{k}(v_{x,k}^{2}|\kappa_{k}|)$ over the speed-clamped reference and
 rejects any identification whose $a_{y}^{\max}$ from \eqref{eq:gripceiling}
-falls below it. The degenerate fit reported a \SI{0.40}{\g} ceiling against a
-\SI{1.22}{\g} demand and produced \SI{41.89}{\meter} of cross-track error at
-\SI{27}{\meter\per\second}, against \SI{0.03}{\meter} for a physically
-plausible set (Table~\ref{tab:closedloop}).
+falls below it. On the earlier trajectory the degenerate fit reported a
+\SI{0.40}{\g} ceiling against a \SI{1.22}{\g} demand and produced
+\SI{41.89}{\meter} of cross-track error at \SI{27}{\meter\per\second},
+against \SI{0.03}{\meter} for a physically plausible set. The gate is
+one-sided by construction and only catches a ceiling that is too low:
+\texttt{Baseline-NN-MSE}'s \SI{2.00}{\g}
+(Section~\ref{subsec:resultstire}) passes it, since it exceeds every demand
+the reference makes.
 \item \textbf{Understeer sign and critical speed.} A set with
 $l_{f}C_{f}>l_{r}C_{r}$ whose $v_{\mathrm{crit}}$ falls inside the controller's
 speed range makes the prediction model open-loop unstable, and the resulting

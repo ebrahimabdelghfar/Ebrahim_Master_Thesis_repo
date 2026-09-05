@@ -37,7 +37,7 @@ This paper asks what the pipeline identifies when it is moved from a
 \SI{3.7}{\kilo\gram}, \SI{0.32}{\meter}-wheelbase platform to a full-scale
 Formula Student vehicle: \SI{269.8}{\kilo\gram}, \SI{1.53}{\meter} wheelbase,
 \SI{16}{\degree} of road-wheel lock, driven at
-\SIrange{11}{27}{\meter\per\second}. The question is one of identifiability
+\SIrange{9.6}{25.8}{\meter\per\second}. The question is one of identifiability
 rather than of parameter transfer. Two scale-dependent mechanisms, both latent
 at 1:10, break the estimate:
 
@@ -52,11 +52,11 @@ is identifiable and the bounded optimiser resolves the remaining freedom on a
 box edge \cite{ljung1999sysid,pacejka2012book}.
 
 \item \textbf{Lateral demand scales as $v^{2}$, so a bad grip estimate is
-silent until it is catastrophic.} An identified peak friction coefficient of
-\num{0.40} produces \SI{0.03}{\meter} of cross-track error at
-\SI{11}{\meter\per\second} and \SI{41.89}{\meter} at
-\SI{27}{\meter\per\second}. The scaled platform never reaches the speed at
-which the error becomes observable.
+silent until it is catastrophic.} On an earlier, faster reference trajectory,
+an identified peak friction coefficient of \num{0.40} produced
+\SI{0.03}{\meter} of cross-track error at \SI{11}{\meter\per\second} and
+\SI{41.89}{\meter} at \SI{27}{\meter\per\second}. The scaled platform never
+reaches the speed at which the error becomes observable.
 \end{enumerate}
 
 A third difference is an opportunity. Because the study is conducted in the
@@ -108,12 +108,15 @@ against the trajectory's lateral demand---rather than per-coefficient box
 checks, which cannot detect a degenerate fit or a pairwise-oversteering axle
 set.
 
-\item \textbf{A negative result reported rather than suppressed}
-(Section~\ref{subsec:negative}). The corrected model reports a grip ceiling of
-\SIrange{1.02}{1.16}{\g} against a measured steady-state ceiling of
-$\approx\SI{1.0}{\g}$, while the optimised raceline used here demands
-\SI{1.22}{\g}; the gate refuses the identification for closed-loop use, and we
-quantify the raceline regeneration this implies instead of loosening the gate.
+\item \textbf{A closed-loop evaluation against the inherited
+configuration} (Section~\ref{sec:results}), on a static \num{1.05} friction
+surface over three timed laps, scored throughout against the simulator's own
+per-wheel forces. The corrected pipeline holds its peak factor within
+\num{0.06} of the plant's effective friction where the inherited configuration
+sits on its box constraint, and halves the lateral tracking error under MPC. We
+report the two axes on which the inherited configuration is better, and the
+reason: the lap reaches \SI{2.2}{\degree} of slip, where a wrong peak factor
+costs nothing.
 \end{enumerate}
 
 The paper follows that order: Section~\ref{sec:related} places the work against
