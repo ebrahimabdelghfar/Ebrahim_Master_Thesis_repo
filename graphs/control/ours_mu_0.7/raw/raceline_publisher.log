@@ -1,0 +1,39 @@
+[INFO] [launch]: All log files can be found below /home/ebrahim/.ros/log/2026-09-06-18-00-36-818569-ebrahim-msi-17979
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [raceline_publisher_node-1]: process started with pid [17996]
+[raceline_publisher_node-1] [INFO] [1788706837.424236168] [raceline_publisher]: Loaded 2916 waypoints from /home/ebrahim/Ebrahim_Master_Thesis_repo/traj_race_cl.csv (psi_offset_rad=+1.5707963)
+[raceline_publisher_node-1] [INFO] [1788706837.428084653] [raceline_publisher]: Heading convention OK (mean |psi_rad - tangent| offset -0.0014 rad)
+[raceline_publisher_node-1] [INFO] [1788706837.446405500] [raceline_publisher]: Published latched waypoints and markers to /raceline_waypoints
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[ERROR] [raceline_publisher_node-1]: process[raceline_publisher_node-1] failed to terminate '5' seconds after receiving 'SIGINT', escalating to 'SIGTERM'
+[INFO] [raceline_publisher_node-1]: sending signal 'SIGTERM' to process[raceline_publisher_node-1]
+[raceline_publisher_node-1] Traceback (most recent call last):
+[raceline_publisher_node-1]   File "/home/ebrahim/Ebrahim_Master_Thesis_repo/build/raceline_publisher/raceline_publisher/raceline_publisher_node.py", line 197, in main
+[raceline_publisher_node-1]     rclpy.spin(node)
+[raceline_publisher_node-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+[raceline_publisher_node-1]     executor.spin_once()
+[raceline_publisher_node-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 808, in spin_once
+[raceline_publisher_node-1]     self._spin_once_impl(timeout_sec)
+[raceline_publisher_node-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 797, in _spin_once_impl
+[raceline_publisher_node-1]     handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+[raceline_publisher_node-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+[raceline_publisher_node-1]     return next(self._cb_iter)
+[raceline_publisher_node-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 681, in _wait_for_ready_callbacks
+[raceline_publisher_node-1]     raise ExternalShutdownException()
+[raceline_publisher_node-1] rclpy.executors.ExternalShutdownException
+[raceline_publisher_node-1] 
+[raceline_publisher_node-1] During handling of the above exception, another exception occurred:
+[raceline_publisher_node-1] 
+[raceline_publisher_node-1] Traceback (most recent call last):
+[raceline_publisher_node-1]   File "/home/ebrahim/Ebrahim_Master_Thesis_repo/install/raceline_publisher/lib/raceline_publisher/raceline_publisher_node", line 33, in <module>
+[raceline_publisher_node-1]     sys.exit(load_entry_point('raceline-publisher', 'console_scripts', 'raceline_publisher_node')())
+[raceline_publisher_node-1]   File "/home/ebrahim/Ebrahim_Master_Thesis_repo/build/raceline_publisher/raceline_publisher/raceline_publisher_node.py", line 201, in main
+[raceline_publisher_node-1]     rclpy.shutdown()
+[raceline_publisher_node-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+[raceline_publisher_node-1]     _shutdown(context=context)
+[raceline_publisher_node-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+[raceline_publisher_node-1]     return context.shutdown()
+[raceline_publisher_node-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+[raceline_publisher_node-1]     self.__context.shutdown()
+[raceline_publisher_node-1] rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+[ERROR] [raceline_publisher_node-1]: process has died [pid 17996, exit code 1, cmd '/home/ebrahim/Ebrahim_Master_Thesis_repo/install/raceline_publisher/lib/raceline_publisher/raceline_publisher_node --ros-args -r __node:=raceline_publisher --params-file /home/ebrahim/Ebrahim_Master_Thesis_repo/install/raceline_publisher/share/raceline_publisher/config/raceline_publisher.yaml --params-file /tmp/launch_params_h3ljafuz'].

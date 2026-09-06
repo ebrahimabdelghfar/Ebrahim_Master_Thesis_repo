@@ -6,6 +6,7 @@ already publish - no changes to any of those packages. See docs/adaptive_control
 for the metric definitions, the FSM state-name coupling, and citations.
 """
 import csv
+import json
 from pathlib import Path
 
 import rclpy
@@ -35,6 +36,12 @@ STATE_ORDER = [
 PP_ACTIVE_STATE = 'RUNNING_PP'
 MPC_ACTIVE_STATE = 'RUNNING_MPC'
 EMERGENCY_STATE = 'EMERGENCY_HALT'
+
+# benchmark_runner drops this into <plot_output_dir>/raw/ when it gives up on a
+# scenario. This package cannot import the runner, so the name and the schema
+# are duplicated from benchmark_runner/run_status.py - keep them in step.
+STATUS_FILENAME = 'run_status.json'
+FAILURE_COLOR = '#b00020'
 
 
 class AdaptiveControllerBenchmarkNode(Node):
@@ -68,6 +75,8 @@ class AdaptiveControllerBenchmarkNode(Node):
         self.csv_output_path = str(self.get_parameter('csv_output_path').value)
         self.plot_output_dir = str(self.get_parameter('plot_output_dir').value)
         plot_max_points = int(self.get_parameter('plot_max_points').value)
+        # Filled in at export time from the runner's status file; None on a clean run.
+        self.failure_reason = None
 
         # Latest cached values from independent per-topic callbacks. manager/state is
         # published every control-loop tick regardless of track-error availability (see
@@ -319,6 +328,10 @@ class AdaptiveControllerBenchmarkNode(Node):
 
         out_dir = Path(self.plot_output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
+        self.failure_reason = self._read_failure_reason(out_dir)
+        if self.failure_reason:
+            self.get_logger().warn(
+                f'Run failed ({self.failure_reason}) - marking it on the figures.')
 
         self._plot_state_timeline(plt, out_dir / 'fsm_state_timeline.png')
         self._plot_tracking_error_timeseries(plt, out_dir / 'tracking_error_timeseries.png')
@@ -346,6 +359,33 @@ class AdaptiveControllerBenchmarkNode(Node):
             writer.writerow(header)
             writer.writerows(rows)
 
+    def _read_failure_reason(self, out_dir):
+        """Why benchmark_runner gave up on this scenario, or None if it didn't.
+
+        The runner writes the file before it signals us, and wipes the directory
+        at scenario start, so a stale file from an earlier run cannot appear.
+        """
+        try:
+            status = json.loads(
+                (out_dir / 'raw' / STATUS_FILENAME).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return None
+        return status.get('reason') if status.get('status') == 'failed' else None
+
+    def _mark_failure(self, ax, x):
+        """Mark the last sample: the run did not end here, it was given up on here.
+
+        Returns a legend handle for the marker, or None on a clean run - the
+        caller passes it to _add_state_legend, which owns the axes' legend.
+        """
+        if not self.failure_reason:
+            return None
+        import matplotlib.lines as mlines
+        ax.axvline(x, color=FAILURE_COLOR, linestyle='-.', linewidth=1.6, zorder=5)
+        return mlines.Line2D(
+            [], [], color=FAILURE_COLOR, linestyle='-.', linewidth=1.6,
+            label=f'Run failed: {self.failure_reason}')
+
     def _shade_states(self, ax):
         """axvspan background per contiguous FSM-state run, colored per STATE_COLORS -
         ties tracking-error/speed behavior visually to which controller was active.
@@ -367,16 +407,20 @@ class AdaptiveControllerBenchmarkNode(Node):
                 start_idx = i
         return [s for s in STATE_ORDER if s in seen]
 
-    def _add_state_legend(self, ax, states):
+    def _add_state_legend(self, ax, states, extra_handles=()):
         """Legend mapping shaded background colors to FSM states (PP/MPC/switching/emergency zones)."""
-        if not states:
-            return
         import matplotlib.patches as mpatches
         handles = [
             mpatches.Patch(color=STATE_COLORS.get(s, '#cccccc'), alpha=0.3, label=s)
             for s in states
         ]
-        ax.legend(handles=handles, loc='upper right', fontsize=6, framealpha=0.8, ncol=len(handles))
+        handles.extend(extra_handles)
+        if not handles:
+            return
+        # One column per state, so an extra handle wraps onto its own row
+        # instead of stretching the row past the axes.
+        ax.legend(handles=handles, loc='upper right', fontsize=6, framealpha=0.8,
+                  ncol=max(1, len(states)))
 
     def _plot_state_timeline(self, plt, save_path):
         h = self.history
@@ -394,6 +438,8 @@ class AdaptiveControllerBenchmarkNode(Node):
             ax.set_xlabel('Time [s]')
             ax.set_title('Active FSM state over time')
             ax.grid(True, alpha=0.3)
+            failed = self._mark_failure(ax, h.t[-1])
+            self._add_state_legend(ax, [], extra_handles=[failed] if failed else ())
         fig.tight_layout()
         self._save(fig, save_path, ['t_run_s', 'state'], list(zip(h.t, h.state)))
         plt.close(fig)
@@ -412,12 +458,14 @@ class AdaptiveControllerBenchmarkNode(Node):
             axes[0].set_ylabel('e_y [m]')
             axes[0].set_title('Lateral tracking error (background shaded by active FSM state)')
             axes[0].grid(True, alpha=0.3)
-            self._add_state_legend(axes[0], states_seen)
             axes[1].plot(h.t, h.heading_error, color='tab:red', linewidth=1.0)
             axes[1].set_ylabel('heading error [rad]')
             axes[1].set_xlabel('Time [s]')
             axes[1].set_title('Heading tracking error')
             axes[1].grid(True, alpha=0.3)
+            failed = [self._mark_failure(ax, h.t[-1]) for ax in axes]
+            self._add_state_legend(
+                axes[0], states_seen, extra_handles=[failed[0]] if failed[0] else ())
         fig.tight_layout()
         self._save(
             fig, save_path,
@@ -470,7 +518,9 @@ class AdaptiveControllerBenchmarkNode(Node):
             ax1.set_ylabel('v_x [m/s]', color='tab:green')
             ax1.tick_params(axis='y', labelcolor='tab:green')
             ax1.grid(True, alpha=0.3)
-            self._add_state_legend(ax1, states_seen)
+            failed = self._mark_failure(ax1, h.t[-1])
+            self._add_state_legend(
+                ax1, states_seen, extra_handles=[failed] if failed else ())
 
             ax2 = ax1.twinx()
             ax2.plot(h.t, h.solve_time_ms, color='tab:purple', linewidth=0.8, alpha=0.8)
@@ -604,7 +654,16 @@ class AdaptiveControllerBenchmarkNode(Node):
                 mpatches.Patch(color=STATE_COLORS.get(s, '#cccccc'), label=s)
                 for s in STATE_ORDER if s in set(states)
             ]
-            ax.legend(handles=[track_handle] + state_handles, loc='best', fontsize=7)
+            # Only the last lap holds the failure: earlier ones were driven through.
+            fail_handles = []
+            if self.failure_reason and xs and lap == laps_present[-1]:
+                ax.plot(xs[-1], ys[-1], marker='X', markersize=13, zorder=4,
+                        color=FAILURE_COLOR, markeredgecolor='white', markeredgewidth=1.0)
+                fail_handles = [mlines.Line2D(
+                    [], [], marker='X', markersize=9, linestyle='none',
+                    color=FAILURE_COLOR, label=f'Run failed here: {self.failure_reason}')]
+            ax.legend(
+                handles=[track_handle] + state_handles + fail_handles, loc='best', fontsize=7)
 
             fig.tight_layout()
             self._save(

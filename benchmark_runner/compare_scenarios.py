@@ -19,7 +19,13 @@ from pathlib import Path
 
 import yaml
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from run_status import read_failure_reason  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+FAILURE_COLOR = '#b00020'
 
 AXLE_FORCE_SIGNALS = ('front_sum_fy', 'rear_sum_fy')
 STATE_SIGNALS = ('v_y', 'omega')
@@ -71,6 +77,11 @@ class ScenarioData:
         self.name = name
         self.ident_dir = graphs_root / 'identification' / name
         self.control_dir = graphs_root / 'control' / name
+
+        # Either directory carries the sidecar; the identification one is written
+        # first, so prefer it and fall back in case only one survived.
+        self.failure_reason = (read_failure_reason(self.ident_dir)
+                               or read_failure_reason(self.control_dir))
 
         self.control_metrics = self._control_metrics()
         self.ident_metrics = self._ident_metrics()
@@ -163,13 +174,27 @@ class ScenarioData:
 
 class Comparison:
 
-    def __init__(self, out_dir, plt):
+    def __init__(self, out_dir, plt, incomplete=()):
         self.out_dir = Path(out_dir)
         self.plt = plt
         self.written = []
+        # [(scenario, reason)] for the runs that did not finish. Every figure
+        # carries the caveat, because any of them can mix a short run in with
+        # complete ones and nothing else on the axes would say so.
+        self.incomplete = list(incomplete)
+
+    def _banner(self, fig):
+        if not self.incomplete:
+            return
+        detail = '; '.join(f'{name} ({reason})' for name, reason in self.incomplete)
+        fig.text(0.5, 0.012, f'Incomplete run(s) included: {detail}',
+                 ha='center', va='bottom', fontsize=6, color=FAILURE_COLOR, wrap=True)
 
     def save(self, fig, basename, header, rows):
-        fig.tight_layout()
+        self._banner(fig)
+        # Reserve the bottom strip when there is a banner: tight_layout does not
+        # account for figure-level text and would lay the axes over it.
+        fig.tight_layout(rect=(0, 0.05, 1, 1) if self.incomplete else None)
         # PDF is what the paper includes (IEEE wants >= 300 dpi and these are
         # line plots, so vector is both smaller and exact); the PNG stays for
         # quick viewing outside LaTeX.
@@ -319,7 +344,9 @@ def build(scenarios, out_dir):
                   + list(out_dir.glob('*.csv'))):
         stale.unlink()
 
-    cmp = Comparison(out_dir, plt)
+    cmp = Comparison(
+        out_dir, plt,
+        incomplete=[(s.name, s.failure_reason) for s in scenarios if s.failure_reason])
     names = [s.name for s in scenarios]
 
     _summary_csv(scenarios, out_dir)
@@ -444,10 +471,12 @@ def _skill(scenario, signal):
 
 def _summary_csv(scenarios, out_dir):
     coeff_columns = [f'{axle}_{c}' for axle in ('front', 'rear') for c in 'BCDE']
-    header = ['scenario'] + [name for name, _ in SUMMARY_COLUMNS] + coeff_columns
+    header = (['scenario', 'completed', 'failure_reason']
+              + [name for name, _ in SUMMARY_COLUMNS] + coeff_columns)
     rows = []
     for s in scenarios:
-        row = [s.name] + [getter(s) for _, getter in SUMMARY_COLUMNS]
+        row = ([s.name, not s.failure_reason, s.failure_reason or '']
+               + [getter(s) for _, getter in SUMMARY_COLUMNS])
         for axle in ('front', 'rear'):
             coefficients = s.pacejka_coefficients(axle)
             row.extend(coefficients if coefficients else ['', '', '', ''])
@@ -659,6 +688,11 @@ def main():
     if not scenarios:
         print('nothing to compare - run `make run_benchmark_scenarios` first')
         return 1
+
+    for s in scenarios:
+        if s.failure_reason:
+            print(f'WARNING: {s.name} did not finish ({s.failure_reason}) - its '
+                  f'partial data is still compared, and every figure says so.')
 
     build(scenarios, graphs_root / 'comparison')
     return 0

@@ -83,6 +83,12 @@ COLOR_GRID = '#e1e0d9'
 COLOR_INK = '#0b0b0b'
 COLOR_SECONDARY_INK = '#52514e'
 COLOR_MUTED = '#898781'
+COLOR_FAIL = '#b00020'
+
+# benchmark_runner drops this into <plot_output_dir>/raw/ when it gives up on a
+# scenario. This package cannot import the runner, so the name and the schema
+# are duplicated from benchmark_runner/run_status.py - keep them in step.
+STATUS_FILENAME = 'run_status.json'
 
 
 def pacejka_formula(params, alpha, fz):
@@ -197,6 +203,8 @@ class TireForceBenchmarkNode(Node):
         self.log_interval = int(self.get_parameter('log_interval').value)
         self.csv_output_path = str(self.get_parameter('csv_output_path').value)
         self.plot_output_dir = str(self.get_parameter('plot_output_dir').value)
+        # Filled in at export time from the runner's status file; None on a clean run.
+        self.failure_reason = None
         self.plot_max_points = int(self.get_parameter('plot_max_points').value)
         # Counts params sets received on identified_params_service - names the
         # per-iteration identified-vs-nominal figures.
@@ -909,6 +917,10 @@ class TireForceBenchmarkNode(Node):
 
         out_dir = Path(self.plot_output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
+        self.failure_reason = self._read_failure_reason(out_dir)
+        if self.failure_reason:
+            self.get_logger().warn(
+                f'Run failed ({self.failure_reason}) - marking it on the figures.')
 
         # Export runs from destroy_node() during shutdown, and takes seconds:
         # a second Ctrl-C would otherwise kill the process mid-figure and
@@ -1018,6 +1030,26 @@ class TireForceBenchmarkNode(Node):
             'savefig.dpi': 300,
         })
 
+    def _read_failure_reason(self, out_dir):
+        """Why benchmark_runner gave up on this scenario, or None if it didn't.
+
+        The runner writes the file before it signals us, and wipes the directory
+        at scenario start, so a stale file from an earlier run cannot appear.
+        """
+        try:
+            status = json.loads(
+                (out_dir / 'raw' / STATUS_FILENAME).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return None
+        return status.get('reason') if status.get('status') == 'failed' else None
+
+    def _mark_failure(self, ax, x):
+        """Mark the last sample: the run did not end here, it was given up on here."""
+        if not self.failure_reason:
+            return
+        ax.axvline(x, color=COLOR_FAIL, linestyle='-.', linewidth=1.6, zorder=5,
+                   label=f'Run failed: {self.failure_reason}')
+
     def _grid_shape(self, n):
         ncols = 1 if n <= 2 else 2
         nrows = math.ceil(n / ncols)
@@ -1042,6 +1074,9 @@ class TireForceBenchmarkNode(Node):
             ax.set_title(label)
             ax.set_xlabel('Time [s]')
             ax.set_ylabel(f'{label} [{unit}]')
+            # Each panel's t is relative to its own first sample, so the marker
+            # has to be that panel's last t rather than one shared instant.
+            self._mark_failure(ax, t[-1])
             ax.legend(loc='best')
             csv_rows.extend(
                 [key, unit, f'{ts:.6f}', g, e] for ts, g, e in zip(t, hist.gt, hist.est))

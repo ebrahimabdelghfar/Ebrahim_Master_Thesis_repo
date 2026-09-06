@@ -34,8 +34,10 @@ from rclpy.signals import SignalHandlerOptions
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from bridge_config import BRIDGE_CONFIG, restore, set_tire_friction  # noqa: E402
 from friction_schedule import FrictionSchedule  # noqa: E402
 from lap_monitor import LapMonitor  # noqa: E402
+from run_status import write_failure  # noqa: E402
 from sim_control import BridgeLifecycle, SimNotRunning, wait_for_publisher  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -165,6 +167,10 @@ class Launch:
 
 class BenchmarkRunner:
 
+    # Snapshot of the bridge config, taken in __init__ before anything patches
+    # it. None means no snapshot exists, so there is nothing to restore.
+    bridge_config_original = None
+
     def __init__(self, config):
         self.config = config
         self.n_laps = int(config['n_laps'])
@@ -173,6 +179,10 @@ class BenchmarkRunner:
         self.raceline_csv = self._resolve(config['raceline_csv'])
         self.psi_offset_rad = config.get('psi_offset_rad', 0.0)
         self.nominal_mu = float(config.get('nominal_tire_friction', 1.5))
+        # Snapshot once for the whole sweep, before anything is patched, so a
+        # scenario that dies mid-teardown cannot bake its own value in as the
+        # value everything after it restores to.
+        self.bridge_config_original = BRIDGE_CONFIG.read_text(encoding='utf-8')
 
         self.node = Node('benchmark_runner')
         self.lap_monitor = LapMonitor(on_progress=self._on_lap_complete)
@@ -207,6 +217,11 @@ class BenchmarkRunner:
         launches = {}
         friction = None
         try:
+            # Before configure: that is when the bridge reads the file.
+            mu = float(scenario.get('friction_value_const', self.nominal_mu))
+            log(f'  tire friction:  {mu} configured '
+                f'(~{mu * 0.70:.2f} effective after the road factor)')
+            set_tire_friction(mu)
             self._activate_bridge()
 
             launches['raceline_publisher'] = Launch(
@@ -243,8 +258,11 @@ class BenchmarkRunner:
                 log_dir / 'adaptive_stack.log')
             launches['adaptive_stack'].start()
 
+            # The same mu the config was patched with: this publishes at 30 Hz
+            # and would otherwise overwrite the wheels with the sweep default
+            # one tick after the bridge came up.
             friction = FrictionSchedule(
-                scenario.get('friction_schedule', 'constant'), self.nominal_mu,
+                scenario.get('friction_schedule', 'constant'), mu,
                 ident_dir / 'raw' / 'mu_commanded.csv', lap_monitor=self.lap_monitor)
             self.executor.add_node(friction)
 
@@ -260,6 +278,9 @@ class BenchmarkRunner:
             return True
         except (ScenarioFailed, SimNotRunning) as exc:
             log(f'SCENARIO FAILED ({name}): {exc}')
+            # Written before the finally SIGINTs the stacks, so the benchmark
+            # nodes can read it while exporting and mark where the data stops.
+            self._record_failure((ident_dir, control_dir), str(exc))
             return False
         finally:
             self._teardown(launches, friction)
@@ -273,7 +294,22 @@ class BenchmarkRunner:
             if key in launches:
                 self._safely(f'stopping {key}', launches[key].shutdown)
         self._safely('returning the bridge to unconfigured', self._deactivate_bridge)
+        # After cleanup, so the write cannot race the bridge's own load_config.
+        if self.bridge_config_original is not None:
+            self._safely('restoring the bridge config', restore, self.bridge_config_original)
         self._verify_clean()
+
+    def _record_failure(self, directories, reason):
+        """Leave the reason where each benchmark node's plot export will find it.
+
+        `_wipe` clears both directories at scenario start, so the file's mere
+        presence means this run failed - a clean run leaves none.
+        """
+        for directory in directories:
+            try:
+                write_failure(directory, reason)
+            except OSError as exc:  # noqa: BLE001 - never mask the real failure
+                log(f'WARNING: could not record the failure in {directory}: {exc}')
 
     def _stop_friction(self, friction):
         if friction is None:
@@ -411,6 +447,13 @@ def main():
         log('abandoned - some nodes may not have exported')
         aborted = True
     finally:
+        # Belt and braces: a sweep that dies before a scenario's own teardown
+        # must still leave the bridge config as it found it.
+        try:
+            if runner.bridge_config_original is not None:
+                restore(runner.bridge_config_original)
+        except Exception as exc:  # noqa: BLE001 - never mask the real outcome
+            log(f'WARNING: could not restore {BRIDGE_CONFIG}: {exc}')
         _stop_orphans()
         try:
             runner.close()

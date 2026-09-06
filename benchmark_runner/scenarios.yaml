@@ -12,20 +12,27 @@ raceline_csv: traj_race_cl.csv
 psi_offset_rad: 1.5707963268   # TUM -> ROS heading convention; 0.0 for f1tenth_racetracks/*
 graphs_root: graphs
 racecar_version: SIM
-nominal_tire_friction: 1.5     # vehicle.physics.wheels[*].tire_friction in the bridge config.
-                               # The map's road factor (0.70 on silverstone) is applied by
-                               # PhysX on top of this, so the effective mu is ~1.05.
+nominal_tire_friction: 1.5     # Sweep default, used by any scenario that omits
+                               # friction_value_const. The runner writes the value into
+                               # vehicle.physics.wheels[*].tire_friction in the bridge config
+                               # before configuring the bridge, and restores the file on
+                               # teardown. The map's road factor (0.70 on silverstone) is
+                               # applied by PhysX on top, so 1.5 gives an effective mu ~1.05.
+                               # For a non-constant friction_schedule this is the mu0 the
+                               # decay or step is taken from.
 
 scenarios:
-  - name: ours
+  - name: ours_mu_0.7
     nn_params_yaml: On-Track-SysID/params/nn_params.yaml
     pacejka_params_yaml: On-Track-SysID/params/pacejka_params.yaml
     friction_schedule: constant
+    friction_value_const: 1.0
 
-  - name: Baseline-NN-MSE
+  - name: Baseline-NN-MSE_mu_0.7
     nn_params_yaml: On-Track-SysID/params/nn_params_base_line.yaml
     pacejka_params_yaml: On-Track-SysID/params/pacejka_params_base_line.yaml
     friction_schedule: constant
+    friction_value_const: 1.0
   # The three LLA-MPC schedules of paper/sections/experiments.tex SVI-I. All three are
   # blocked on regenerating the raceline (SVI-J): the current traj_race_cl.csv demands
   # 1.22 g against a ~1.0 g plant, so a 40 % friction step leaves the car on a
@@ -35,13 +42,16 @@ scenarios:
   #   nn_params_yaml: On-Track-SysID/params/nn_params.yaml
   #   pacejka_params_yaml: On-Track-SysID/params/pacejka_params.yaml
   #   friction_schedule: decay_2pct_s
+  #   friction_value_const: 1.5
   #
   # - name: test4_enhanced_mu_step_end_lap1
   #   nn_params_yaml: On-Track-SysID/params/nn_params.yaml
   #   pacejka_params_yaml: On-Track-SysID/params/pacejka_params.yaml
   #   friction_schedule: step40_end_lap1
+  #   friction_value_const: 1.5
   #
   # - name: test5_enhanced_mu_step_mid_lap1
   #   nn_params_yaml: On-Track-SysID/params/nn_params.yaml
   #   pacejka_params_yaml: On-Track-SysID/params/pacejka_params.yaml
   #   friction_schedule: step40_mid_lap1
+  #   friction_value_const: 1.5
