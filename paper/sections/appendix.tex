@@ -22,9 +22,9 @@ from the actor's inertia tensor.
 $l_{f}=\SI{0.738142}{\meter}$, $l_{r}=\SI{0.795362}{\meter}$ are taken from
 the controller configuration and confirmed by the vehicle owner. The measured
 static load split (51.2/48.8 front/rear) implies a marginally different split
-than the geometry does (51.9/48.1) --- a \SI{1.4}{\percent} disagreement. We
-have not resolved it, and it is below the level at which any conclusion in
-this paper would change.
+than the geometry does (51.9/48.1), a \SI{1.4}{\percent} disagreement. We have
+not resolved it, and it sits below the level at which any conclusion in this
+paper would change.
 
 \subsection*{A3. CG height and load transfer}
 $h_{\mathrm{cg}}=\SI{0.3}{\meter}$ is carried in the model file and unused:
@@ -41,12 +41,12 @@ verified to agree with the front-left wheel joint state to within
 single-track $\delta$ is taken as this single reported value.
 
 \subsection*{A5. Steady-state force recovery}
-Equation~\eqref{eq:ssforces} is not a force measurement --- it is fully
-determined by $v_{x}\omega$ --- so it misattributes transients. It is applied
+Equation~\eqref{eq:ssforces} is not a force measurement. It is fully
+determined by $v_{x}\omega$, so it misattributes transients, and it is applied
 only to the \emph{synthetic}, quasi-steady rollout, where the steady-state
 assumption is constructed rather than hoped for. Its adequacy was nonetheless
-checked on measured data against the simulator's own axle force
-(correlation \num{0.993}, slope \num{0.94}); we treat that as validating the
+checked on measured data against the simulator's own axle force (correlation
+\num{0.993}, slope \num{0.94}); we treat that as validating the
 relation, not as validating a steady-state assumption on recorded laps.
 
 \subsection*{A6. The residual network is not the plant}
@@ -64,9 +64,9 @@ sim time advances faster than wall time (observed $\approx1.9\times$ on our
 hardware). All identification data is stamped from the simulation clock.
 
 \subsection*{A8. Software configuration of record}
-Identification and control workspace: ROS~2 Humble, Python 3.10 (required ---
-ROS~2 Humble ships CPython~3.10 ABI extensions only), PyTorch with CUDA on an
-RTX~2080-class GPU. The bridge is built and sourced as a separate overlay on
+Identification and control workspace: ROS~2 Humble, Python 3.10 (required,
+since ROS~2 Humble ships CPython~3.10 ABI extensions only), PyTorch with CUDA
+on an RTX~2080-class GPU. The bridge is built and sourced as a separate overlay on
 top of that workspace, so that its message packages
 (\texttt{sim\_manager\_\allowbreak msgs}) resolve for the ground-truth forces;
 CARLA server 0.9.16 / Unreal Engine 4.26; \textbf{acados 0.5.5} with
@@ -74,17 +74,16 @@ partial-condensing HPIPM. The identifier's acquisition and state-machine timer
 runs at \SI{50}{\hertz} (\SI{20}{\hertz} is the controller's period) with a
 \SI{30}{\second} buffer, six co-identification iterations, 200 training
 epochs, full-batch Adam at $5\times10^{-4}$. The one-step model is discretised
-at $T_{s}=\SI{0.035}{\second}$. This is
-an empirical value---it matches neither the server's \SI{0.033}{\second} step
-nor the \SI{50}{\hertz} acquisition timer---and is carried because the
-identification is insensitive to it over the range tested
-(Section~\ref{subsec:data}).
+at $T_{s}=\SI{0.035}{\second}$. This is an empirical value, matching neither
+the server's \SI{0.033}{\second} step nor the \SI{50}{\hertz} acquisition
+timer, and it is carried because the identification is insensitive to it over
+the range tested (Section~\ref{subsec:data}).
 
 \emph{Random seeds.} \texttt{nn\_train} seeds PyTorch and NumPy at \num{42} for
 the single-member architectures used here (\num{42}$+i$ per ensemble member).
 \texttt{pacejka\_solver.seed} is \texttt{null} in both shipped parameter sets,
-so the multi-start jitter and---for \texttt{Ours}---the differential-evolution
-population draw from an unseeded generator: the reported identifications are
+so the multi-start jitter, and for \texttt{Ours} the differential-evolution
+population, draw from an unseeded generator. The reported identifications are
 reproducible in distribution but not bit for bit. The sweep of
 Table~\ref{tab:sweep} is seeded explicitly and is bit-reproducible.
 
@@ -96,8 +95,8 @@ The bridge runs in \texttt{ackermann\_drive} mode, subscribing to a single
 \texttt{ack\-er\-mann\_msgs/AckermannDriveStamped} on \texttt{/drive} and
 forwarding speed and steering angle to CARLA's native Ackermann controller,
 whose server-side cascaded PID loops are configured once at startup. No
-client-side steering PID is present---the commanded road-wheel angle passes
-through in radians---so the achieved/\allowbreak commanded ratio of
+client-side steering PID is present, the commanded road-wheel angle passing
+through in radians, so the achieved/\allowbreak commanded ratio of
 Table~\ref{tab:vehicle} is a property of the vehicle and its steering curve
 rather than of a tuning choice in the bridge.
 
@@ -141,10 +140,9 @@ identifier to be scored against the forces the plant generated. Four properties
 of it were established by measurement and bound what may be read off it.
 (i)~Only \texttt{lateral\_force} is force ground truth; it is the channel every
 validation in this paper uses. (ii)~\texttt{longitudinal\_force} is a
-friction-capacity report rather than a measurement---it tracks
-$\mu F_{z}$ and correlates with $ma_{x}$ at \num{0.04}---and
-\texttt{wheel\_torque} is an exact identity of it, so neither carries
-independent information. (iii)~Below \SI{0.5}{\meter\per\second} the publisher
+friction-capacity report rather than a measurement, tracking $\mu F_{z}$ and
+correlating with $ma_{x}$ at \num{0.04}, and \texttt{wheel\_torque} is an
+exact identity of it, so neither carries independent information. (iii)~Below \SI{0.5}{\meter\per\second} the publisher
 zeroes slip angle and both forces while the normal load stays live, so a
 load-only gate admits standstill frames as perfect $(0,0)$ samples; the
 identifier gates on the all-zero pattern as well. (iv)~The slip angle needs no
@@ -154,8 +152,9 @@ Figure~\ref{fig:frames} states the conventions the rest of the paper assumes.
 The simulator and the identification stack do not share a handedness: CARLA
 inherits Unreal's left-handed world (\mbox{$X$ east}, $Y$ \emph{south}, $Z$ up,
 yaw positive clockwise), while every ROS~2 topic follows
-REP-103~\cite{rep103}---right-handed ENU for the world, forward-left-up for the
-body---and the identification equations of Section~\ref{sec:method} are written
+REP-103~\cite{rep103}, right-handed ENU for the world and forward-left-up for
+the body, and the identification equations of Section~\ref{sec:method} are
+written
 in the body frame with $\alpha$ and $F_{y}$ positive to the left, the SAE-style
 axis convention~\cite{saej670,pacejka2012book}. The bridge is where the two
 meet, and it is a per-channel conversion rather than a single transform:
@@ -166,7 +165,7 @@ flip and CARLA's own sign convention for \texttt{lat\_slip} cancel. That last
 one is the trap: a sign error there is invisible in the states and inverts the
 identified curve, so it was checked against a slip angle rebuilt from the
 chassis state in a steady \SI{4}{\meter\per\second} turn at
-\SI{0.20}{\radian}---equal magnitude to within \SI{2}{\percent} front and
+\SI{0.20}{\radian}, equal in magnitude to within \SI{2}{\percent} front and
 \SI{15}{\percent} rear.
 
 \begin{figure*}[t]

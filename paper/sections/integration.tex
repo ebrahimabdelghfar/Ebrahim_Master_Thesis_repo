@@ -6,13 +6,13 @@ The identified model leaves the pipeline through one interface. A nonlinear MPC
 path-tracking controller (acados~\cite{acados2022}, partial-condensing
 HPIPM~\cite{hpipm2020}, horizon $N=20$ at a \SI{20}{\hertz} control period)
 carries the same single-track model as the identifier and consumes $\phip$
-directly: the eight Pacejka coefficients enter the prediction model's axle
+directly. The eight Pacejka coefficients enter the prediction model's axle
 forces through \eqref{eq:mf}, and nothing else about the controller changes
-when a new identification arrives. Coefficients are pushed over a ROS~2 service
-at the end of each identification cycle, so the controller's model tracks the
-plant at the re-identification rate. We claim no contribution to the controller
-design; it appears here as the consumer that defines what an admissible
-identification is.
+when a new identification arrives. Coefficients are pushed over a ROS~2
+service at the end of each identification cycle, so the controller's model
+tracks the plant at the re-identification rate. We claim no contribution to
+the controller design. It appears here as the consumer that defines what an
+admissible identification is.
 
 \subsection{Admissibility gates}
 \label{subsec:gates}
@@ -30,19 +30,18 @@ falls below it. On the earlier trajectory the degenerate fit reported a
 \SI{41.89}{\meter} of cross-track error at \SI{27}{\meter\per\second},
 against \SI{0.03}{\meter} for a physically plausible set ($D=\num{1.5}$) on the
 same trajectory, at the same speed and through the same controller. Both
-figures come from an offline closed-loop harness---\SI{20}{\second} on
-the reference with the handover at $t=\SI{5}{\second}$---and not from a
-controlled pair of simulator runs; they are quoted as the observation that
+figures come from an offline closed-loop harness (\SI{20}{\second} on the
+reference with the handover at $t=\SI{5}{\second}$) rather than from a
+controlled pair of simulator runs, and are quoted as the observation that
 motivated the gate, not as a result. They are not confounded with the
 transport-delay correction below, which was already in place when they were
 measured. The same identified set on the same trajectory gives
 \SI{0.16}{\meter} at \SI{11.1}{\meter\per\second} and \SI{0.43}{\meter} at
-\SI{15}{\meter\per\second}, which is the $v^{2}$ scaling the
-Introduction describes. The gate is
-one-sided by construction and only catches a ceiling that is too low:
-\texttt{Baseline-NN-MSE}'s \SI{2.00}{\g}
-(Section~\ref{subsec:resultstire}) passes it, since it exceeds every demand
-the reference makes.
+\SI{15}{\meter\per\second}, which is the $v^{2}$ scaling the Introduction
+describes. The gate is one-sided by construction and catches only a ceiling
+that is too low, so \texttt{Baseline-NN-MSE}'s \SI{2.00}{\g}
+(Section~\ref{subsec:resultstire}) passes it, exceeding every demand the
+reference makes.
 \item \textbf{Understeer sign and critical speed.} A set with
 $l_{f}C_{f}>l_{r}C_{r}$ whose $v_{\mathrm{crit}}$ falls inside the controller's
 speed range makes the prediction model open-loop unstable, and the resulting
@@ -53,7 +52,7 @@ $v_{\mathrm{crit}}=\SI{14.5}{\meter\per\second}$ at the measured geometry and
 mass of Table~\ref{tab:vehicle}, inside the controller's speed range on every
 trajectory in this paper.
 \item \textbf{Integration stiffness.} Even a stable set can be stiff relative
-to the control period: a single explicit RK4 step at $dt=\SI{0.05}{\second}$
+to the control period. A single explicit RK4 step at $dt=\SI{0.05}{\second}$
 gave $\rho(A_{d})=547$ at \SI{5}{\meter\per\second} for one identified set. The
 model sub-steps adaptively, sizing the sub-step from the model's own fastest
 lateral mode
@@ -65,12 +64,12 @@ reported runs the QP setup and solve took a median of
 against the \SI{50}{\milli\second} control period.
 \end{enumerate}
 
-The gates are the contract between identification and control: an
+The gates are the contract between identification and control. An
 identification that passes is a model the controller can be held responsible
-for, and one that fails is reported as unidentified rather than silently
-deployed. Two further controller-side changes were required before any
-identified model could be evaluated at full-scale speeds and are recorded for
-completeness rather than as identification results: reference speeds are
-clamped at ingest, and the solved state is rolled forward by the measured
-transport delay before each solve, which took cross-track error at
-\SI{27}{\meter\per\second} from \SI{130.55}{\meter} to \SI{0.38}{\meter}.
+for; one that fails is reported as unidentified rather than silently deployed.
+Two further controller-side changes were required before any identified model
+could be evaluated at full-scale speeds. Reference speeds are clamped at
+ingest, and the solved state is rolled forward by the measured transport delay
+before each solve, which took cross-track error at \SI{27}{\meter\per\second}
+from \SI{130.55}{\meter} to \SI{0.38}{\meter}. We record both for
+completeness, not as identification results.

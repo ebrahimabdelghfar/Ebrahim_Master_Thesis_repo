@@ -4,35 +4,35 @@
 
 \subsection{What generalises}
 
-The reachable-friction bound~\eqref{eq:mureach} is kinematic: it involves no
+The reachable-friction bound~\eqref{eq:mureach} is kinematic. It involves no
 tire parameter, no simulator-specific quantity and no property of the residual
 model, so it applies to any implementation of the virtual-steady-state-data
 strategy of~\cite{ontrack2025}, in simulation or on hardware. Its practical
-content is a design rule---\emph{the rollout must be configured to demand at
-least the friction one intends to identify}---and, where it cannot, $D$ should
-be reported as unidentified rather than as fitted. The diagnostic signature,
+content is a design rule: \emph{the rollout must be configured to demand at
+least the friction one intends to identify}. Where it cannot, $D$ should be
+reported as unidentified rather than as fitted. The diagnostic signature,
 coefficients resting exactly on box constraints, is likewise generic and should
 be checked and logged by any bounded tire-fitting routine, since it is
 otherwise indistinguishable in the output from a successful fit.
 
 The insufficiency of per-coefficient box constraints for deployment
-admissibility is also platform-independent. Both failures we
-encountered---a set that satisfies every box constraint while being degenerate,
-and a set that satisfies every box constraint while being pairwise oversteering
-and unstable within the controller's operating range---are properties of the
-parameterisation, not of CARLA. Deep Dynamics~\cite{deepdynamics2024}
-constrains coefficients inside the network; we argue that a second,
+admissibility is also platform-independent. Both failures we encountered, a
+set that satisfies every box constraint while being degenerate and a set that
+satisfies every box constraint while being pairwise oversteering and unstable
+within the controller's operating range, are properties of the
+parameterisation rather than of CARLA. Deep Dynamics~\cite{deepdynamics2024}
+constrains coefficients inside the network. We argue that a second,
 derived-quantity check belongs at the interface where the model is handed to a
 controller.
 
 \subsection{What does not generalise}
 
 Three results are properties of this plant and must not be read as statements
-about tires. First, the numerical tire values: the plant is a PhysX
+about tires. First, the numerical tire values. The plant is a PhysX
 wheeled-vehicle model with a configured friction coefficient, so
 Table~\ref{tab:ref} describes \emph{that} plant, and agreement with it is
-evidence that the identifier recovers the plant it observes, not evidence about
-real tire behaviour. Sagmeister \emph{et al.}~\cite{simfidelity2026} show that
+evidence that the identifier recovers the plant it observes, not evidence
+about real tire behaviour. Sagmeister \emph{et al.}~\cite{simfidelity2026} show that
 sensitivity to model fidelity is largest near the acceleration limits, which is
 where this study operates, and R-CARLA~\cite{rcarla2025} exists because CARLA's
 native dynamics are a known weak point for racing-grade work; hardware
@@ -40,15 +40,14 @@ replication is therefore necessary before any claim about identification
 accuracy on a real vehicle. Second, the gap between configured wheel friction
 (\num{1.5}) and realised peak axle friction (\numrange{1.00}{1.05}) is an
 artefact of the server multiplying the configured wheel coefficient by the road
-surface's own, a measured constant \num{0.70} on this map; we report it only
-because an identifier---or a reviewer---tuned to converge on the number in the
+surface's own, a measured constant \num{0.70} on this map. We report it only
+because an identifier, or a reviewer, tuned to converge on the number in the
 configuration file will converge on the wrong number, and because the
 simulator publishes the effective value per wheel, so nothing forces that
-mistake. Third, the \num{0.76}
-achieved/commanded steering ratio arises from CARLA's Ackermann controller and
-this vehicle's steering configuration---the lesson, identify against the
-achieved actuator state, is general and standard practice; the magnitude is
-not.
+mistake. Third, the \num{0.76} achieved/commanded steering ratio arises from
+CARLA's Ackermann controller and this vehicle's steering configuration. The
+lesson, identify against the achieved actuator state, is general and standard
+practice. The magnitude is not.
 
 \subsection{Limitations}
 \label{subsec:limits}
@@ -60,14 +59,14 @@ point estimate from a single \SI{591.4}{\second} and a single
 \SI{564.1}{\second} run. The \SI{0.092}{\meter} against \SI{0.177}{\meter} RMS
 tracking difference, in particular, has no confidence interval attached and no
 evidence that it exceeds run-to-run variation, which is not measured here.
-Nothing about the experiment prevents repetition---the sweep is one command and
-the scenario file already carries the per-arm parameter sets---so this is a
-gap in the evidence rather than in the method.
+Nothing about the experiment prevents repetition, since the sweep is one
+command and the scenario file already carries the per-arm parameter sets, so
+this is a gap in the evidence rather than in the method.
 \item \textbf{Single surface, vehicle and trajectory.} All results come from
 one vehicle configuration on one map with the friction held static at
 \num{1.05}. The runtime friction override supports a surface-change adaptation
-experiment---arguably the strongest argument for on-track identification---but
-it is not performed here.
+experiment, arguably the strongest argument for on-track identification, but
+we do not perform it here.
 \item \textbf{The friction estimator's excitation sweep is synthetic}
 (Table~\ref{tab:mu}). The synthetic plant was chosen because $\mu$ is known
 there and excitation can be swept independently of it. On the CARLA runs the
@@ -78,20 +77,18 @@ simulator's per-wheel forces.
 \item \textbf{The two configurations differ in four settings at once}
 (Table~\ref{tab:scenarios}), so Section~\ref{sec:results} attributes nothing
 to the residual architecture, the loss, the solver or the warm start
-individually; in particular we do not claim to reproduce the S4 improvement
-of~\cite{visionsysid2026}. The excitation-aware rollout---the paper's central
-contribution---is active in \emph{both} arms, so the closed-loop comparison of
-Section~\ref{subsec:resultsclosedloop} is a comparison of the four secondary
-settings and is not evidence for the identifiability correction. The evidence
-for that correction is the rollout-speed sweep of
-Section~\ref{subsec:sweep}.
-What is claimed about the S4D residual on its own
-is its cost and the exactness of the reduction
-(Section~\ref{subsec:runtime}), a statement about the implementation rather
-than about the tire it identifies.
-\item \textbf{Longitudinal dynamics are out of scope.} As in the baseline only
-lateral dynamics are identified; combined slip and load transfer are neglected,
-and the simulator's longitudinal wheel force channel is drivetrain torque
-rather than a contact-patch force, so it is unusable as ground truth for a
-longitudinal extension without further work.
+individually, and in particular we do not claim to reproduce the S4
+improvement of~\cite{visionsysid2026}. The excitation-aware rollout, this
+paper's central contribution, is active in \emph{both} arms, so the
+closed-loop comparison of Section~\ref{subsec:resultsclosedloop} compares the
+four secondary settings and is not evidence for the identifiability
+correction. The evidence for that correction is the rollout-speed sweep of
+Section~\ref{subsec:sweep}. What we do claim about the S4D residual on its own
+is its cost and the exactness of the reduction (Section~\ref{subsec:runtime}),
+a statement about the implementation rather than about the tire it identifies.
+\item \textbf{Longitudinal dynamics are out of scope.} As in the baseline,
+only lateral dynamics are identified. Combined slip and load transfer are
+neglected, and the simulator's longitudinal wheel force channel is drivetrain
+torque rather than a contact-patch force, so it is unusable as ground truth
+for a longitudinal extension without further work.
 \end{enumerate}

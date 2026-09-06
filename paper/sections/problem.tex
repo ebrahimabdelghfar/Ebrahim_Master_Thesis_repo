@@ -29,17 +29,16 @@ $\phip=[B_{f},C_{f},D_{f},E_{f},B_{r},C_{r},D_{r},E_{r}]$. The identification
 state and input are $\vecx=[v_{y},\omega]$ and $\vecu=[v_{x},\delta]$, and the
 nominal one-step map is $\hat\vecx_{k+1}=f(\vecx_{k},\vecu_{k},\phip)$. The
 baseline discretises \eqref{eq:vydot}--\eqref{eq:omdot} by explicit Euler at
-$T_{s}$; we retain Euler as the default and expose second- and fourth-order
+$T_{s}$. We keep Euler as the default and expose second- and fourth-order
 Runge--Kutta as options, because the full-scale vehicle's lateral mode is
 stiffer relative to $T_{s}$ than the scaled platform's.
 
 \subsection{Objective and derived quantities}
 
-The identification objective is to recover $\phip$ from a single
-\SI{30}{\second} segment of ordinary lap data, without dedicated manoeuvres,
-such that the resulting model is both predictive and \emph{admissible} for the
-controller that consumes it. Admissibility is expressed on derived quantities
-rather than on coefficients. The linearised axle cornering stiffness is the
+The objective is to recover $\phip$ from a single \SI{30}{\second} segment of
+ordinary lap data, without dedicated manoeuvres, such that the resulting model
+is both predictive and \emph{admissible} for the controller that consumes it.
+Admissibility is expressed on derived quantities rather than on coefficients. The linearised axle cornering stiffness is the
 slope of \eqref{eq:mf} at zero slip,
 \begin{equation}
 C_{i}=F_{z,i}B_{i}C_{i}^{\mathrm{MF}}D_{i},\qquad i\in\{f,r\},
@@ -60,26 +59,25 @@ $v_{\mathrm{crit}}=L\sqrt{C_{f}C_{r}/\big(m(l_{f}C_{f}-l_{r}C_{r})\big)}$
 \label{subsec:identifiability}
 
 Two properties of \eqref{eq:mf} are used throughout. First, its slope at zero
-slip is $F_{z}BCD$: the cornering stiffness depends on the coefficients only
-through that product, and $E$ drops out. Second, and decisively, if the data
-does not approach the peak then \eqref{eq:mf} linearises to
-$F_{y}\approx F_{z}(BCD)\alpha$ and $B$, $C$, $D$ become mutually
-unidentifiable. The distinction matters for what is being claimed. Given data
-that reaches the peak, \eqref{eq:mf} is \emph{structurally} identifiable in the
-sense of Bellman and {\AA}str{\"o}m~\cite{bellman1970structural}: the map from
-coefficients to noise-free outputs is injective, and no amount of excitation
-design is needed to make it so. What fails here is \emph{practical}
-(a-posteriori) identifiability~\cite{raue2009practical}: under a specific
-excitation the likelihood is flat along the $BCD$ direction, so the parameters
-are not recoverable from the data at hand even though the structure admits
-them. That is the standard persistent-excitation
-condition~\cite{ljung1999sysid,astrom1995adaptive} expressed on this model, and
-neither the structural result nor the excitation condition is claimed as
-novel. What we claim, and
-demonstrate in Section~\ref{subsec:excitation}, is that the baseline pipeline's
-virtual-data step can silently violate it, and that a bounded optimiser then
-resolves the remaining freedom by sliding onto a box edge---so the violation is
-reported as a converged fit rather than as a failure.
+slip is $F_{z}BCD$, so the cornering stiffness depends on the coefficients
+only through that product, and $E$ drops out. Second, and decisively, if the
+data never approaches the peak, \eqref{eq:mf} linearises to $F_{y}\approx
+F_{z}(BCD)\alpha$ and $B$, $C$, $D$ become mutually unidentifiable. The
+distinction matters for what is being claimed. Given data that does reach the
+peak, \eqref{eq:mf} is \emph{structurally} identifiable in the sense of
+Bellman and {\AA}str{\"o}m~\cite{bellman1970structural}: the map from
+coefficients to noise-free outputs is injective, and no excitation design is
+needed to make it so. What fails here is \emph{practical} (a-posteriori)
+identifiability~\cite{raue2009practical}. Under a specific excitation the
+likelihood is flat along the $BCD$ direction, so the parameters are not
+recoverable from the data at hand even though the structure admits them. This
+is the standard persistent-excitation
+condition~\cite{ljung1999sysid,astrom1995adaptive} written on this model, and
+we claim neither the structural result nor the excitation condition as novel.
+Our claim, demonstrated in Section~\ref{subsec:excitation}, is that the
+baseline pipeline's virtual-data step can silently violate that condition, and
+that a bounded optimiser then resolves the remaining freedom by sliding onto a
+box edge. The violation surfaces as a converged fit rather than as a failure.
 
 \subsection{Baseline pipeline}
 \label{subsec:baseline}
@@ -89,9 +87,9 @@ iterations \cite{ontrack2025}:
 
 \begin{enumerate}
 \item \textbf{Residual learning.} A small network $f_{NN}$ is trained on the
-recorded lap to predict the one-step error
-$e_{k}=\vecx_{k+1}-\hat\vecx_{k+1}$ from $[v_{x},v_{y},\omega,\delta]_{k}$; the
-corrected model is $\vecx_{k+1}=\hat\vecx_{k+1}+e_{k}$.
+recorded lap to predict the one-step error $e_{k}=\vecx_{k+1}-\hat\vecx_{k+1}$
+from $[v_{x},v_{y},\omega,\delta]_{k}$, and the corrected model is
+$\vecx_{k+1}=\hat\vecx_{k+1}+e_{k}$.
 \item \textbf{Virtual steady-state generation.} The corrected model is
 integrated open-loop at constant longitudinal speed while the steering angle is
 ramped from $0$ to $\delta_{\mathrm{sweep}}$, producing a synthetic

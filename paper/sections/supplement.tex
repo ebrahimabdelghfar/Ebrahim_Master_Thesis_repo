@@ -47,8 +47,8 @@ $(v_{y},\omega,\delta)$, so the mirrored batch mirrors the augmented inputs too
 and the symmetry penalty remains exact.
 
 The raw four inputs are retained rather than replaced, because the effects the
-residual exists to absorb---load transfer, actuator dynamics, aerodynamic load,
-combined slip---are not functions of $\alpha$ alone, and $v_{x}$ in particular
+residual exists to absorb (load transfer, actuator dynamics, aerodynamic load,
+combined slip) are not functions of $\alpha$ alone, and $v_{x}$ in particular
 carries the load-dependent part. The geometry used for the augmentation is the
 same $l_{f},l_{r}$ the fit and the force recovery use, which is why
 $l_{wb}\equiv l_{f}+l_{r}$ is enforced (Section~V-E of the main paper): an
@@ -123,8 +123,8 @@ extrapolation bound of Section~V-C of the main paper decides \emph{where} the
 sweep stops asking, and the gradient penalty decides \emph{how fast} the
 residual is allowed to grow inside that range.
 
-The nominal-model half of \eqref{eq:pinnloss}---the nominal rollout, the
-mirrored inputs and the constant terms of the symmetry residual---depends only
+The nominal-model half of \eqref{eq:pinnloss}, the nominal rollout with the
+mirrored inputs and the constant terms of the symmetry residual, depends only
 on quantities fixed for the whole training call and is precomputed once per
 call (Section~\ref{sup:s4cost}).
 
@@ -159,9 +159,9 @@ residual. (a) The four measured signals are augmented with the two slip angles
 of main-paper (3) and cut into $W=20$ sample windows. (b) The residual stack:
 input projection to $H$ channels, S4D blocks with a diagonal state-transition
 matrix, and an output projection to $[e_{v_{y}},e_{\omega}]$. (c) The same
-linear time-invariant system is evaluated two ways---as a causal convolution
-with the closed-form impulse response for training, and as a recurrence for
-stage~2's stateful rollout---which is what makes the architecture affordable on
+linear time-invariant system is evaluated two ways, as a causal convolution
+with the closed-form impulse response for training and as a recurrence for
+stage~2's stateful rollout, which is what makes the architecture affordable on
 a CPU without changing a single identified coefficient
 (Section~\ref{sup:s4cost}).}
 \label{fig:pipelines4}
@@ -173,7 +173,7 @@ A temporal residual is only usable on-vehicle if it fits inside the
 re-identification period on the hardware the car carries, which is typically a
 CPU. Profiled as first written, the S4D path cost \SI{125.7}{\milli\second} per
 epoch on a GPU and \SI{898}{\milli\second} per stage-2 rollout, putting a
-six-iteration identification at \SI{181.4}{\second}---longer than the
+six-iteration identification at \SI{181.4}{\second}, longer than the
 \SI{30}{\second} data window it consumes. Three changes remove that cost
 without altering the arithmetic. None is novel as a technique; what matters
 here is that the resulting pipeline is real-time-plausible on commodity
@@ -210,20 +210,20 @@ Stage~2 is 500 strictly sequential single-sample steps carrying the S4D hidden
 state, each with a host synchronisation. That is pure kernel-launch latency on
 a GPU: \SI{898}{\milli\second} on CUDA against \SI{204}{\milli\second} on a CPU
 copy of the same weights. The rollout is therefore run on a CPU copy whatever
-device training used---the recurrent path of Fig.~\ref{fig:pipelines4}(c)---and
-only the full-batch training stays on the GPU where it is \num{2.4}$\times$
-faster than a CPU. This is the one place where the two evaluation paths of the
+device training used, following the recurrent path of
+Fig.~\ref{fig:pipelines4}(c), and only the full-batch training stays on the
+GPU, where it is \num{2.4}$\times$ faster than a CPU. This is the one place where the two evaluation paths of the
 same system have to agree exactly, and they are pinned by a regression test to
 $<10^{-9}$ in double precision.
 
 End to end this takes a six-iteration identification from \SI{181.4}{\second}
 to \SI{20.9}{\second} (\num{8.7}$\times$) on the same synthetic
 \SI{30}{\second} lap, with the identified Pacejka coefficients agreeing to four
-decimal places (Table~\ref{sup:tabruntime}). We deliberately did \emph{not} touch
-the knobs that trade accuracy for speed---epoch count, iteration count, early
-stopping, warm-starting the network from the previous iteration's weights, or
-dropping the smoothness term---because those change the identified tire and are
-a modelling decision, not a free speedup.
+decimal places (Table~\ref{sup:tabruntime}). We deliberately did \emph{not}
+touch the knobs that trade accuracy for speed: epoch count, iteration count,
+early stopping, warm-starting the network from the previous iteration's
+weights, or dropping the smoothness term. Those change the identified tire and
+are a modelling decision, not a free speedup.
 
 \section{Identification Cost, per Phase}
 \label{sup:runtime}
@@ -243,7 +243,7 @@ step was verified against the implementation it replaced before being kept: the 
 Fig.~\ref{fig:pipelines4}(c) agree to $<10^{-9}$ in double precision (pinned by
 a regression test), the rewritten physics-informed loss is bit-identical, and
 the full six-iteration loop lands on the same Pacejka coefficients to four
-decimal places---the remaining difference is float32 reordering over
+decimal places, the remaining difference being float32 reordering over
 \num{1200} optimiser steps.
 
 \begin{table}[t]
@@ -269,7 +269,10 @@ Identification, 6 iterations & mixed & \SI{181.4}{\second} &
 \end{tabular}
 \begin{tablenotes}[flushleft]\scriptsize
 \item The optimisations are exact: no epoch count, iteration count, early-stopping rule or loss weight was changed, and the identified coefficients agree to four decimal places.
-\item The first three rows are per-stage micro-benchmarks of the named stage; the last row is a separate end-to-end measurement of the whole six-iteration loop and includes everything the micro-benchmarks exclude---data preparation, the per-iteration network re-initialisation and the six Pacejka fits.
+\item The first three rows are per-stage micro-benchmarks of the named stage;
+the last row is a separate end-to-end measurement of the whole six-iteration
+loop and includes everything the micro-benchmarks exclude: data preparation,
+the per-iteration network re-initialisation and the six Pacejka fits.
 \item The two therefore do not sum: at \num{1200} epochs and six rollouts the stage rows account for \SI{156.2}{\second} of the \SI{181.4}{\second} before and \SI{21.1}{\second} of the \SI{20.9}{\second} after. The \num{8.7}$\times$ is the ratio of the two end-to-end measurements.
 \end{tablenotes}
 \end{threeparttable}
@@ -378,9 +381,9 @@ on its upper bound.}
 \includegraphics[width=\columnwidth]{tire_force_r2_by_scenario}
 \caption{Axle lateral force against the plant's per-wheel telemetry, per axle:
 RMSE (top) and $R^{2}$ (bottom). The ordering reverses between axles, and this
-is the one family of metrics on which the inherited configuration is better---at
-the \SI{2.2}{\degree} of slip the lap reaches, a slope deficit costs force and
-a wrong peak factor costs nothing.}
+is the one family of metrics on which the inherited configuration is better:
+at the \SI{2.2}{\degree} of slip the lap reaches, a slope deficit costs force
+and a wrong peak factor costs nothing.}
 \label{fig:forcebars}
 \end{figure}
 
@@ -404,8 +407,8 @@ buys its lower front RMSE with the heavier tail (maximum absolute error
 \caption{Axle lateral force over the run, one row per configuration. The two
 runs are separate laps and share only $t=0$, so each estimate is drawn against
 its own ground truth. Where the force is largest each model errs in the
-direction its initial slope predicts---the corrected configuration short, the
-inherited one long.}
+direction its initial slope predicts, the corrected configuration short and
+the inherited one long.}
 \label{fig:forcetime}
 \end{figure*}
 
@@ -457,9 +460,9 @@ separate the two configurations in Fig.~\ref{fig:statehistomega}.}
 \centering
 \includegraphics[width=\columnwidth]{e_y_error_hist_by_scenario}
 \caption{Signed lateral tracking error over the whole run. The corrected
-configuration's distribution is narrower about a comparable centre---sample
-standard deviation \SI{0.279}{\meter} against \SI{0.301}{\meter}, mean
-\SI{0.014}{\meter} against \SI{0.039}{\meter}---so the improvement is in
+configuration's distribution is narrower about a comparable centre, at sample
+standard deviation \SI{0.279}{\meter} against \SI{0.301}{\meter} and mean
+\SI{0.014}{\meter} against \SI{0.039}{\meter}, so the improvement is in
 spread, not in bias.}
 \label{fig:eyhist}
 \end{figure}
