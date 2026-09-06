@@ -1,5 +1,5 @@
 scenario,category,value
-ours_mu_0.7,front_sum_fy,0.974
+ours_mu_0.7,front_sum_fy,0.973
 ours_mu_0.7,rear_sum_fy,0.994
-Baseline-NN-MSE_mu_0.7,front_sum_fy,0.373
-Baseline-NN-MSE_mu_0.7,rear_sum_fy,0.386
+Baseline-NN-MSE_mu_0.7,front_sum_fy,0.959
+Baseline-NN-MSE_mu_0.7,rear_sum_fy,0.962

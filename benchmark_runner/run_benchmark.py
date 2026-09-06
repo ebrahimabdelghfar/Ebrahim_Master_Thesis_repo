@@ -35,6 +35,7 @@ from rclpy.signals import SignalHandlerOptions
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bridge_config import BRIDGE_CONFIG, restore, set_tire_friction  # noqa: E402
+from collision_monitor import CollisionMonitor  # noqa: E402
 from friction_schedule import FrictionSchedule  # noqa: E402
 from lap_monitor import LapMonitor  # noqa: E402
 from run_status import write_failure  # noqa: E402
@@ -179,6 +180,8 @@ class BenchmarkRunner:
         self.raceline_csv = self._resolve(config['raceline_csv'])
         self.psi_offset_rad = config.get('psi_offset_rad', 0.0)
         self.nominal_mu = float(config.get('nominal_tire_friction', 1.5))
+        self.collision_threshold = float(
+            config.get('collision_impulse_threshold', 200.0))
         # Snapshot once for the whole sweep, before anything is patched, so a
         # scenario that dies mid-teardown cannot bake its own value in as the
         # value everything after it restores to.
@@ -216,6 +219,7 @@ class BenchmarkRunner:
         log_dir = control_dir / 'raw'
         launches = {}
         friction = None
+        collision = None
         try:
             # Before configure: that is when the bridge reads the file.
             mu = float(scenario.get('friction_value_const', self.nominal_mu))
@@ -223,6 +227,13 @@ class BenchmarkRunner:
                 f'(~{mu * 0.70:.2f} effective after the road factor)')
             set_tire_friction(mu)
             self._activate_bridge()
+
+            # Before the car can move, so no contact goes unseen.
+            threshold = float(scenario.get('collision_impulse_threshold',
+                                           self.collision_threshold))
+            log(f'  collision fails above {threshold} N*s of impulse')
+            collision = CollisionMonitor(threshold, log_dir / 'collisions.csv')
+            self.executor.add_node(collision)
 
             launches['raceline_publisher'] = Launch(
                 'raceline_publisher',
@@ -269,7 +280,7 @@ class BenchmarkRunner:
             log(f'driving {self.n_laps} timed laps (plus the out-lap from the spawn point)')
             reached = self.lap_monitor.wait_for_laps(
                 self.n_laps, self.lap_timeout_s,
-                stall_check=lambda: self._require_alive(launches))
+                stall_check=lambda: self._require_alive(launches, collision))
             if not reached:
                 raise ScenarioFailed(
                     f'only {self.lap_monitor.completed_laps()}/{self.n_laps} timed laps in '
@@ -283,13 +294,14 @@ class BenchmarkRunner:
             self._record_failure((ident_dir, control_dir), str(exc))
             return False
         finally:
-            self._teardown(launches, friction)
+            self._teardown(launches, friction, collision)
 
-    def _teardown(self, launches, friction):
+    def _teardown(self, launches, friction, collision=None):
         """Every step isolated, because stopping the launches must happen no
         matter what: a skipped SIGINT leaves the identification and control
         stacks driving the car after the runner has exited."""
         self._safely('restoring nominal friction', self._stop_friction, friction)
+        self._safely('closing the collision monitor', self._stop_collision, collision)
         for key in SHUTDOWN_ORDER:
             if key in launches:
                 self._safely(f'stopping {key}', launches[key].shutdown)
@@ -310,6 +322,14 @@ class BenchmarkRunner:
                 write_failure(directory, reason)
             except OSError as exc:  # noqa: BLE001 - never mask the real failure
                 log(f'WARNING: could not record the failure in {directory}: {exc}')
+
+    def _stop_collision(self, collision):
+        if collision is None:
+            return
+        log(f'  {collision.count()} collision event(s) recorded')
+        self.executor.remove_node(collision)
+        collision.close()
+        collision.destroy_node()
 
     def _stop_friction(self, friction):
         if friction is None:
@@ -334,9 +354,13 @@ class BenchmarkRunner:
         log(f'  pacejka params: {env["SYSID_PACEJKA_PARAMS_FILE"]}')
         return env
 
-    def _require_alive(self, launches):
+    def _require_alive(self, launches, collision=None):
         if _INTERRUPTED.is_set():
             raise Aborted('interrupted by the operator')
+        if collision is not None:
+            crash = collision.crash()
+            if crash:
+                raise ScenarioFailed(crash)
         for launch in launches.values():
             if not launch.alive():
                 raise ScenarioFailed(f'{launch.name} exited early - see {launch.log_path}')

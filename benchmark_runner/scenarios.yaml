@@ -20,6 +20,15 @@ nominal_tire_friction: 1.5     # Sweep default, used by any scenario that omits
                                # applied by PhysX on top, so 1.5 gives an effective mu ~1.05.
                                # For a non-constant friction_schedule this is the mu0 the
                                # decay or step is taken from.
+collision_impulse_threshold: 200.0   # N*s of HORIZONTAL impulse, sqrt(x^2 + y^2). A scenario
+                               # fails on the first CARLA collision above this, so a barrier
+                               # graze does not end a run but a crash does. Overridable per
+                               # scenario. Vertical impulse is excluded on purpose: the car
+                               # spawns above the road and settles onto it, which fires ~18
+                               # events carrying the vehicle weight in z (measured 267.96 of
+                               # 267.98 N*s vertical, 3.67 horizontal). Every contact is
+                               # logged to <graphs_root>/control/<name>/raw/collisions.csv
+                               # with both magnitudes - calibrate against that file.
 
 scenarios:
   - name: ours_mu_0.7

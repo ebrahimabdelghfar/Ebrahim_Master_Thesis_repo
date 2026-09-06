@@ -1,9 +1,9 @@
 scenario,category,value
-ours_mu_0.7,v_y,0.021
+ours_mu_0.7,v_y,0.022
 ours_mu_0.7,v_y_persistence,0.011
-ours_mu_0.7,omega,0.035
-ours_mu_0.7,omega_persistence,0.005
-Baseline-NN-MSE_mu_0.7,v_y,0.194
-Baseline-NN-MSE_mu_0.7,v_y_persistence,0.24
-Baseline-NN-MSE_mu_0.7,omega,0.083
-Baseline-NN-MSE_mu_0.7,omega_persistence,0.099
+ours_mu_0.7,omega,0.037
+ours_mu_0.7,omega_persistence,0.006
+Baseline-NN-MSE_mu_0.7,v_y,0.024
+Baseline-NN-MSE_mu_0.7,v_y_persistence,0.011
+Baseline-NN-MSE_mu_0.7,omega,0.068
+Baseline-NN-MSE_mu_0.7,omega_persistence,0.005
