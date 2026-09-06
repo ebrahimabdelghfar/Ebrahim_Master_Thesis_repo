@@ -2,46 +2,47 @@
 \section{Discussion and Limitations}
 \label{sec:disc}
 
-The reachable-friction bound~\eqref{eq:mureach} is kinematic---no tire
-parameter, no simulator-specific quantity, no property of the residual---so it
-applies to any implementation of the virtual-steady-state-data strategy
-of~\cite{ontrack2025}, in simulation or on hardware. Its practical content is
-a design rule, \emph{the rollout must demand at least the friction one intends
-to identify}, and where it cannot, $D$ should be reported as unidentified
-rather than fitted. The diagnostic signature, coefficients resting exactly on box constraints, is
-likewise generic and should be logged by any bounded tire fit, being otherwise
-indistinguishable from a successful one. So is the insufficiency of
-per-coefficient box constraints for admissibility: both failures we
-encountered---a degenerate set, and a pairwise oversteering one unstable inside
-the controller's operating range, each satisfying every box constraint---are
-properties of the parameterisation, not of CARLA.
+The reachable-friction bound~\eqref{eq:mureach} is kinematic, carrying no tire
+parameter, no simulator-specific quantity and no property of the residual, so
+it applies to any implementation of the virtual-steady-state-data strategy
+of~\cite{ontrack2025}, in simulation or on hardware. Its practical content is a
+design rule, \emph{the rollout must demand at least the friction one intends to
+identify}, and where it cannot, $D$ should be reported as unidentified rather
+than fitted. The diagnostic signature, coefficients resting exactly on box
+constraints, is likewise generic and should be logged by any bounded tire fit,
+being otherwise indistinguishable from a successful one. So is the
+insufficiency of per-coefficient box constraints for admissibility: both
+failures we encountered, a degenerate set and a pairwise oversteering one
+unstable inside the controller's range, satisfied every box constraint, and
+both are properties of the parameterisation, not of CARLA.
 
 What does not generalise is every number attached to this plant. The tire
 values describe a PhysX model with a configured friction coefficient, so
 agreement with them shows only that the identifier recovers the plant it
 observes; hardware replication is necessary before any accuracy claim on a
-vehicle. The gap between configured wheel
-friction (\num{1.5}) and realised peak axle friction (\numrange{1.00}{1.05}),
-and the \num{0.76} achieved/commanded steering ratio, are properties of this
-configuration; the lessons---score against the effective friction the simulator
-publishes, and identify against the achieved actuator state---are general, the
-magnitudes are not.
+vehicle. The gap between configured wheel friction (\num{1.5}) and realised
+peak axle friction (\numrange{1.00}{1.05}), and the \num{0.76}
+achieved/commanded steering ratio, are properties of this configuration. The
+lessons generalise and the magnitudes do not: score against the effective
+friction the simulator publishes, identify against the achieved actuator
+state.
 
 \subsection{Limitations}
 \label{subsec:limits}
 
 \emph{One run per configuration, so nothing in Fig.~\ref{fig:comparison}
-carries an uncertainty:} the \SI{0.092}{\meter} against \SI{0.177}{\meter} RMS
-tracking difference has no confidence interval and no evidence that it exceeds
-run-to-run variation, which is not measured; nothing prevents repetition, so
-this is a gap in the evidence, not the method. \emph{Single surface, vehicle and trajectory:} friction is static at
-\num{1.05}, and the surface-change adaptation experiment, arguably the
-strongest argument for on-track identification, is not performed. \emph{The friction estimator's
-excitation sweep is synthetic;} on the CARLA runs the warm start sees only the
-excitation level the lap supplies. \emph{The two configurations differ in four
-settings at once}, so Section~\ref{sec:results} attributes nothing to the
-residual, the loss, the solver or the warm start individually, and with the
-excitation-aware rollout active in \emph{both} arms the closed-loop comparison
-is not evidence for the identifiability correction---the sweep of
-Section~\ref{subsec:sweep} is. \emph{Longitudinal dynamics are out of scope,}
-as in the baseline.
+carries an uncertainty.} The \SI{0.092}{\meter} against \SI{0.177}{\meter} RMS
+tracking difference has no confidence interval, and no evidence that it exceeds
+run-to-run variation, which we did not measure; nothing prevents repetition, so
+this is a gap in the evidence, not the method. \emph{Single surface, vehicle
+and trajectory.} Friction is static at \num{1.05}, and we do not run the
+surface-change adaptation experiment, arguably the strongest argument for
+on-track identification. \emph{The friction estimator's excitation sweep is
+synthetic.} On the CARLA runs the warm start sees only the excitation the lap
+supplies. \emph{The two configurations differ in four settings at once.}
+Section~\ref{sec:results} therefore attributes nothing to the residual, the
+loss, the solver or the warm start individually, and with the excitation-aware
+rollout active in \emph{both} arms the closed-loop comparison is not evidence
+for the identifiability correction. The sweep of
+Section~\ref{subsec:sweep} is. \emph{Longitudinal dynamics are
+out of scope,} as in the baseline.

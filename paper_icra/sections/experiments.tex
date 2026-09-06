@@ -11,30 +11,31 @@ simulator reports over all \num{8186} and \num{9355} validation samples. Both
 runs follow the same minimum-curvature raceline on a recorded centreline of
 the CARLA silverstone circuit: a closed \SI{5828.2}{\meter} lap, reference
 speed \SIrange{9.62}{25.78}{\meter\per\second}, minimum corner radius
-\SI{18.7}{\meter}, peak lateral demand \SI{0.51}{\g}---roughly half the
-\SI{1.0}{\g} the plant sustains. It replaces an earlier trajectory whose \SI{1.22}{\g} demand the gate of
-Section~\ref{sec:integration} rejected against this plant.
+\SI{18.7}{\meter}, peak lateral demand \SI{0.51}{\g}, roughly half the
+\SI{1.0}{\g} the plant sustains. It replaces an earlier trajectory whose
+\SI{1.22}{\g} demand the gate of Section~\ref{sec:integration} rejected.
 
 Two configurations of the pipeline are run back to back on that trajectory,
-three timed laps each, after an untimed out-lap to the raceline's $s=0$. They differ in four settings and nothing else: residual architecture (MLP
-against S4D), objective (one-step MSE against the physics-informed loss),
-Pacejka solver (trust region against differential evolution), and friction
-warm start (off against on). \texttt{Baseline-NN-MSE} is the inherited configuration
+three timed laps each, after an untimed out-lap to the raceline's $s=0$. They
+differ in four settings and nothing else: residual architecture (MLP against
+S4D), objective (one-step MSE against the physics-informed loss), Pacejka
+solver (trust region against differential evolution), and friction warm start
+(off against on). \texttt{Baseline-NN-MSE} is the inherited configuration
 evaluated at full scale on the corrected rollout, so the comparison isolates
-those four settings rather than reproducing the published pipeline in full;
-because they move together it is a configuration comparison and not a
-per-factor ablation, and since the excitation-aware rollout is active in
-\emph{both} arms it is not a test of this paper's central contribution---that
+those four settings rather than reproducing the published pipeline in full.
+Because they move together it is a configuration comparison and not a per-
+factor ablation, and since the excitation-aware rollout is active in
+\emph{both} arms it is not a test of this paper's central contribution, which
 is evidenced separately in Section~\ref{subsec:sweep}.
 
 The prior $\phip^{0}$ both arms start from, and that \eqref{eq:fitobj} pulls
 toward, was obtained by fitting \eqref{eq:mf} to the simulator's per-wheel
 telemetry over a dedicated limit-excitation run reaching
-$\alpha=\SI{0.37}{\radian}$ and \SI{1.50}{\g}. Two consequences have
-to be stated plainly: that is the same channel the force and friction results
-are scored against, so the prior is not independent of the validation data; and
-the manoeuvre that produced it is one the pipeline is not allowed to run, since
-the raceline peaks at \SI{0.51}{\g}. On all six accepted identifications the
+$\alpha=\SI{0.37}{\radian}$ and \SI{1.50}{\g}. Two consequences need stating
+plainly: that is the same channel the force and friction results are scored
+against, so the prior is not independent of the validation data, and the
+manoeuvre that produced it is one the pipeline is not allowed to run, since the
+raceline peaks at \SI{0.51}{\g}. On all six accepted identifications the
 \texttt{Ours} arm returns the eight prior coefficients to four decimal places,
 so the peak-friction accuracy below is that of a prior the fit did not move,
 not of a peak factor recovered from the lap. What the corrected pipeline
@@ -47,19 +48,20 @@ inherited configuration destroys it by railing $D$ on its bound.
 The claim of Section~\ref{subsec:excitation} is about the rollout configuration
 alone, so it is tested where the answer is known exactly rather than in CARLA.
 A tire with a known peak factor $D$ is rolled out through the synthetic sweep
-of stage~2---the shipped rollout, with the residual network set to zero---and
+of stage~2, the shipped rollout with the residual network set to zero, and
 fitted back with the shipped solver, \emph{unregularised} and started from the
 true coefficients, so everything the fit loses is lost to excitation and not to
-the prior, the start point or a local minimum. Rollout speed $v$, sweep amplitude $\delta_{\mathrm{sweep}}$ and true $D$ are
-swept, each cell repeated over five noise realisations at the measured one-
-step persistence RMSE of the two CARLA runs
+the prior, the start point or a local minimum. Rollout speed $v$, sweep
+amplitude $\delta_{\mathrm{sweep}}$ and true $D$ are swept, each cell repeated
+over five noise realisations at the measured one-step persistence RMSE of the
+two CARLA runs
 ($\sigma_{v_{y}}=\SI{0.009}{\meter\per\second}$,
 $\sigma_{\omega}=\SI{0.005}{\radian\per\second}$). The configuration axes are
 swept one at a time, since $\mu_{\mathrm{reach}}$ depends on both and the
 claim that it, not the speed, governs the fit cannot be tested by moving the
-speed alone. Repetition is over noise and not the solver because the noise-
-free fit is seed-invariant here: five multi-start seeds and a jitter seven
-times wider return the same coefficients to four decimals.
+speed alone. Repetition is over noise rather than over the solver because the
+noise-free fit is seed-invariant here: five multi-start seeds and a jitter
+seven times wider return the same coefficients to four decimals.
 
 \begin{figure*}[t]
 \centering
@@ -87,23 +89,23 @@ D$ and not a speed: at \SI{6}{\meter\per\second} ($\mu_{\mathrm{reach}}=0.96$)
 the $0.70$ and $1.05$ tires come back within \SI{3}{\percent} while the $1.40$
 and $1.80$ tires are \SI{13}{\percent} and \SI{30}{\percent} short, and above
 $\mu_{\mathrm{reach}}=1.7$ every tire is within \SI{4}{\percent} with no
-systematic railing. The boundary is soft, not sharp---the $1.05$ tire is
-recovered slightly \emph{below} its own $D$, a rollout stopping just short of
-the peak still traversing the curvature that separates $B$, $C$ and $D$---so
-the bound predicts where the information runs out. Third, the failure is not
-the solver's: the noise-free fit is invariant to the multi-start seed and the
-jitter width, so no solver or start point recovers a coefficient the data does
-not contain.
+systematic railing. That boundary is soft rather than sharp, the $1.05$ tire
+being recovered slightly \emph{below} its own $D$ because a rollout stopping
+just short of the peak still traverses the curvature separating $B$, $C$ and
+$D$, so the bound predicts where the information runs out. Third, the
+failure is not the solver's: the noise-free fit is invariant to the multi-start
+seed and the jitter width, so no solver or start point recovers a coefficient
+the data does not contain.
 
-Panel (b) also shows that the failure is not a common bias: where an under-
-speeded rollout returns \emph{too little} grip, an under-swept one returns too
-much---at $\delta_{\mathrm{sweep}}=\SI{0.06}{\radian}$ the \num{1.05} tire
-comes back as \num{1.30} and the \num{1.80} tire rails on its bound. What the
-axes share is that $\hat D$ stops being a function of the tire, the direction
-of the error being set by the rollout: the signature of an unidentified
-parameter rather than a biased one. They do \emph{not} collapse onto a common
+Panel (b) also shows that the failure is not a common bias. An under-speeded
+rollout returns \emph{too little} grip; an under-swept one returns too much. At
+$\delta_{\mathrm{sweep}}=\SI{0.06}{\radian}$ the \num{1.05} tire comes back as
+\num{1.30} and the \num{1.80} tire rails on its bound. What the two axes share
+is that $\hat D$ stops being a function of the tire, the direction of the error
+being set by the rollout: the signature of an unidentified parameter rather
+than a biased one. They do \emph{not} collapse onto a common
 $\mu_{\mathrm{reach}}$, since \eqref{eq:mureach} uses the Ackermann curvature
-and tracks the realised demand only while understeer is small; against the
+and tracks the realised demand only while understeer is small. Against the
 realised $\max|v_{x}\omega|/g$ (panel c) both behave alike.
 Equation~\eqref{eq:mureach} is therefore a cheap screening bound, conclusive
 when it falls below $D$, not a measure of the excitation achieved. With the
@@ -113,11 +115,11 @@ and the real pipeline degrades at least this much.
 \subsection{Identified tire model and peak friction}
 \label{subsec:resultstire}
 
-Figure~\ref{fig:comparison} is the cross-run comparison and
-its bottom-right panel puts both identified curves against the plant's own
+Figure~\ref{fig:comparison} is the cross-run comparison, and its bottom-right
+panel puts both identified curves against the plant's own
 curve~\eqref{eq:physx}. No coefficient of \texttt{Ours} rests on a box
-constraint in any of its six accepted identifications---the last accepted set
-is $B,C,D,E=\num{7.076},\num{1.346},\num{1.009},\num{-2.000}$ front and
+constraint in any of its six accepted identifications. The last accepted set is
+$B,C,D,E=\num{7.076},\num{1.346},\num{1.009},\num{-2.000}$ front and
 $\num{7.873},\num{1.383},\num{1.002},\num{-1.024}$ rear, inside
 $B\in[4,20]$, $C\in[1.2,2.2]$, $D\in[0.4,2.0]$, $E\in[-3,1]$. Its front
 $E=\num{-2.000}$ is the configured prior, not a bound, and is exactly the
@@ -130,11 +132,11 @@ $D_{f}\in[\num{1.241},\num{2.000}]$ in between. A peak factor of \num{2.000}
 against a plant realising \num{1.05} is less a \SI{90}{\percent} parameter
 error than the box-edge signature of Section~\ref{subsec:identifiability}: the
 coefficient is not identified, and no per-coefficient bounds check
-distinguishes that from a fit. With
-the surface static, \texttt{Ours} returns $D_{f}=\num{1.009}$ and
-$D_{r}=\num{1.002}$ in \emph{every} one of its six identifications, so its
-$\mu$ error is a constant \num{0.041}/\num{0.048} against
-\num{0.762}/\num{0.772}, \numrange{16}{19}$\times$ worse. The warm start's floor binds on no cycle here.
+distinguishes that from a fit. With the surface static, \texttt{Ours} returns
+$D_{f}=\num{1.009}$ and $D_{r}=\num{1.002}$ in \emph{every} one of its six
+identifications, so its $\mu$ error is a constant \num{0.041}/\num{0.048}
+against \num{0.762}/\num{0.772}, \numrange{16}{19}$\times$ worse. The warm
+start's floor binds on no cycle here.
 
 The price \texttt{Ours} pays is in the linear range (slopes at $\bar F_{z}=1$
 and the same static axle loads throughout): \SI{13.2}{\kilo\newton\per\radian}
@@ -146,13 +148,13 @@ pass the stability gate, but the baseline's margin is \SI{2}{\percent}
 ($l_{f}C_{f}=\SI{14.10}{\kilo\newton\meter\per\radian}$ against
 $l_{r}C_{r}=\SI{14.38}{\kilo\newton\meter\per\radian}$) where \texttt{Ours}
 keeps \SI{12}{\percent}: a set that lands \SI{2}{\percent} from an oversteering
-pair on a coefficient it did not identify is the case the gate exists for. Only
-\texttt{Baseline-NN-MSE}'s grip ceiling is a claim the plant cannot honour,
-\eqref{eq:gripceiling} giving \SI{2.00}{\g} against \SI{1.01}{\g} for
-\texttt{Ours} and $\approx\SI{1.0}{\g}$ measured. Both effects coexist because the lap covers only
-$P_{99}(|\alpha|)=\SI{2.2}{\degree}$ against the \SI{12.0}{\degree} at which
-the plant's curve peaks: it constrains the slope and says almost nothing about
-the peak.
+pair on a coefficient it did not identify is the case the gate exists for.
+Only \texttt{Baseline-NN-MSE}'s grip ceiling is a claim the plant cannot
+honour, \eqref{eq:gripceiling} giving \SI{2.00}{\g} against \SI{1.01}{\g} for
+\texttt{Ours} and $\approx\SI{1.0}{\g}$ measured. Both effects coexist because
+the lap covers only $P_{99}(|\alpha|)=\SI{2.2}{\degree}$ against the
+\SI{12.0}{\degree} at which the plant's curve peaks: it constrains the slope
+and says almost nothing about the peak.
 
 \begin{figure*}[t]
 \centering
@@ -178,40 +180,41 @@ no bar or box carries a confidence interval (Section~\ref{subsec:limits}).}}
 \subsection{Force, prediction and closed-loop tracking}
 \label{subsec:resultsforce}
 
-The identified curve scored at the measured $(\alpha,F_{z})$ against the
-plant's per-wheel force orders the arms differently across axles:
-\texttt{Ours} is better at the rear (\SI{40.8}{\newton} RMSE, $R^{2}=\num{0.979}$)
-and worse at the front (\SI{70.7}{\newton}, $R^{2}=\num{0.944}$, against
-\SI{45.9}{\newton} and \num{0.978}), and the inherited configuration's lower
-front RMSE is bought with a maximum absolute error \num{1.6}$\times$ heavier at
-the front and \num{2.6}$\times$ at the rear. That
-is the linear-range deficit showing up as force error, and it is the one axis
-on which the inherited configuration is better: at \SI{2.2}{\degree} of slip
-both curves are far below their peaks, so a railed peak factor costs nothing
-while a \SI{35}{\percent} slope deficit costs \SI{71}{\newton} of front-axle
-RMSE. What separates the two models is not the force at the slip angles the lap
-visits but the grip ceiling those forces never probe. Neither model beats persistence at the \SI{0.035}{\second} model step ($v_{y}$
+The identified curve, scored at the measured $(\alpha,F_{z})$ against the
+plant's per-wheel force, orders the arms differently across axles.
+\texttt{Ours} is better at the rear (\SI{40.8}{\newton} RMSE,
+$R^{2}=\num{0.979}$) and worse at the front (\SI{70.7}{\newton},
+$R^{2}=\num{0.944}$, against \SI{45.9}{\newton} and \num{0.978}), and the
+inherited configuration's lower front RMSE is bought with a maximum absolute
+error \num{1.6}$\times$ heavier at the front and \num{2.6}$\times$ at the rear.
+That is the linear-range deficit showing up as force error, and it is the one
+axis on which the inherited configuration is better: at \SI{2.2}{\degree} of
+slip both curves are far below their peaks, so a railed peak factor costs
+nothing while a \SI{35}{\percent} slope deficit costs \SI{71}{\newton} of
+front-axle RMSE. What separates the two models is not the force at the slip
+angles the lap visits, but the grip ceiling those forces never probe. Neither
+model beats persistence at the \SI{0.035}{\second} model step ($v_{y}$
 RMSE \num{0.027} against \num{0.022}, $\omega$ \num{0.032} against
-\num{0.068}, persistence \num{0.009} and \num{0.005}): a one-step metric on a
+\num{0.068}, persistence \num{0.009} and \num{0.005}). A one-step metric on a
 smooth trajectory rewards not moving, so it is not evidence for either tire
 model.
 
 Both runs finish three timed laps with zero emergency halts and the same state
-sequence---bootstrap pure pursuit, running pure pursuit, handover, running MPC
----with no fallback after handover. Under MPC, where the identified
-model enters the loop, \texttt{Ours} tracks at \SI{0.092}{\meter} RMS lateral
-error against \SI{0.177}{\meter}, a \SI{48}{\percent} reduction, with maximum
-\SI{0.490}{\meter} against \SI{0.696}{\meter}. ITAE is neither scale-free nor comparable across runs of
-different length, so two normalised forms are computed from the same samples:
-$\mathrm{IAE}/T$ is \SI{0.085}{\meter} against \SI{0.132}{\meter} and
-$\mathrm{ITAE}/(T^{2}/2)$ is \SI{0.059}{\meter} against \SI{0.111}{\meter}, and
-all three order the runs alike. The split by controller
-puts the whole difference in the MPC phase: the pure-pursuit phases give ITAE
-\num{211} and \num{122}, ordered the other way and two orders of magnitude
-smaller. The
-QP cost is unchanged---both solve times are two orders of magnitude below the
-\SI{50}{\milli\second} control period and the orderings disagree---so the
-coefficients change the model the QP carries, not its size.
+sequence (bootstrap pure pursuit, running pure pursuit, handover, running MPC),
+with no fallback after handover. Under MPC, where the identified model enters
+the loop, \texttt{Ours} tracks at \SI{0.092}{\meter} RMS lateral error against
+\SI{0.177}{\meter}, a \SI{48}{\percent} reduction, with maximum
+\SI{0.490}{\meter} against \SI{0.696}{\meter}. ITAE is neither scale-free nor
+comparable across runs of different length, so we compute two normalised forms
+from the same samples: $\mathrm{IAE}/T$ is \SI{0.085}{\meter} against
+\SI{0.132}{\meter} and $\mathrm{ITAE}/(T^{2}/2)$ is \SI{0.059}{\meter}
+against \SI{0.111}{\meter}, and all three order the runs alike. The split by
+controller puts the whole difference in the MPC phase: the pure-pursuit phases
+give ITAE \num{211} and \num{122}, ordered the other way and two orders of
+magnitude smaller. The QP cost is unchanged, both solve times being two orders
+of magnitude below the \SI{50}{\milli\second} control period with the orderings
+disagreeing, so the coefficients change the model the QP carries, not its
+size.
 
 \subsection{Friction warm start and identification cost}
 \label{subsec:mu}
@@ -219,13 +222,13 @@ coefficients change the model the QP carries, not its size.
 The friction warm start is evaluated on a synthetic brush-tire plant rather
 than in CARLA, because only a synthetic plant supplies a $\mu$ known exactly
 and an excitation that can be swept independently of it. At \SI{45}{\percent}
-grip utilisation---a level an ordinary lap reaches---the utilisation bound
-returns \num{0.473} against a true $\mu=\num{1.05}$ while the brush fit
-returns \num{1.048}, and it returns that same \num{1.048} at
-\SI{63}{\percent}, \SI{80}{\percent} and \SI{100}{\percent}: flat in
-excitation where the bound tracks only the grip used. Across true
+grip utilisation, a level an ordinary lap reaches, the utilisation bound
+returns \num{0.473} against a true $\mu=\num{1.05}$ while the brush fit returns
+\num{1.048}. It returns that same \num{1.048} at \SI{63}{\percent},
+\SI{80}{\percent} and \SI{100}{\percent}: flat in excitation, where the bound
+tracks only the grip used. Across true
 $\mu\in\{0.7,1.05,1.4\}$ the fit stays within \SI{5}{\percent}, and
 \SI{12}{\percent} with odometry and IMU noise; below the \SI{40}{\percent}
 floor the gate suppresses it and reports the bound, so the failure is visible
-rather than silent. One identification---six iterations on a \SI{30}{\second} lap---takes
-\SI{20.9}{\second}, inside the re-identification period.
+rather than silent. One identification, six iterations on a \SI{30}{\second}
+lap, takes \SI{20.9}{\second}, inside the re-identification period.

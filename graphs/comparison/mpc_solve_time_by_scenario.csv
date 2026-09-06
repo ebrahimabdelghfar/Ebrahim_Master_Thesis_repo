@@ -1,5 +1,5 @@
 scenario,category,value
-ours_mu_0.7,RMS,0.40379717903842516
-ours_mu_0.7,Max,3.014977
-Baseline-NN-MSE_mu_0.7,RMS,0.3803498650652937
-Baseline-NN-MSE_mu_0.7,Max,1.324049
+ours,RMS,0.4128173661690782
+ours,Max,3.813831
+Baseline-NN-MSE,RMS,0.38956585542285493
+Baseline-NN-MSE,Max,4.06054

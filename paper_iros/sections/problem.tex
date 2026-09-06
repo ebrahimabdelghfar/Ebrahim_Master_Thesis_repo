@@ -22,12 +22,13 @@ F_{y}=F_{z}\,D\sin\!\big(C\arctan\!\big(B\alpha-E(B\alpha-\arctan B\alpha)\big)\
 \label{eq:mf}
 \end{equation}
 with per-axle coefficients
-$\phip=[B_{f},C_{f},D_{f},E_{f},B_{r},C_{r},D_{r},E_{r}]$. The state and input are $\vecx=[v_{y},\omega]$ and $\vecu=[v_{x},\delta]$, and
-the nominal one-step map $\hat\vecx_{k+1}=f(\vecx_{k},\vecu_{k},\phip)$ is
-discretised by explicit Euler at $T_{s}=\SI{0.035}{\second}$. The objective is
-to recover $\phip$ from a single \SI{30}{\second} segment of ordinary lap data
-such that the resulting model is both predictive and \emph{admissible} for the
-controller that consumes it. Admissibility is expressed on derived quantities:
+$\phip=[B_{f},C_{f},D_{f},E_{f},B_{r},C_{r},D_{r},E_{r}]$. The state and input
+are $\vecx=[v_{y},\omega]$ and $\vecu=[v_{x},\delta]$, and the nominal one-step
+map $\hat\vecx_{k+1}=f(\vecx_{k},\vecu_{k},\phip)$ is discretised by explicit
+Euler at $T_{s}=\SI{0.035}{\second}$. The objective is to recover $\phip$ from
+a single \SI{30}{\second} segment of ordinary lap data, such that the resulting
+model is both predictive and \emph{admissible} for the controller that consumes
+it. Admissibility is expressed on derived quantities:
 the linearised axle cornering stiffness
 $C_{i}=F_{z,i}B_{i}C_{i}^{\mathrm{MF}}D_{i}$, the slope of \eqref{eq:mf} at
 zero slip (writing $C^{\mathrm{MF}}$ for the shape factor to avoid a clash),
@@ -45,36 +46,36 @@ $v_{\mathrm{crit}}=L\sqrt{C_{f}C_{r}/(m(l_{f}C_{f}-l_{r}C_{r}))}$.
 
 Two properties of \eqref{eq:mf} are used throughout. Its slope at zero slip is
 $F_{z}BCD$, so the cornering stiffness depends on the coefficients only through
-that product and $E$ drops out; and if the data does not approach the peak then
+that product, and $E$ drops out. If the data never approaches the peak,
 \eqref{eq:mf} linearises to $F_{y}\approx F_{z}(BCD)\alpha$ and $B$, $C$, $D$
-become mutually unidentifiable. Given data that reaches the peak \eqref{eq:mf}
-is \emph{structurally} identifiable; what fails
-here is \emph{practical} identifiability~\cite{raue2009practical}, the
-likelihood being flat along the $BCD$ direction under a specific excitation.
-That is the standard persistent-excitation
-condition~\cite{ljung1999sysid} expressed on this model, and neither the
-structural result nor the excitation condition is claimed as novel. What we
-claim, and demonstrate in Section~\ref{subsec:sweep}, is that the baseline's
-virtual-data step can silently violate it, and that a bounded optimiser then
-resolves the remaining freedom by sliding onto a box edge---so the violation is
-reported as a converged fit rather than as a failure.
+become mutually unidentifiable. Given data that does reach the peak,
+\eqref{eq:mf} is \emph{structurally} identifiable. What fails here is
+\emph{practical} identifiability~\cite{raue2009practical}: under a specific
+excitation the likelihood is flat along the $BCD$ direction. This is the
+standard persistent-excitation condition~\cite{ljung1999sysid} written on this
+model, and we claim neither the structural result nor the excitation condition
+as novel. Our claim, demonstrated in Section~\ref{subsec:sweep}, is that the
+baseline's virtual-data step can silently violate that condition, and that a
+bounded optimiser then resolves the remaining freedom by sliding onto a box
+edge. The violation surfaces as a converged fit rather than as a failure.
 
 \subsection{Baseline pipeline}
 \label{subsec:baseline}
 
-The baseline repeats four stages~\cite{ontrack2025}: a network is trained on
+The baseline repeats four stages~\cite{ontrack2025}. A network is trained on
 the recorded lap to predict the one-step error
-$e_{k}=\vecx_{k+1}-\hat\vecx_{k+1}$; the corrected model is integrated open-
-loop at constant speed while the steering is ramped from $0$ to
-$\delta_{\mathrm{sweep}}$, producing synthetic quasi-steady data; assuming
-$\dot v_{y}=\dot\omega=0$ there, axle forces follow from the yaw balance,
+$e_{k}=\vecx_{k+1}-\hat\vecx_{k+1}$. The corrected model is integrated
+open-loop at constant speed while the steering is ramped from $0$ to
+$\delta_{\mathrm{sweep}}$, which produces synthetic quasi-steady data.
+Assuming $\dot v_{y}=\dot\omega=0$ there, axle forces follow from the yaw
+balance,
 \begin{equation}
 \Fyr=\frac{m l_{f}v_{x}\omega}{L},\qquad
 \Fyf=\frac{m l_{r} v_{x}\omega}{L\cos\delta},
 \label{eq:ssforces}
 \end{equation}
 slip angles from \eqref{eq:slip}, and $\phip$ is fitted by bounded least
-squares; the fitted $\phip$ then becomes the next iteration's nominal model.
+squares. That fitted $\phip$ becomes the next iteration's nominal model.
 The point that drives the rest of this paper is that the fit \emph{never sees
 the recorded lap}. It sees the rollout. The lap enters only through the
 residual network, so the excitation available to the fit is set by the rollout

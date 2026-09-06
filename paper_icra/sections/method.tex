@@ -15,16 +15,16 @@ acknowledges a new one.
 \label{subsec:residual}
 
 The default residual is the baseline multilayer perceptron: 4 inputs, one
-hidden layer of 8 units, 2 outputs, 58 parameters, trained full-batch on an
-MSE objective. Two options shape it with vehicle physics rather than with
-capacity: its inputs are augmented with the axle slip angles of
-\eqref{eq:slip}, since \eqref{eq:mf} depends on $(\alpha,F_{z})$ and nothing
-else, and its objective adds to the MSE~\cite{deepdynamics2024} a quasi-steady
-consistency term, the odd symmetry $e(-\vecz)=-e(\vecz)$ of a symmetric
-vehicle, and a soft Lipschitz bound. A third replaces the memoryless MLP with
-an S4D state-space residual~\cite{gu2022s4d} over a window of $W=20$ samples;
-it is not claimed as a contribution~\cite{visionsysid2026}, and the
-identifiability result below holds for either residual.
+hidden layer of 8 units, 2 outputs, 58 parameters, trained full-batch on an MSE
+objective. Two options shape it with vehicle physics rather than with capacity.
+The first augments its inputs with the axle slip angles of \eqref{eq:slip},
+since \eqref{eq:mf} depends on $(\alpha,F_{z})$ and nothing else; the second
+adds to the MSE~\cite{deepdynamics2024} a quasi-steady consistency term, the
+odd symmetry $e(-\vecz)=-e(\vecz)$ of a symmetric vehicle, and a soft Lipschitz
+bound. A third replaces the memoryless MLP with an S4D state-space
+residual~\cite{gu2022s4d} over a window of $W=20$ samples; we do not claim it
+as a contribution~\cite{visionsysid2026}, and the identifiability result below
+holds for either residual.
 
 \subsection{Excitation-aware virtual rollout}
 \label{subsec:excitation}
@@ -42,11 +42,11 @@ coefficient the rollout can \emph{demand} of the tire is
 Equation~\eqref{eq:mureach} contains no tire parameter: it is a property of
 the rollout configuration alone, and an \emph{upper} bound rather than an
 equality, since $\kappa\approx\delta/L$ is the Ackermann curvature while the
-steady-state curvature a compliant vehicle holds is smaller. Reading it as a
-ceiling is what the argument needs: if even the ceiling sits below $D$, the
-peak is not reached, the synthetic data never leaves the linear ramp of
-\eqref{eq:mf}, only $BCD$ is identifiable, and the bounded optimiser resolves
-the residual freedom on a box edge.
+steady-state curvature a compliant vehicle holds is smaller. Reading it as a ceiling
+is all the argument needs. If even the ceiling sits below $D$, the peak is
+never reached, the synthetic data stays on the linear ramp of \eqref{eq:mf},
+only $BCD$ is identifiable, and the bounded optimiser resolves the residual
+freedom on a box edge.
 
 The baseline selects the rollout speed as
 $v=\mathrm{clip}(\overline{v_{x}},2,4)\,\si{\meter\per\second}$, representative
@@ -60,9 +60,9 @@ $\mu_{\mathrm{reach}}\approx2.0$ and the pathology is invisible.
 
 The rollout speed is therefore taken from the speed actually driven, clamped
 below at \SI{15}{\meter\per\second}, and the pipeline warns whenever
-\eqref{eq:mureach} falls below the prior's $D$, turning a silent degeneracy
-into a startup diagnostic. The bound also fixes the data-collection speed:
-data should be gathered at $v\ge\sqrt{gLD/\delta_{\mathrm{sweep}}}$.
+\eqref{eq:mureach} falls below the prior's $D$, which turns a silent degeneracy
+into a startup diagnostic. The same bound fixes the data-collection speed: data
+should be gathered at $v\ge\sqrt{gLD/\delta_{\mathrm{sweep}}}$.
 
 \subsection{Bounded extrapolation and frozen-prior regularisation}
 \label{subsec:iterative}
@@ -73,9 +73,10 @@ $|\delta|$ on a pure-pursuit lap staying below $\approx\SI{0.06}{\radian}$
 while the sweep ran to \SI{0.4}{\radian}. The fit reads that extrapolation as
 additional grip, and because each iteration's answer became both the next
 nominal model \emph{and} its regularisation target, the error compounds: $D$
-walked from the \num{1.009}/\num{1.002} prior to \num{1.5402}/\num{1.8721}
-over six iterations, a claimed \SI{1.7}{\g} on a vehicle measuring
-\SI{1.0}{\g}. Two changes close the loop.
+walked
+from the \num{1.009}/\num{1.002} prior to \num{1.5402}/\num{1.8721} over six
+iterations, a claimed \SI{1.7}{\g} on a vehicle measuring \SI{1.0}{\g}. Two
+changes close the loop.
 
 \emph{Extrapolation bound.} The sweep terminates at
 $\delta_{\mathrm{sweep}}=\mathrm{clip}(\lambda_{e}
@@ -86,7 +87,7 @@ $\delta_{\max}=\SI{0.54}{\radian}$, so the network is never queried more than
 $\delta_{\max}$ lies above the plant's \SI{16.0}{\degree} mechanical lock is
 deliberate: the sweep is a \emph{virtual} rollout, and clamping it to the lock
 would cap $\mu_{\mathrm{reach}}$ a second time, by the actuator instead of by
-the rollout speed. The binding limit in practice is the data-driven term.
+the rollout speed. In practice the binding limit is the data-driven term.
 
 \emph{Frozen prior.} The Tikhonov target is frozen at the configured prior
 $\phip^{0}$ for all iterations, while the optimiser's \emph{start point} still
@@ -97,35 +98,36 @@ tracks the previous iteration. The per-axle objective is
 \end{equation}
 with $r_{k}$ the force residual, $\rho$ a soft-$\ell_{1}$ robust loss and
 $w_{j}$ scaled to the data residual budget by a single dimensionless weight
-$\lambda=0.05$. The regulariser exists specifically to hold the coefficients
-the manoeuvre does not excite---$E$ above all---at their nominal value instead
-of on a box edge.
+$\lambda=0.05$. The regulariser exists for one purpose: to hold the
+coefficients the manoeuvre does not excite, $E$ above all, at their nominal
+value instead of on a box edge.
 
 \subsection{Pacejka fit}
 \label{subsec:fit}
 
 Fitting applies \eqref{eq:ssforces} to the synthetic data under box constraints
-$\phip\in([4.0,1.2,0.4,-3.0],[20.0,2.2,2.0,1.0])$ per axle. Relative to the baseline we raised the jittered multi-starts from 1 to 8 and
-added a simplex and a global differential-evolution solver~\cite{storn1997de}
-beside trust-region reflective~\cite{branch1999trust}. Neither addresses the
-degeneracy: at a \SI{4}{\meter\per\second} rollout every tire tested fits
-back as $\hat D\approx\num{0.5}$ with coefficients railed, and the answer
-moves with neither the seed nor a jitter seven times wider.
+$\phip\in([4.0,1.2,0.4,-3.0],[20.0,2.2,2.0,1.0])$ per axle. Relative to the
+baseline we raised the jittered multi-starts from 1 to 8 and added a simplex
+and a global differential-evolution solver~\cite{storn1997de} beside
+trust-region reflective~\cite{branch1999trust}. Neither addresses the
+degeneracy: at a \SI{4}{\meter\per\second} rollout every tire tested fits back
+as $\hat D\approx\num{0.5}$ with coefficients railed, and the answer moves with
+neither the seed nor a jitter seven times wider.
 
 \subsection{Measurement-side corrections}
 \label{subsec:measurement}
 
 Three corrections apply to the measurement chain rather than to the estimator.
-First, $\alpha_{f}$ in \eqref{eq:slip} was built from the steering setpoint,
-whose achieved/commanded ratio is \num{0.76}, so $\alpha_{f}$ was
+First, $\alpha_{f}$ in \eqref{eq:slip} was built from the steering setpoint.
+The achieved/commanded ratio is \num{0.76}, so $\alpha_{f}$ came out
 $\approx\SI{25}{\percent}$ too large and the fitted front stiffness
-$\approx\SI{20}{\percent}$ too small (\SI{13725}{\newton\per\radian} against
-\SI{17198}{\newton\per\radian} fitted to the simulator's per-wheel forces over
-the same run); the achieved angle recovers \SI{18486}{\newton\per\radian}.
-Second, $m$ and the wheelbase come from measured static wheel loads rather
-than from the configuration file, whose \SI{240.0}{\kilo\gram} against the
-\SI{269.6}{\kilo\gram} the wheels carry biased the friction estimate
-\SI{11}{\percent} low on its own.
+$\approx\SI{20}{\percent}$ too small: \SI{13725}{\newton\per\radian} against
+the \SI{17198}{\newton\per\radian} fitted to the simulator's per-wheel forces
+over the same run. The achieved angle recovers
+\SI{18486}{\newton\per\radian}. Second, $m$ and the wheelbase come from
+measured static wheel loads rather than from the configuration file, whose
+\SI{240.0}{\kilo\gram} against the \SI{269.6}{\kilo\gram} the wheels carry
+biased the friction estimate \SI{11}{\percent} low on its own.
 
 Third, the peak factor gets a prior, which the inherited pipeline did not have.
 Newton--Euler on \eqref{eq:vydot}--\eqref{eq:omdot}, solved for the forces,
@@ -134,34 +136,34 @@ $F_{y,r}=(l_{f}ma_{y}-I_{z}\dot\omega)/L$ from the IMU's lateral acceleration
 and the yaw acceleration, with no tire model at all; stiffness and peak
 friction are then fitted per axle to the two-parameter Fiala brush
 model~\cite{fiala1954}, whose parameters the manoeuvre can support where the
-four of \eqref{eq:mf} cannot. What makes this beat the utilisation bound is
-that $\mu$ enters the brush model through the \emph{curvature} of
-$F_{y}(\alpha)$ and not only through its asymptote, so a \SI{30}{\percent}
-departure from the force's own linear extrapolation already pins it, well below
-the limit. That also states the failure mode---the estimate is unbounded in the
-limit of a linear curve---so it is released only when grip utilisation
+four of \eqref{eq:mf} cannot. What lets this beat the utilisation bound is that
+$\mu$ enters the brush model through the \emph{curvature} of $F_{y}(\alpha)$
+and not only through its asymptote, so a \SI{30}{\percent} departure from the
+force's own linear extrapolation already pins it, well below the limit. That
+also states the failure mode, the estimate being unbounded in the limit of a
+linear curve, so the value is released only when grip utilisation
 $\max|F_{y}|/(\hat\mu F_{z})\ge\num{0.40}$, the level the lateral-dynamics
 friction literature converges on~\cite{acosta2017friction}, and relative
-precision $\sigma_{\hat\mu}/\hat\mu\le\num{0.15}$ hold and $\hat\mu$ does not
-rest on its search bound; otherwise the module reports the utilisation bound.
-The utilisation test uses the \emph{fitted} $\hat\mu$ and is on its own
-circular; the two companion conditions break that, and what still slips through
-is made one-sided by the last rule: the released value may only ever
-\emph{raise} $D_{f},D_{r}$. That floor matters because the frozen Tikhonov
+precision $\sigma_{\hat\mu}/\hat\mu\le\num{0.15}$ both hold, and $\hat\mu$
+does not rest on its search bound; otherwise the module reports the utilisation
+bound. The utilisation test uses the \emph{fitted} $\hat\mu$ and is on its own
+circular. The two companion conditions break that circularity, and the last
+rule makes whatever still slips through one-sided: the released value may only
+ever \emph{raise} $D_{f},D_{r}$. That floor matters because the frozen Tikhonov
 target of \eqref{eq:fitobj} is taken immediately after the warm start, and
 because the controller re-ingests its reference speed profile from
 $a_{y}^{\max}$ on each accepted update, so a lowered $D$ would rewrite the
-reference under the running controller. For the same reason the warm start runs
-on the first identification cycle only.
+reference under the running controller. For the same reason the warm start runs on the first
+identification cycle only.
 
 \subsection{Validation protocol}
 \label{subsec:validation}
 
-Three levels are used: one-step prediction on a held-out run, admitting
-samples only above \SI{1}{\meter\per\second} as the identification data does;
-direct force comparison against the per-wheel telemetry, which separates the
-error of the fit from that of representing a PhysX tire as \eqref{eq:mf}; and
-closed-loop tracking under the MPC, split by active controller so the
-acquisition phase is not scored against a model it does not use. All three
-score the \emph{accepted} model only: a rejected submission is a model the car
-never drove on.
+Three levels are used. One-step prediction on a held-out run admits samples
+only above \SI{1}{\meter\per\second}, as the identification data does. Direct
+force comparison against the per-wheel telemetry separates the error of the fit
+from that of representing a PhysX tire as \eqref{eq:mf}. Closed-loop tracking
+under the MPC is split by active controller, so the acquisition phase is not
+scored against a model it does not use. All three score the
+\emph{accepted} model only: a rejected submission is a model the car never
+drove on.

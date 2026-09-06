@@ -3,12 +3,12 @@
 \label{sec:integration}
 
 The identified model leaves the pipeline through one interface. A nonlinear MPC
-path tracker (\texttt{acados}, horizon $N=20$ at
-\SI{20}{\hertz}) carries the same single-track model as the identifier and
-consumes $\phip$ through \eqref{eq:mf}; nothing else about it changes when a
-new identification arrives. A coefficient set can lie strictly inside every box
-constraint and still be unusable, in three distinct ways we observed, each
-requiring a gate on a \emph{derived} quantity rather than on a coefficient.
+path tracker (\texttt{acados}, horizon $N=20$ at \SI{20}{\hertz}) carries the
+same single-track model as the identifier and consumes $\phip$ through
+\eqref{eq:mf}. Nothing else about it changes when a new identification arrives.
+A coefficient set can lie strictly inside every box constraint and still be
+unusable, in three distinct ways we observed, each needing a gate on a
+\emph{derived} quantity rather than on a coefficient.
 
 \emph{Grip ceiling versus trajectory demand.} The controller computes
 $\max_{k}(v_{x,k}^{2}|\kappa_{k}|)$ over the speed-clamped reference and
@@ -16,11 +16,11 @@ rejects any identification whose $a_{y}^{\max}$ from \eqref{eq:gripceiling}
 falls below it. On the earlier trajectory a degenerate fit reported a
 \SI{0.40}{\g} ceiling against a \SI{1.22}{\g} demand and produced
 \SI{41.89}{\meter} of cross-track error at \SI{27}{\meter\per\second}, against
-\SI{0.03}{\meter} for a plausible set ($D=\num{1.5}$) at the same speed
-through the same controller---figures from an offline harness, quoted as the
-observation that motivated the gate. The gate is one-sided and catches only a
-ceiling that is too low, so \texttt{Baseline-NN-MSE}'s \SI{2.00}{\g} passes
-it.
+\SI{0.03}{\meter} for a plausible set ($D=\num{1.5}$) at the same speed through
+the same controller, figures from an offline harness quoted as the observation
+that motivated the gate. The gate is one-sided and catches
+only a ceiling that is too low, so \texttt{Baseline-NN-MSE}'s \SI{2.00}{\g}
+passes it.
 
 \emph{Understeer sign and critical speed.} A set with $l_{f}C_{f}>l_{r}C_{r}$
 whose $v_{\mathrm{crit}}$ falls inside the controller's speed range makes the
@@ -38,11 +38,10 @@ $dt=\SI{0.05}{\second}$, so the model sub-steps adaptively from its own
 fastest lateral mode ($|\lambda|h\le1.5$), restoring $\rho\approx1.000$ at a
 QP median of \SI{0.36}{\milli\second}.
 
-The gates are the contract between identification and control: a passing
-identification is a model the controller can be held responsible for, a
-failing one is reported as unidentified rather than deployed. Two
-controller-side changes were also required before any identified
-model could be evaluated at full-scale speeds, and are recorded for
-completeness rather than as identification results: reference speeds are
-clamped at ingest, and the solved state is rolled forward by the measured
-transport delay before each solve.
+The gates are the contract between identification and control. A passing
+identification is a model the controller can be held responsible for; a failing
+one is reported as unidentified rather than deployed. Two controller-side
+changes were also needed before any identified model could be evaluated at
+full-scale speeds. Reference speeds are clamped at ingest, and the solved state
+is rolled forward by the measured transport delay before each solve. We record
+both for completeness, not as identification results.

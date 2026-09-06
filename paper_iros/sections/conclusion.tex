@@ -4,40 +4,41 @@
 
 This paper studied the identifiability of a learning-based on-track Pacejka
 identification pipeline~\cite{ontrack2025} at full vehicle scale, in a CARLA
-architecture exposing the plant's own per-wheel forces as ground truth.
-Transplanted unchanged from a 1:10 platform it fails in a specific,
-diagnosable and correctable way, and not through the solver, the bounds or the
-tuning: the
+architecture exposing the plant's per-wheel forces as ground truth.
+Transplanted unchanged from a 1:10 platform it fails in a specific, diagnosable
+and correctable way, and not through the solver, the bounds or the tuning. The
 virtual-data step's own reachable friction
 $\mu_{\mathrm{reach}}=v^{2}\delta_{\mathrm{sweep}}/(gL)$ depends on the rollout
 configuration and not on the tire, and a rollout speed appropriate at 1:10 caps
 it at \num{0.43} at full scale, below the plant's peak, so the peak factor is
-not identifiable from the synthetic data and the bounded optimiser resolves the
+not
+identifiable from the synthetic data and the bounded optimiser resolves the
 ambiguity on a box edge.
 
-Correcting this---an excitation-aware rollout speed, an extrapolation bound on
-the sweep, a frozen regularisation target, identification against the achieved
-road-wheel angle, measured mass and geometry, and a friction warm start read
-from the curvature of the axle force curve and applied only as a floor---
-produces identifications with no railed coefficient and a peak factor of
-\num{1.009}/\num{1.002} against a plant realising \num{1.05}, with the correct
-understeer sign. Over three timed laps on a static surface it \emph{preserves} that peak factor
-to \num{0.041}/\num{0.048} RMSE where the inherited configuration starts and
-ends on its \num{2.0} box constraint, and halves the MPC's lateral tracking
-error, \SI{0.177}{\meter} to \SI{0.092}{\meter} RMS, at unchanged solver cost.
+The correction has six parts: an excitation-aware rollout speed, an
+extrapolation bound on the sweep, a frozen regularisation target,
+identification against the achieved road-wheel angle, measured mass and
+geometry, and a friction warm start read from the curvature of the axle force
+curve and applied only as a floor. Together they produce identifications with
+no railed coefficient, a peak factor of \num{1.009}/\num{1.002} against a plant
+realising \num{1.05}, and the correct understeer sign. Over three timed laps on
+a static surface the pipeline \emph{preserves} that peak factor to
+\num{0.041}/\num{0.048} RMSE where the inherited configuration starts and ends
+on its \num{2.0} box constraint, and halves the MPC's lateral tracking error,
+\SI{0.177}{\meter} to \SI{0.092}{\meter} RMS, at unchanged solver cost.
 Preserves, not identifies: this trajectory never approaches the tire's peak and
-the accepted fits return the configured prior to four decimals; recovery
+the accepted fits return the configured prior to four decimals. Recovery
 \emph{when the excitation reaches the peak} is shown on a known tire in
 Section~\ref{subsec:sweep}. Each configuration is a single run, so the
 closed-loop margins are observations rather than estimates with a confidence
-interval. We further argue that per-coefficient box constraints are
-not a sufficient admissibility criterion for handing a model to a model-based
+interval. We further argue that per-coefficient box constraints are not a
+sufficient admissibility criterion for handing a model to a model-based
 controller, and gate on derived physical quantities at that interface
 instead.
 
 Equation~\eqref{eq:mureach} inverts into a requirement on the manoeuvre, so a
-controller inserting bounded slalom excitation when the identifier reports
-insufficient slip coverage would move the pipeline toward active, safety-
-bounded input design~\cite{goodwin1977design}. The decisive test of every claim here is a physical vehicle: the
-identification code is unchanged between simulation and hardware, and only the
-availability of ground truth changes.
+controller that inserts bounded slalom excitation when the identifier reports
+insufficient slip coverage would move the pipeline toward active,
+safety-bounded input design~\cite{goodwin1977design}. The decisive test of
+every claim here is a physical vehicle: the identification code is unchanged
+between simulation and hardware, and only the ground truth goes away.
