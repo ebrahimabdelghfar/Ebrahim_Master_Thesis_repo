@@ -31,13 +31,13 @@ collision_impulse_threshold: 200.0   # N*s of HORIZONTAL impulse, sqrt(x^2 + y^2
                                # with both magnitudes - calibrate against that file.
 
 scenarios:
-  - name: ours_mu_0.7
+  - name: ours
     nn_params_yaml: On-Track-SysID/params/nn_params.yaml
     pacejka_params_yaml: On-Track-SysID/params/pacejka_params.yaml
     friction_schedule: constant
     friction_value_const: 1.0
 
-  - name: Baseline-NN-MSE_mu_0.7
+  - name: Baseline-NN-MSE
     nn_params_yaml: On-Track-SysID/params/nn_params_base_line.yaml
     pacejka_params_yaml: On-Track-SysID/params/pacejka_params_base_line.yaml
     friction_schedule: constant

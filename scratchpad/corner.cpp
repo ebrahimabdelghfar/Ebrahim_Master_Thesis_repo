@@ -18,6 +18,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <random>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -65,6 +66,17 @@ struct Opts
   bool tau_auto{false};           // replicate mpc_node's self-identification
   double tau_cfg_decel{-1.0};     // <0 = use tau_cfg for braking too
   bool tau_auto_split{false};     // identify accel and braking lags separately
+  bool tau_ls{true};             // forgetting least squares instead of an EMA of ratios
+  bool tau_sat_gate{false};       // drop samples taken at the plant's acceleration ceiling
+  double tau_deadband{0.02};      // rewrite only on a change this big
+  double tau_min_rewrite_s{1.0};  // minimum seconds between rewrites (0 = off)
+  double tau_window{0.0};         // clamp the estimate to [cfg0/w, cfg0*w] (0 = off)
+  double tau_vdot_min{0.0};       // with the gate on, also drop |vdot| below this*ceiling
+  double tau_win_s{1.0};          // measure vdot over this window instead of one tick (0 = tick)
+  bool cmd_antiwindup{true};     // clamp the command to what the plant can reach, freeze tau while clamped
+  double ceiling_decay{0.995};   // per-cycle decay of the achieved-acceleration ceiling
+  double ceiling_seed{0.0};       // initial ceiling (0 = the configured accel/decel limits)
+  double tau_rate{1.2};           // max multiplicative change per rewrite (0 = unlimited)
   double mu{1.0};
   double plant_C{1.21};
   double plant_B{10.0};
@@ -73,6 +85,18 @@ struct Opts
   double duration{250.0};
   int delay_ticks{1};
   bool solve_on_new_odom{true};
+  // Torque does not appear the instant the pedal moves. A second pole in series
+  // with the speed lag is the minimum honest model of that, and it is what
+  // supplies the phase lag a pure first-order lag cannot have. 0 = off.
+  double plant_act_tau{0.0};
+  double odom_noise{0.0};        // m/s, 1-sigma on the reported vx
+  // Candidate fix: low-pass the acceleration that gets multiplied by the
+  // drivetrain lag. 0 = off (current shipped behaviour).
+  double lead_lpf{0.0};
+  // What the published speed is anchored to: "meas" = the predicted measured
+  // speed (shipped behaviour), "ref" = the reference speed at the car's
+  // predicted position.
+  std::string cmd_base{"meas"};
 };
 
 // Last occurrence wins, so a wrapper script can supply defaults and still let
@@ -188,6 +212,7 @@ int main(int argc, char ** argv)
   o.r_steer = arg(a, "--r-steer", o.r_steer);
   o.r_accel = arg(a, "--r-accel", o.r_accel);
   o.rrate_steer = arg(a, "--rrate-steer", o.rrate_steer);
+  o.rrate_accel = arg(a, "--rrate-accel", o.rrate_accel);
   o.steer_rate_max = arg(a, "--steer-rate-max", o.steer_rate_max);
   o.accel_max = arg(a, "--accel", o.accel_max);
   o.decel_max = arg(a, "--decel", o.decel_max);
@@ -209,12 +234,27 @@ int main(int argc, char ** argv)
   o.tau_auto = arg(a, "--tau-auto", o.tau_auto ? 1 : 0) != 0;
   o.tau_cfg_decel = arg(a, "--tau-cfg-decel", o.tau_cfg_decel);
   o.tau_auto_split = arg(a, "--tau-auto-split", o.tau_auto_split ? 1 : 0) != 0;
+  o.tau_ls = arg(a, "--tau-ls", o.tau_ls ? 1 : 0) != 0;
+  o.tau_sat_gate = arg(a, "--tau-sat-gate", o.tau_sat_gate ? 1 : 0) != 0;
+  o.tau_deadband = arg(a, "--tau-deadband", o.tau_deadband);
+  o.tau_min_rewrite_s = arg(a, "--tau-min-rewrite-s", o.tau_min_rewrite_s);
+  o.tau_window = arg(a, "--tau-window", o.tau_window);
+  o.tau_vdot_min = arg(a, "--tau-vdot-min", o.tau_vdot_min);
+  o.tau_win_s = arg(a, "--tau-win-s", o.tau_win_s);
+  o.cmd_antiwindup = arg(a, "--cmd-antiwindup", o.cmd_antiwindup ? 1 : 0) != 0;
+  o.ceiling_decay = arg(a, "--ceiling-decay", o.ceiling_decay);
+  o.ceiling_seed = arg(a, "--ceiling-seed", o.ceiling_seed);
+  o.tau_rate = arg(a, "--tau-rate", o.tau_rate);
   o.mu = arg(a, "--mu", o.mu);
   o.plant_accel = arg(a, "--plant-accel", o.plant_accel);
   o.plant_decel = arg(a, "--plant-decel", o.plant_decel);
   o.duration = arg(a, "--dur", o.duration);
   o.delay_ticks = static_cast<int>(arg(a, "--delay-ticks", o.delay_ticks));
   o.solve_on_new_odom = arg(a, "--solve-on-new-odom", o.solve_on_new_odom ? 1 : 0) != 0;
+  o.plant_act_tau = arg(a, "--plant-act-tau", o.plant_act_tau);
+  o.odom_noise = arg(a, "--odom-noise", o.odom_noise);
+  o.lead_lpf = arg(a, "--lead-lpf", o.lead_lpf);
+  o.cmd_base = argStr(a, "--cmd-base", o.cmd_base);
 
   ReferenceTrajectoryHandler ref;
   ref.setSpeedLimit(o.speed_max);
@@ -331,16 +371,36 @@ int main(int argc, char ** argv)
   std::ofstream trace;
   if (!o.out.empty()) {
     trace.open(o.out);
-    trace << "t,s,x,y,psi,vx,vy,r,delta,speed_cmd,u_accel,e_y,vx_ref,kappa_ref,a_lat,beta,solved\n";
+    trace << "t,s,x,y,psi,vx,vy,r,delta,speed_cmd,u_accel,e_y,vx_ref,kappa_ref,a_lat,beta,solved,"
+             "tau_cfg,tau_cfg_decel\n";
   }
 
   // mpc_node::estimateDrivetrainTau replica (limits.drivetrain_tau_auto)
   double tau_cfg = o.tau_cfg, tau_estimate = 0.0;
   double tau_cfg_decel = o.tau_cfg_decel > 0.0 ? o.tau_cfg_decel : o.tau_cfg;
   double tau_estimate_decel = 0.0;
+  // Tracked 95th percentile of |vdot| per direction, seeded at the planner's
+  // own limit. Samples at that ceiling are the torque limiter, not the lag.
+  double vdot_ceiling = o.ceiling_seed > 0.0 ? o.ceiling_seed : o.accel_max;
+  double vdot_ceiling_decel = o.ceiling_seed > 0.0 ? o.ceiling_seed : o.decel_max;
+  double ls_dd = 0.0, ls_dv = 0.0, ls_dd_decel = 0.0, ls_dv_decel = 0.0;
+  const double tau_prior = o.tau_cfg, tau_prior_decel = tau_cfg_decel;
+  double last_rewrite_t = -1e9, last_rewrite_t_decel = -1e9;
+  int tau_rewrites = 0, tau_rewrites_decel = 0;
+  double tau_peak = o.tau_cfg, tau_peak_decel = tau_cfg_decel;
+  std::vector<double> hist_cmd, hist_meas;
+  bool cmd_clamped = false;
+  int clamp_in_window = 0;
+  double ripple_sum = 0.0, ripple_max = 0.0;
+  int ripple_n = 0;
   int tau_samples = 0, tau_samples_decel = 0;
   bool has_prev_speed_sample = false;
   double prev_speed_cmd = 0.0, prev_speed_meas = 0.0;
+
+  std::mt19937 rng(12345);
+  std::normal_distribution<double> noise(0.0, 1.0);
+  double a_actual = 0.0;        // plant acceleration behind the actuator pole
+  double lead_accel = 0.0;      // low-passed acceleration feeding the tau lead
 
   double max_ey = 0.0, peak_alat = 0.0, peak_beta = 0.0, distance = 0.0;
   int spins = 0, failures = 0, cycles = 0;
@@ -353,6 +413,7 @@ int main(int argc, char ** argv)
 
     if (t >= next_odom_t) {
       odom_state = x;
+      if (o.odom_noise > 0.0) {odom_state(3) += o.odom_noise * noise(rng);}
       odom_stamp = t;
       next_odom_t += odom_period;
     }
@@ -378,35 +439,122 @@ int main(int argc, char ** argv)
           last_solve_ms = out.solve_time_ms;
           u_prev = out.u0;
           steer_cmd = out.u0(0);
-          const double tau_used = out.u0(1) < 0.0 ? tau_cfg_decel : tau_cfg;
+          // The lag inversion multiplies an acceleration by ~tau (2.82 s at the
+          // shipped config, 56x the control period). u0(1) is a feedback
+          // quantity, so without the filter every cycle-to-cycle wobble in it
+          // lands in the published speed multiplied by that factor. The filter
+          // passes the DC value untouched - braking and post-handover
+          // convergence both survive - and removes only what the plant, whose
+          // own time constant is tau, could not follow anyway.
+          lead_accel = o.lead_lpf > 0.0
+            ? lead_accel + (out.u0(1) - lead_accel) * std::min(1.0, control_period / o.lead_lpf)
+            : out.u0(1);
+          const double tau_used = lead_accel < 0.0 ? tau_cfg_decel : tau_cfg;
+          // A speed setpoint should be a reference, not an echo of the
+          // measurement: anchoring on x0(3) feeds every bit of odometry noise
+          // straight out to the actuator at unity gain, on top of the same
+          // noise re-entering through u0(1) multiplied by tau.
+          const double base = o.cmd_base == "ref" ?
+            ref.nearestPoint(x0(0), x0(1)).vx : x0(3);
+          const double prev_cmd_for_ripple = speed_cmd;
           speed_cmd = std::clamp(
-            x0(3) + out.u0(1) * (control_period + tau_used), 0.0, o.speed_max);
+            base + out.u0(1) * control_period + lead_accel * tau_used, 0.0, o.speed_max);
+          // Anti-windup: a speed the plant cannot reach within one lag constant
+          // is not a setpoint, it is windup - and the lag identified from it
+          // measures the torque limiter instead of the lag.
+          cmd_clamped = false;
+          if (o.cmd_antiwindup) {
+            const double reach = control_period + tau_used;
+            const double hi = x0(3) + vdot_ceiling * reach;
+            const double lo = x0(3) - vdot_ceiling_decel * reach;
+            const double limited = std::clamp(speed_cmd, lo, hi);
+            cmd_clamped = std::abs(limited - speed_cmd) > 1e-9;
+            speed_cmd = limited;
+          }
+          if (has_solved) {
+            const double d = std::abs(speed_cmd - prev_cmd_for_ripple) * 3.6;
+            ripple_sum += d;
+            ripple_max = std::max(ripple_max, d);
+            ++ripple_n;
+          }
           has_solved = true;
         }
         if (o.tau_auto) {
-          if (has_prev_speed_sample) {
-            const double drive = prev_speed_cmd - prev_speed_meas;
-            const double vdot = (x(3) - prev_speed_meas) / control_period;
-            if (std::abs(drive) > 0.5 && drive * vdot > 0.0 && std::abs(vdot) > 1e-3) {
+          hist_cmd.push_back(speed_cmd);
+          hist_meas.push_back(x(3));
+          if (cmd_clamped) {
+            clamp_in_window = std::max(
+              1, static_cast<int>(std::lround(std::max(o.tau_win_s, control_period) /
+              control_period)));
+          }
+          const int win = o.tau_win_s > 0.0
+            ? std::max(1, static_cast<int>(std::lround(o.tau_win_s / control_period))) : 1;
+          const bool have_win = static_cast<int>(hist_meas.size()) > win;
+          if (o.tau_win_s > 0.0 ? have_win : has_prev_speed_sample) {
+            const size_t n_h = hist_meas.size();
+            double drive = prev_speed_cmd - prev_speed_meas;
+            double vdot = (x(3) - prev_speed_meas) / control_period;
+            if (o.tau_win_s > 0.0) {
+              // A 2.77 s lag moves the speed by 2% in one 0.05 s tick: the
+              // single-tick difference is mostly odometry noise. Averaging the
+              // command error over a window and differencing the speed across
+              // the same window puts real signal on both sides of the ratio.
+              double sum_drive = 0.0;
+              for (size_t i = n_h - 1 - win; i + 1 < n_h; ++i) {
+                sum_drive += hist_cmd[i] - hist_meas[i];
+              }
+              drive = sum_drive / win;
+              vdot = (hist_meas[n_h - 1] - hist_meas[n_h - 1 - win]) / (win * control_period);
+            }
+            const double av = std::abs(vdot);
+            const bool braking = drive < 0.0;
+            double & ceiling = vdot > 0.0 ? vdot_ceiling : vdot_ceiling_decel;
+            ceiling = std::max(0.05, std::max(o.ceiling_decay * ceiling, av));
+            clamp_in_window = std::max(0, clamp_in_window - 1);
+            const bool saturated = (o.tau_sat_gate && (av > 0.9 * ceiling || av < o.tau_vdot_min * ceiling)) ||
+              (o.cmd_antiwindup && clamp_in_window > 0);
+            if (std::abs(drive) > 0.5 && drive * vdot > 0.0 && av > 1e-3 && !saturated) {
               const double sample = std::clamp(drive / vdot, 0.0, 5.0);
               if (std::isfinite(sample) && sample > 0.0) {
-                if (o.tau_auto_split && drive < 0.0) {
-                  tau_estimate_decel = tau_samples_decel > 0
-                    ? 0.98 * tau_estimate_decel + 0.02 * sample : sample;
-                  ++tau_samples_decel;
-                  if (tau_samples_decel >= 50 &&
-                    std::abs(tau_estimate_decel - tau_cfg_decel) > 0.02)
-                  {
-                    tau_cfg_decel = tau_estimate_decel;
-                  }
+                double & est = (o.tau_auto_split && braking) ? tau_estimate_decel : tau_estimate;
+                int & n = (o.tau_auto_split && braking) ? tau_samples_decel : tau_samples;
+                if (o.tau_ls) {
+                  // Forgetting least squares on vdot = drive/tau: weights each
+                  // sample by drive^2, so a near-zero vdot cannot dominate the
+                  // way an average of drive/vdot ratios does.
+                  double & sdd = (o.tau_auto_split && braking) ? ls_dd_decel : ls_dd;
+                  double & sdv = (o.tau_auto_split && braking) ? ls_dv_decel : ls_dv;
+                  sdd = 0.99 * sdd + drive * drive;
+                  sdv = 0.99 * sdv + drive * vdot;
+                  est = std::clamp(sdd / sdv, 0.0, 5.0);
                 } else {
-                  tau_estimate = tau_samples > 0 ? 0.98 * tau_estimate + 0.02 * sample : sample;
-                  ++tau_samples;
-                  if (tau_samples >= 50 && std::abs(tau_estimate - tau_cfg) > 0.02) {
-                    tau_cfg = tau_estimate;
-                    if (!o.tau_auto_split) {tau_cfg_decel = tau_cfg;}
-                  }
+                  est = n > 0 ? 0.98 * est + 0.02 * sample : sample;
                 }
+                ++n;
+                const bool dec = o.tau_auto_split && braking;
+                double & cfg = dec ? tau_cfg_decel : tau_cfg;
+                double & last_t = dec ? last_rewrite_t_decel : last_rewrite_t;
+                int & rewrites = dec ? tau_rewrites_decel : tau_rewrites;
+                if (o.tau_window > 0.0) {
+                  const double prior = dec ? tau_prior_decel : tau_prior;
+                  est = std::clamp(est, prior / o.tau_window, prior * o.tau_window);
+                }
+                // Rate limit: a lag constant that is one number today cannot be
+                // triple that a second later, so a step that big is evidence of
+                // a bad window, not of a changed drivetrain.
+                if (o.tau_rate > 1.0) {
+                  est = std::clamp(est, cfg / o.tau_rate, cfg * o.tau_rate);
+                }
+                if (n >= 50 && std::abs(est - cfg) > o.tau_deadband &&
+                  t - last_t >= o.tau_min_rewrite_s)
+                {
+                  cfg = est;
+                  last_t = t;
+                  ++rewrites;
+                  if (!o.tau_auto_split) {tau_cfg_decel = tau_cfg;}
+                }
+                tau_peak = std::max(tau_peak, tau_cfg);
+                tau_peak_decel = std::max(tau_peak_decel, tau_cfg_decel);
               }
             }
           }
@@ -433,7 +581,7 @@ int main(int argc, char ** argv)
                 << x(3) << "," << x(4) << "," << x(5) << "," << applied_steer << ","
                 << applied_speed << "," << u_prev(1) << "," << e_y << "," << np.vx << ","
                 << np.kappa << "," << x(3) * x(5) << "," << beta << ","
-                << (has_solved ? 1 : 0) << "\n";
+                << (has_solved ? 1 : 0) << "," << tau_cfg << "," << tau_cfg_decel << "\n";
         }
       }
       if (last_steer * steer_cmd < 0.0) {++sign_flips;}
@@ -448,11 +596,19 @@ int main(int argc, char ** argv)
       delayed_speed.erase(delayed_speed.begin());
     }
 
-    // Plant speed loop: first-order lag toward the commanded speed, bounded by
-    // the vehicle's physical longitudinal capability.
+    // Plant speed loop. "lag" is the idealised first-order lag; "pid" is CARLA's
+    // own cascaded Ackermann controller, stepped at the server rate.
     const double err = applied_speed - x(3);
     const double tau_p = (err < 0.0 && o.tau_plant_decel > 0.0) ? o.tau_plant_decel : o.tau_plant;
-    const double a_plant = std::clamp(err / tau_p, -o.plant_decel, o.plant_accel);
+    const double a_demand = std::clamp(err / tau_p, -o.plant_decel, o.plant_accel);
+    // Optional second pole: the torque the pedal asks for arrives with its own
+    // lag, which is the phase a single first-order lag does not have.
+    if (o.plant_act_tau > 0.0) {
+      a_actual += (a_demand - a_actual) * std::min(1.0, sim_dt / o.plant_act_tau);
+    } else {
+      a_actual = a_demand;
+    }
+    const double a_plant = a_actual;
     const State x_next = plant.integrateRk4(x, Input(applied_steer, a_plant), sim_dt);
     distance += std::hypot(x_next(0) - x(0), x_next(1) - x(1));
     x = x_next;
@@ -521,9 +677,12 @@ int main(int argc, char ** argv)
     "solver fail %d/%d | steer sign flips %d | distance %.0f m\n",
     max_ey, peak_alat, peak_beta * 180.0 / M_PI, spins, failures, cycles, sign_flips, distance);
   std::printf(
-    "  tau: accel %.2f (%d samples) / decel %.2f (%d samples) vs plant %.2f / %.2f\n",
+    "  tau: accel %.2f (%d samples) / decel %.2f (%d samples) vs plant %.2f / %.2f\n"
+    "  tau peak %.2f / %.2f | rewrites %d / %d | cmd step mean %.2f max %.2f km/h\n",
     tau_cfg, tau_samples, tau_cfg_decel, tau_samples_decel, o.tau_plant,
-    o.tau_plant_decel > 0.0 ? o.tau_plant_decel : o.tau_plant);
+    o.tau_plant_decel > 0.0 ? o.tau_plant_decel : o.tau_plant,
+    tau_peak, tau_peak_decel, tau_rewrites, tau_rewrites_decel,
+    ripple_n > 0 ? ripple_sum / ripple_n : 0.0, ripple_max);
 
   std::printf(
     "\n  corner  apex_s  v_ref  v_car  overspeed  brake_late_m  ref_brake_m  car_brake_m"

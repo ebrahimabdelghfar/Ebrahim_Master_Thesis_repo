@@ -2,9 +2,11 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <ackermann_msgs/msg/ackermann_drive_stamped.hpp>
 #include <nav_msgs/msg/odometry.hpp>
@@ -377,44 +379,126 @@ private:
   //   plant 2.77/5.0  shared -> 13 spins, 41.7 m/s^2   split -> 0, 12.8
   //   plant 0.5/2.77  shared -> 11 spins, 59.4 m/s^2   split -> 0,  7.8
   // On a symmetric plant the two estimates coincide and nothing changes.
+  //
+  // Three things keep the identification from measuring itself. Offline over
+  // 250 s on traj_race_cl.csv against a plant of true lag 2.77 s with 0.10 m/s
+  // of speed noise (`scratchpad/corner.cpp`), settled tau / parameter rewrites
+  // / mean cycle-to-cycle command step:
+  //   single tick, EMA of ratios   3.38   1642   6.16 km/h
+  //   1 s window + least squares   2.90      7   3.44 km/h
+  // and against a plant of true lag 0.5 s, 1.12 -> 0.60 s.
+  //
+  // 1. A 2.77 s lag moves the speed by under 2% in one 0.05 s control period,
+  //    so a single-tick difference is mostly odometry noise. The window is
+  //    kDrivetrainTauWindowS of command error against the speed change over
+  //    the same span.
+  // 2. tau enters as drive/vdot, and averaging that ratio lets the samples with
+  //    the smallest (noisiest) vdot dominate. Forgetting least squares on
+  //    vdot = drive/tau weights each sample by drive^2 instead.
+  // 3. A torque-limited plant clips vdot while the tau term keeps pushing the
+  //    command further ahead - drive/vdot then measures the limiter, and the
+  //    result feeds straight back into the command. The published speed is
+  //    therefore clamped to what the drivetrain has been seen to reach within
+  //    one lag constant, and no sample is taken while that clamp is active.
+  //    Against the same plant torque-limited to 1.0 m/s^2, tau ran to the 5 s
+  //    ceiling without this and settles at 3.46 s with it.
   void estimateDrivetrainTau(
     double speed_meas, double speed_cmd, double configured_tau,
     double configured_tau_decel, double control_period_s, bool driving)
   {
     if (!driving) {
-      has_prev_speed_sample_ = false;
+      speed_cmd_history_.clear();
+      speed_meas_history_.clear();
       return;
     }
-    if (has_prev_speed_sample_ && control_period_s > 0.0) {
-      const double drive = prev_speed_cmd_ - prev_speed_meas_;
-      const double vdot = (speed_meas - prev_speed_meas_) / control_period_s;
-      // Only informative while the loop is actually being driven and is
-      // responding in the commanded direction.
-      if (std::abs(drive) > 0.5 && drive * vdot > 0.0 && std::abs(vdot) > 1e-3) {
-        const double tau_sample = std::clamp(drive / vdot, 0.0, kDrivetrainTauMax);
-        if (std::isfinite(tau_sample) && tau_sample > 0.0) {
-          const bool braking = drive < 0.0;
-          double & estimate = braking ? tau_estimate_decel_ : tau_estimate_;
-          int & samples = braking ? tau_samples_decel_ : tau_samples_;
-          estimate = (samples > 0) ? 0.98 * estimate + 0.02 * tau_sample : tau_sample;
-          ++samples;
-          applyDrivetrainTau(
-            braking ? "limits.drivetrain_tau_decel_s" : "limits.drivetrain_tau_s",
-            braking ? configured_tau_decel : configured_tau, estimate, samples,
-            control_period_s);
-        }
-      }
+    if (control_period_s <= 0.0) {
+      return;
     }
-    prev_speed_cmd_ = speed_cmd;
-    prev_speed_meas_ = speed_meas;
-    has_prev_speed_sample_ = true;
+    speed_cmd_history_.push_back(speed_cmd);
+    speed_meas_history_.push_back(speed_meas);
+    const size_t win = std::max<size_t>(
+      1, static_cast<size_t>(std::lround(kDrivetrainTauWindowS / control_period_s)));
+    if (speed_meas_history_.size() > win + 1) {
+      speed_cmd_history_.erase(speed_cmd_history_.begin());
+      speed_meas_history_.erase(speed_meas_history_.begin());
+    }
+    if (clamp_hold_cycles_ > 0) {
+      --clamp_hold_cycles_;
+    }
+    if (speed_meas_history_.size() <= win) {
+      return;
+    }
+    const size_t n = speed_meas_history_.size();
+    double sum_drive = 0.0;
+    for (size_t i = n - 1 - win; i + 1 < n; ++i) {
+      sum_drive += speed_cmd_history_[i] - speed_meas_history_[i];
+    }
+    const double drive = sum_drive / static_cast<double>(win);
+    const double span_s = static_cast<double>(win) * control_period_s;
+    const double vdot = (speed_meas_history_[n - 1] - speed_meas_history_[n - 1 - win]) / span_s;
+    updateAccelCeiling(vdot);
+    // Only informative while the loop is actually being driven, is responding
+    // in the commanded direction and is not against the command clamp.
+    if (std::abs(drive) <= 0.5 || drive * vdot <= 0.0 || std::abs(vdot) <= 1e-3 ||
+      clamp_hold_cycles_ > 0)
+    {
+      return;
+    }
+    const bool braking = drive < 0.0;
+    double & s_dd = braking ? tau_ls_dd_decel_ : tau_ls_dd_;
+    double & s_dv = braking ? tau_ls_dv_decel_ : tau_ls_dv_;
+    s_dd = kDrivetrainTauForgetting * s_dd + drive * drive;
+    s_dv = kDrivetrainTauForgetting * s_dv + drive * vdot;
+    if (!(std::abs(s_dv) > 1e-9)) {
+      return;
+    }
+    const double estimate = std::clamp(s_dd / s_dv, 0.0, kDrivetrainTauMax);
+    if (!std::isfinite(estimate) || estimate <= 0.0) {
+      return;
+    }
+    double & held = braking ? tau_estimate_decel_ : tau_estimate_;
+    int & samples = braking ? tau_samples_decel_ : tau_samples_;
+    held = estimate;
+    ++samples;
+    applyDrivetrainTau(
+      braking ? "limits.drivetrain_tau_decel_s" : "limits.drivetrain_tau_s",
+      braking ? configured_tau_decel : configured_tau, held, samples,
+      control_period_s);
+  }
+
+  // Highest acceleration the drivetrain has actually delivered lately, per
+  // direction. Seeded from the planner's own limits and decayed so a stronger
+  // surface or a lighter load is picked up again; the decay is slow enough
+  // (~140 control periods) that one quiet straight does not shrink it.
+  void updateAccelCeiling(double vdot)
+  {
+    double & ceiling = vdot > 0.0 ? accel_ceiling_ : decel_ceiling_;
+    ceiling = std::max(0.05, std::max(kAccelCeilingDecay * ceiling, std::abs(vdot)));
+  }
+
+  // Anti-windup: a speed the drivetrain cannot reach within one lag constant
+  // is not a setpoint, and the error it leaves is what corrupts the lag
+  // identification. Returns the command to publish and records whether the
+  // limit bound.
+  double limitUnreachableSpeed(double speed_cmd, double speed_now, double reach_s)
+  {
+    const double limited = std::clamp(
+      speed_cmd, speed_now - decel_ceiling_ * reach_s, speed_now + accel_ceiling_ * reach_s);
+    if (std::abs(limited - speed_cmd) > 1e-9) {
+      clamp_hold_cycles_ = kDrivetrainTauClampHoldCycles;
+    }
+    return limited;
   }
 
   // Writes the settled estimate back into limits.drivetrain_tau_s, or reports
-  // it when limits.drivetrain_tau_auto is off. Held until the EMA has enough
-  // samples to be a time constant rather than one noisy difference, and
-  // rewritten only on a change worth acting on so the parameter does not
-  // dither under the speed command it is itself shaping.
+  // it when limits.drivetrain_tau_auto is off. Held until the fit has enough
+  // samples to be a time constant rather than one noisy window, and rewritten
+  // only on a change worth acting on so the parameter does not dither under
+  // the speed command it is itself shaping. The rewrite is also rate limited
+  // in both size and frequency: every rewrite moves the published speed by the
+  // planned acceleration times the change, so a jumpy parameter is a jumpy
+  // command (measured offline: 1642 rewrites and 6.16 km/h of mean
+  // cycle-to-cycle command step, against 7 and 3.44 with the limits on).
   void applyDrivetrainTau(
     const char * param, double configured_tau, double estimate, int samples,
     double control_period_s)
@@ -439,7 +523,15 @@ private:
     if (std::abs(estimate - configured_tau) <= kDrivetrainTauDeadband) {
       return;
     }
-    set_parameter(rclcpp::Parameter(param, estimate));
+    const rclcpp::Time stamp = now();
+    double & last_rewrite = std::strstr(param, "decel") ? last_tau_rewrite_decel_ : last_tau_rewrite_;
+    if (last_rewrite > 0.0 && stamp.seconds() - last_rewrite < kDrivetrainTauMinRewriteS) {
+      return;
+    }
+    const double written = std::clamp(
+      estimate, configured_tau / kDrivetrainTauMaxRatio, configured_tau * kDrivetrainTauMaxRatio);
+    last_rewrite = stamp.seconds();
+    set_parameter(rclcpp::Parameter(param, written));
     // RCLCPP_INFO(
     //   get_logger(),
     //   "%s %.2f -> %.2f s from %d measured samples of the speed loop "
@@ -592,8 +684,15 @@ private:
     const double drivetrain_tau_decel_s =
       tau_decel_param >= 0.0 ? tau_decel_param : drivetrain_tau_s;
     const double tau_used = out.u0(1) < 0.0 ? drivetrain_tau_decel_s : drivetrain_tau_s;
+    if (accel_ceiling_ <= 0.0) {
+      accel_ceiling_ = get_parameter("limits.accel_max").as_double();
+      decel_ceiling_ = get_parameter("limits.decel_max").as_double();
+    }
     const double speed_cmd = std::clamp(
-      x0(3) + out.u0(1) * (control_period_s + tau_used), speed_min, speed_max);
+      limitUnreachableSpeed(
+        x0(3) + out.u0(1) * (control_period_s + tau_used), x0(3),
+        control_period_s + tau_used),
+      speed_min, speed_max);
     estimateDrivetrainTau(
       current_state_(3), speed_cmd, drivetrain_tau_s, drivetrain_tau_decel_s,
       control_period_s, standalone_mode_ || start_working_);
@@ -641,19 +740,37 @@ private:
   // Peak lateral acceleration of the last ACCEPTED identified tire set; 0 until
   // the first mpc/update_params, when limits.lateral_accel_max alone applies.
   double identified_grip_ceiling_{0.0};
-  double prev_speed_cmd_{0.0};
-  double prev_speed_meas_{0.0};
+  std::vector<double> speed_cmd_history_;
+  std::vector<double> speed_meas_history_;
   double tau_estimate_{0.0};
   double tau_estimate_decel_{0.0};
+  double tau_ls_dd_{0.0};
+  double tau_ls_dv_{0.0};
+  double tau_ls_dd_decel_{0.0};
+  double tau_ls_dv_decel_{0.0};
   int tau_samples_{0};
   int tau_samples_decel_{0};
-  bool has_prev_speed_sample_{false};
-  // Enough samples for the EMA to be a time constant rather than one noisy
-  // difference; a deadband so the parameter does not dither under the command
-  // it is itself shaping; a ceiling so a near-zero vdot cannot produce one.
+  double accel_ceiling_{0.0};
+  double decel_ceiling_{0.0};
+  int clamp_hold_cycles_{0};
+  double last_tau_rewrite_{0.0};
+  double last_tau_rewrite_decel_{0.0};
+  // Enough samples for the fit to be a time constant rather than one noisy
+  // window; a deadband so the parameter does not dither under the command it
+  // is itself shaping; a ceiling so a near-zero vdot cannot produce one.
   static constexpr int kDrivetrainTauMinSamples = 50;
   static constexpr double kDrivetrainTauDeadband = 0.02;
   static constexpr double kDrivetrainTauMax = 5.0;
+  // Window long enough to move the speed well clear of the odometry noise,
+  // short enough to stay inside one straight.
+  static constexpr double kDrivetrainTauWindowS = 1.0;
+  static constexpr double kDrivetrainTauForgetting = 0.99;
+  // A drivetrain lag does not triple in a second, and one rewrite per second
+  // is as fast as a 2.77 s constant can carry information.
+  static constexpr double kDrivetrainTauMaxRatio = 1.2;
+  static constexpr double kDrivetrainTauMinRewriteS = 1.0;
+  static constexpr double kAccelCeilingDecay = 0.995;
+  static constexpr int kDrivetrainTauClampHoldCycles = 20;
   std::unique_ptr<DebugPublisher> debug_pub_;
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
