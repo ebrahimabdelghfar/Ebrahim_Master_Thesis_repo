@@ -43,6 +43,9 @@ struct Opts
   double dt_min{0.02};
   double dt_max{0.07};
   double horizon_distance{5.5};
+  bool adaptive_distance{false};
+  double distance_gain{1.0};
+  double distance_curvature_gain{0.0};
   double control_rate{20.0};
   double q_ey{10.0}, q_epsi{5.0}, q_vx{100.0}, q_vy{0.0}, q_r{100.0};
   double r_steer{10.0}, r_accel{1.0};
@@ -90,6 +93,7 @@ struct Opts
   // supplies the phase lag a pure first-order lag cannot have. 0 = off.
   double plant_act_tau{0.0};
   double odom_noise{0.0};        // m/s, 1-sigma on the reported vx
+  int seed{12345};               // odometry-noise realization
   // Candidate fix: low-pass the acceleration that gets multiplied by the
   // drivetrain lag. 0 = off (current shipped behaviour).
   double lead_lpf{0.0};
@@ -204,6 +208,9 @@ int main(int argc, char ** argv)
   o.dt_min = arg(a, "--dt-min", o.dt_min);
   o.dt_max = arg(a, "--dt-max", o.dt_max);
   o.horizon_distance = arg(a, "--horizon-distance", o.horizon_distance);
+  o.adaptive_distance = arg(a, "--adaptive-distance", o.adaptive_distance ? 1 : 0) != 0;
+  o.distance_gain = arg(a, "--distance-gain", o.distance_gain);
+  o.distance_curvature_gain = arg(a, "--distance-curv-gain", o.distance_curvature_gain);
   o.control_rate = arg(a, "--rate", o.control_rate);
   o.q_ey = arg(a, "--q-ey", o.q_ey);
   o.q_epsi = arg(a, "--q-epsi", o.q_epsi);
@@ -253,6 +260,7 @@ int main(int argc, char ** argv)
   o.solve_on_new_odom = arg(a, "--solve-on-new-odom", o.solve_on_new_odom ? 1 : 0) != 0;
   o.plant_act_tau = arg(a, "--plant-act-tau", o.plant_act_tau);
   o.odom_noise = arg(a, "--odom-noise", o.odom_noise);
+  o.seed = static_cast<int>(arg(a, "--seed", o.seed));
   o.lead_lpf = arg(a, "--lead-lpf", o.lead_lpf);
   o.cmd_base = argStr(a, "--cmd-base", o.cmd_base);
 
@@ -273,6 +281,9 @@ int main(int argc, char ** argv)
   cfg.dt_min = std::max(o.dt_min, control_period);   // parameter_manager does this
   cfg.dt_max = std::max(o.dt_max, cfg.dt_min);
   cfg.horizon_distance_m = o.horizon_distance;
+  cfg.adaptive_distance = o.adaptive_distance;
+  cfg.distance_gain = o.distance_gain;
+  cfg.distance_curvature_gain = o.distance_curvature_gain;
   cfg.cost.Q << o.q_ey, o.q_epsi, o.q_vx, o.q_vy, o.q_r;
   cfg.cost.Qf = cfg.cost.Q;
   cfg.cost.R << o.r_steer, o.r_accel;
@@ -397,13 +408,20 @@ int main(int argc, char ** argv)
   bool has_prev_speed_sample = false;
   double prev_speed_cmd = 0.0, prev_speed_meas = 0.0;
 
-  std::mt19937 rng(12345);
+  std::mt19937 rng(static_cast<unsigned>(o.seed));
   std::normal_distribution<double> noise(0.0, 1.0);
   double a_actual = 0.0;        // plant acceleration behind the actuator pole
   double lead_accel = 0.0;      // low-passed acceleration feeding the tau lead
 
   double max_ey = 0.0, peak_alat = 0.0, peak_beta = 0.0, distance = 0.0;
   int spins = 0, failures = 0, cycles = 0;
+  // Horizon-length scoring: dt is what the adaptive preview law moves, solve
+  // time is what it costs, and RMS e_y is the accuracy max|e_y| alone hides.
+  double dt_sum = 0.0, dt_min_seen = 1e9, dt_max_seen = 0.0;
+  double solve_sum = 0.0, solve_max = 0.0;
+  std::vector<double> solve_all;
+  double ey_sq_sum = 0.0;
+  int ey_n = 0;
   bool in_spin = false;
   int sign_flips = 0;
   double last_steer = 0.0;
@@ -433,6 +451,12 @@ int main(int argc, char ** argv)
           horizon_s > 0.0 ? ctrl.predictState(odom_state, u_prev, horizon_s) : odom_state;
         const MpcOutput out = ctrl.computeCommand(x0, u_prev, ref);
         ++cycles;
+        dt_sum += out.dt_used;
+        dt_min_seen = std::min(dt_min_seen, out.dt_used);
+        dt_max_seen = std::max(dt_max_seen, out.dt_used);
+        solve_sum += out.solve_time_ms;
+        solve_max = std::max(solve_max, out.solve_time_ms);
+        solve_all.push_back(out.solve_time_ms);
         if (!out.solved) {
           ++failures;                       // fallback: hold_last
         } else {
@@ -616,6 +640,8 @@ int main(int argc, char ** argv)
     const auto np = ref.nearestPoint(x(0), x(1));
     const double e_y = (x(1) - np.y) * std::cos(np.psi) - (x(0) - np.x) * std::sin(np.psi);
     max_ey = std::max(max_ey, std::abs(e_y));
+    ey_sq_sum += e_y * e_y;
+    ++ey_n;
     peak_alat = std::max(peak_alat, std::abs(x(3) * x(5)));
     const double beta = std::atan2(x(4), std::max(x(3), 0.1));
     peak_beta = std::max(peak_beta, std::abs(beta));
@@ -676,6 +702,19 @@ int main(int argc, char ** argv)
     "  max|e_y| %.2f m | peak a_lat %.2f m/s^2 | peak|beta| %.1f deg | spins %d | "
     "solver fail %d/%d | steer sign flips %d | distance %.0f m\n",
     max_ey, peak_alat, peak_beta * 180.0 / M_PI, spins, failures, cycles, sign_flips, distance);
+  {
+    std::vector<double> s = solve_all;
+    std::sort(s.begin(), s.end());
+    const double p95 = s.empty() ? 0.0 : s[static_cast<size_t>(0.95 * (s.size() - 1))];
+    std::printf(
+      "  horizon: adaptive %s gain %.2f s curv-gain %.1f m | dt mean %.4f min %.4f max %.4f s"
+      " | preview mean %.2f s | RMS e_y %.3f m | solve mean %.2f p95 %.2f max %.2f ms\n",
+      o.adaptive_distance ? "on" : "off", o.distance_gain, o.distance_curvature_gain,
+      cycles > 0 ? dt_sum / cycles : 0.0, cycles > 0 ? dt_min_seen : 0.0, dt_max_seen,
+      cycles > 0 ? o.N * dt_sum / cycles : 0.0,
+      ey_n > 0 ? std::sqrt(ey_sq_sum / ey_n) : 0.0,
+      cycles > 0 ? solve_sum / cycles : 0.0, p95, solve_max);
+  }
   std::printf(
     "  tau: accel %.2f (%d samples) / decel %.2f (%d samples) vs plant %.2f / %.2f\n"
     "  tau peak %.2f / %.2f | rewrites %d / %d | cmd step mean %.2f max %.2f km/h\n",

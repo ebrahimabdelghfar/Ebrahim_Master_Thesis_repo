@@ -38,6 +38,16 @@ struct MpcConfig
   double dt_min{0.02};
   double dt_max{0.08};
   double horizon_distance_m{8.0};
+  // Speed- and curvature-scheduled preview distance. When enabled the window
+  // is max(horizon_distance_m, distance_gain * vx) metres, divided by
+  // (1 + distance_curvature_gain * max|kappa| over that window), and dt is
+  // still clamped to [dt_min, dt_max] - so the reachable preview time is
+  // [N*dt_min, N*dt_max] regardless of the gains. Note distance_gain has units
+  // of seconds: on a straight the law reduces to a constant preview TIME of
+  // distance_gain, which is the scheduling the AMPC literature recommends.
+  bool adaptive_distance{false};
+  double distance_gain{1.0};
+  double distance_curvature_gain{0.0};
   MpcCostWeights cost;
   MpcLimits limits;
 };
@@ -126,7 +136,9 @@ public:
   }
 
 private:
-  double computeAdaptiveDt(const ReferencePoint & nearest) const;
+  double computeAdaptiveDt(
+    const ReferencePoint & nearest, double v0,
+    const ReferenceTrajectoryHandler & ref_handler) const;
 
   // The dynamically feasible operating point for `ref`: the state the vehicle
   // must actually be in to hold this speed and curvature, including the

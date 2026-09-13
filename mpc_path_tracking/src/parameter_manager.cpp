@@ -37,6 +37,9 @@ void ParameterManager::declareAll()
   node_->declare_parameter<double>("horizon.horizon_distance_m", 8.0);
   node_->declare_parameter<double>("horizon.control_rate_hz", 20.0);
   node_->declare_parameter<bool>("horizon.dt_adaptive", true);
+  node_->declare_parameter<bool>("horizon.adaptive_distance", false);
+  node_->declare_parameter<double>("horizon.distance_gain", 1.0);
+  node_->declare_parameter<double>("horizon.distance_curvature_gain", 0.0);
 
   // Cost matrices (diagonal weights)
   node_->declare_parameter<std::vector<double>>("cost.Q", {50.0, 30.0, 10.0, 1.0, 1.0});
@@ -182,6 +185,9 @@ void ParameterManager::printAll() const
   RCLCPP_INFO(log, "  dt_max                    : %.4f s", node_->get_parameter("horizon.dt_max").as_double());
   RCLCPP_INFO(log, "  dt_adaptive               : %s", node_->get_parameter("horizon.dt_adaptive").as_bool() ? "true" : "false");
   RCLCPP_INFO(log, "  horizon_distance_m        : %.2f m", node_->get_parameter("horizon.horizon_distance_m").as_double());
+  RCLCPP_INFO(log, "  adaptive_distance         : %s", node_->get_parameter("horizon.adaptive_distance").as_bool() ? "true" : "false");
+  RCLCPP_INFO(log, "  distance_gain             : %.2f s", node_->get_parameter("horizon.distance_gain").as_double());
+  RCLCPP_INFO(log, "  distance_curvature_gain   : %.2f m", node_->get_parameter("horizon.distance_curvature_gain").as_double());
   RCLCPP_INFO(log, "  control_rate_hz           : %.1f Hz", node_->get_parameter("horizon.control_rate_hz").as_double());
 
   // --- Cost Matrices ---
@@ -315,6 +321,9 @@ MpcConfig ParameterManager::mpcConfig() const
   c.dt_min = node_->get_parameter("horizon.dt_min").as_double();
   c.dt_max = node_->get_parameter("horizon.dt_max").as_double();
   c.horizon_distance_m = node_->get_parameter("horizon.horizon_distance_m").as_double();
+  c.adaptive_distance = node_->get_parameter("horizon.adaptive_distance").as_bool();
+  c.distance_gain = node_->get_parameter("horizon.distance_gain").as_double();
+  c.distance_curvature_gain = node_->get_parameter("horizon.distance_curvature_gain").as_double();
 
   // dt_min must never be shorter than the outer control period: a shorter
   // internal step means the solve assumes it gets to replan sooner than the
