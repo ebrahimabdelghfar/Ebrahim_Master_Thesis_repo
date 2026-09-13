@@ -129,6 +129,11 @@ public:
   // spacing (2 m on traj_race_cl.csv) behind the vehicle.
   double projectedArcLength(double x, double y) const;
 
+  // Largest |kappa| on the raceline over `distance` metres of arc length
+  // starting at `s0`, sampled every `step` m and wrapping with the track.
+  // Used to shorten the MPC's preview window before a corner.
+  double maxAbsCurvatureAhead(double s0, double distance, double step = 1.0) const;
+
 private:
   ReferencePoint interpolateAtArcLength(double s) const;
 

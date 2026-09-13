@@ -15,11 +15,25 @@ MpcController::MpcController(
 {
 }
 
-double MpcController::computeAdaptiveDt(const ReferencePoint & nearest) const
+double MpcController::computeAdaptiveDt(
+  const ReferencePoint & nearest, double v0,
+  const ReferenceTrajectoryHandler & ref_handler) const
 {
   const double v_floor = 0.5;
   const double v_ref = std::max(nearest.vx, v_floor);
-  const double dt = config_.horizon_distance_m / (static_cast<double>(config_.N) * v_ref);
+  double distance = config_.horizon_distance_m;
+
+  if (config_.adaptive_distance) {
+    // Schedule the preview window on the speed the car actually carries, not
+    // on the reference's: when the speed loop lags the profile the reference
+    // speed is the one number that is certainly wrong.
+    const double v = std::max(std::max(v0, 0.0), v_floor);
+    distance = std::max(distance, config_.distance_gain * v);
+    const double kappa = ref_handler.maxAbsCurvatureAhead(nearest.s, distance);
+    distance /= 1.0 + config_.distance_curvature_gain * kappa;
+  }
+
+  const double dt = distance / (static_cast<double>(config_.N) * v_ref);
   return std::clamp(dt, config_.dt_min, config_.dt_max);
 }
 
@@ -132,7 +146,7 @@ MpcOutput MpcController::computeCommand(
   }
 
   const ReferencePoint nearest = ref_handler.nearestPoint(x0(0), x0(1));
-  const double dt = computeAdaptiveDt(nearest);
+  const double dt = computeAdaptiveDt(nearest, x0(3), ref_handler);
   // Walk the horizon from the car's ACTUAL speed, ramped toward the reference
   // at the input limits - see ReferenceTrajectoryHandler::buildHorizon. Using
   // vx_ref directly places the window where the car cannot be whenever the

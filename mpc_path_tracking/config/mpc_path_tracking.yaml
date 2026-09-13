@@ -20,7 +20,23 @@ mpc_path_tracking:
       dt_min: 0.02                 # s, auto-raised to 1/control_rate_hz at startup
       dt_max: 0.07                 # s
       dt_adaptive: false            # dt = clamp(horizon_distance_m / (N * max(vx_ref, v_floor)), dt_min, dt_max)
-      horizon_distance_m: 5.5
+      horizon_distance_m: 5.5      # fixed preview window, and the floor below
+      # Speed- and curvature-scheduled preview window:
+      #   L = max(horizon_distance_m, distance_gain*vx) / (1 + distance_curvature_gain*|kappa|)
+      # with |kappa| the worst curvature within L m ahead, then dt = L/(N*vx_ref)
+      # clamped to [dt_min, dt_max]. On a straight this is a constant preview
+      # TIME of distance_gain seconds; N*dt_min = 0.40 s and N*dt_max = 1.40 s
+      # bracket what any gain can reach.
+      # Tuned on traj_race_cl.csv, 250 s, 5 noise seeds at mu 0.7. Against the
+      # fixed 1.00 s window this is the same tracking error (max|e_y| 0.716 vs
+      # 0.714 m, RMS 0.208 vs 0.207) for 11 % fewer steering sign flips (52.6
+      # vs 59.4); under 3 ticks of transport delay, 83 vs 129. The gain alone
+      # does NOT get there: at 2.4 s with no curvature term the flips fall the
+      # same amount but max|e_y| goes to 0.768 m and RMS to 0.232. The
+      # curvature term is what pays for the long straight-line window.
+      adaptive_distance: true
+      distance_gain: 1.4            # s of preview on a straight (dt = gain/N)
+      distance_curvature_gain: 40.0 # m; halves the window at kappa 0.025
       control_rate_hz: 20.0
 
     # ---------------- Cost matrices ----------------

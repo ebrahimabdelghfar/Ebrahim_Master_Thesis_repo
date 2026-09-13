@@ -255,6 +255,20 @@ ReferencePoint ReferenceTrajectoryHandler::interpolateAtArcLength(double s) cons
   return out;
 }
 
+double ReferenceTrajectoryHandler::maxAbsCurvatureAhead(
+  double s0, double distance, double step) const
+{
+  if (waypoints_.empty()) {
+    return 0.0;
+  }
+  const double h = std::max(step, 0.1);
+  double worst = 0.0;
+  for (double d = 0.0; d <= distance; d += h) {
+    worst = std::max(worst, std::abs(interpolateAtArcLength(s0 + d).kappa));
+  }
+  return worst;
+}
+
 std::vector<ReferencePoint> ReferenceTrajectoryHandler::buildHorizon(
   double x, double y, double psi_hint, int horizon_steps, double dt,
   double v0, double accel_max, double decel_max) const

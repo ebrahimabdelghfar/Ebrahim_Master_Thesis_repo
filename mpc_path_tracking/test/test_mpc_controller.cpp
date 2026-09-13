@@ -199,3 +199,51 @@ TEST(MpcController, ReportsInfeasibleReferenceStages)
   const auto out = ctrl->computeCommand(x, Input::Zero(), ref);
   EXPECT_GT(out.infeasible_ref_stages, 0);
 }
+
+// The speed- and curvature-scheduled preview window. On a constant-radius
+// circle the law is exercised end to end through dt_used: the gain sets the
+// preview TIME on a straight, the curvature term shortens it, and dt_min /
+// dt_max still bracket the result whatever the gains say.
+TEST(MpcController, AdaptivePreviewDistanceSchedulesDtOnSpeedAndCurvature)
+{
+  const double radius = 200.0;     // kappa = 0.005, gentle enough to solve
+  const double vx = 20.0;
+
+  ReferenceTrajectoryHandler ref;
+  ref.setWaypoints(makeCircle(radius, vx, 800));
+  State x;
+  x << radius, 0.0, M_PI_2, vx, 0.0, vx / radius;
+
+  MpcConfig fixed = testConfig();
+  fixed.dt_max = 0.20;             // headroom, so the clamp is not the answer
+  auto ctrl_fixed = makeController(fixed);
+  const auto out_fixed = ctrl_fixed->computeCommand(x, Input::Zero(), ref);
+  ASSERT_TRUE(out_fixed.solved) << out_fixed.status;
+  // 5.5 m over 20 stages at 20 m/s wants 0.014 s, so the floor answers.
+  EXPECT_NEAR(out_fixed.dt_used, fixed.dt_min, 1e-9);
+
+  // gain 2.0 s of preview over N = 20 stages is dt = 0.10 s, curvature off.
+  MpcConfig adaptive = fixed;
+  adaptive.adaptive_distance = true;
+  adaptive.distance_gain = 2.0;
+  auto ctrl_adaptive = makeController(adaptive);
+  const auto out_adaptive = ctrl_adaptive->computeCommand(x, Input::Zero(), ref);
+  ASSERT_TRUE(out_adaptive.solved) << out_adaptive.status;
+  EXPECT_NEAR(out_adaptive.dt_used, 0.10, 1e-6);
+
+  // 1 + 100 * 0.005 = 1.5, so the same window comes back 1/1.5 as long.
+  MpcConfig curved = adaptive;
+  curved.distance_curvature_gain = 100.0;
+  auto ctrl_curved = makeController(curved);
+  const auto out_curved = ctrl_curved->computeCommand(x, Input::Zero(), ref);
+  ASSERT_TRUE(out_curved.solved) << out_curved.status;
+  EXPECT_NEAR(out_curved.dt_used, 0.10 / 1.5, 1e-6);
+
+  // dt_max wins over any gain.
+  MpcConfig capped = adaptive;
+  capped.dt_max = 0.06;
+  auto ctrl_capped = makeController(capped);
+  const auto out_capped = ctrl_capped->computeCommand(x, Input::Zero(), ref);
+  ASSERT_TRUE(out_capped.solved) << out_capped.status;
+  EXPECT_NEAR(out_capped.dt_used, 0.06, 1e-9);
+}
