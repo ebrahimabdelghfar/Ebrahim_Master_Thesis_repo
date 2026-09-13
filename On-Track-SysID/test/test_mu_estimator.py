@@ -129,6 +129,24 @@ def test_survives_sensor_noise():
     assert out['mu_f'] == pytest.approx(mu, rel=0.15)
 
 
+@pytest.mark.parametrize('noise', [4.0, 8.0])
+def test_refuses_a_fit_that_undercuts_its_own_data(noise):
+    """Heavy sensor noise drags mu BELOW the forces already observed.
+
+    At 4x and 8x the nominal noise the fit returns 0.63 and 0.54 against a
+    true 1.05, and railed/utilisation_min/sigma_mu all pass it - sigma_mu is
+    a precision figure and gets *smaller* as the fit flattens. The only thing
+    that catches it is that mu*F_z, the model's own force ceiling, sits under
+    the measured peak.
+    """
+    states, accels = simulate(1.05, steer_amp=0.07, noise=noise)
+    out = estimate_mu(states, MODEL, CFG, DT, accels=accels)
+
+    assert out['front']['utilisation'] > 1.0
+    assert not out['ok_f']
+    assert 'below forces already observed' in out['front']['reason']
+
+
 def test_falls_back_to_kinematic_accelerations_without_an_imu():
     """f1tenth_simulator's /imu is a zeroed stub, so an all-zero accel buffer
     has to degrade to differentiated odometry rather than to garbage.

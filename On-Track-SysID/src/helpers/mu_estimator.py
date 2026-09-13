@@ -154,7 +154,13 @@ def _fit_axle(alpha, F_z, F_y, cfg, mu_floor):
     lin = np.abs(alpha) <= float(cfg.get('alpha_linear_max', 0.02))
     sel = lin if np.count_nonzero(lin) >= 10 else np.ones(n, dtype=bool)
     C0 = float(np.clip(np.sum(z[sel] * F_y[sel]) / max(np.sum(z[sel] ** 2), 1e-9), C_lo, C_hi))
-    mu0 = float(np.clip(max(mu_floor, np.max(np.abs(F_y / F_z))), mu_lo, mu_hi))
+    # Peak normalised axle force, by quantile rather than max: F_y carries the
+    # Savitzky-Golay derivative of the yaw rate, where one spike reads as grip.
+    # On synthetic data the fit itself shrugs a single spike off (soft_l1 plus
+    # the sign mask), so this mostly protects the utilisation gate below, which
+    # divides by it.
+    peak_ratio = float(np.quantile(np.abs(F_y / F_z), float(cfg.get('peak_quantile', 0.98))))
+    mu0 = float(np.clip(max(mu_floor, peak_ratio), mu_lo, mu_hi))
 
     def residual(p):
         return (brush_lateral_force(alpha, F_z, p[0], p[1]) - F_y) / F_z
@@ -174,7 +180,7 @@ def _fit_axle(alpha, F_z, F_y, cfg, mu_floor):
     except np.linalg.LinAlgError:
         sigma = np.array([np.inf, np.inf])
 
-    utilisation = float(np.max(np.abs(F_y) / (mu_hat * F_z)))
+    utilisation = peak_ratio / max(mu_hat, 1e-6)
     span = max(mu_hi - mu_lo, 1e-9)
     railed = min(mu_hat - mu_lo, mu_hi - mu_hat) / span < 1e-3
 
@@ -183,9 +189,17 @@ def _fit_axle(alpha, F_z, F_y, cfg, mu_floor):
                 'rmse': float(np.sqrt(np.mean(residual(sol.x) ** 2)))})
 
     util_min = float(cfg.get('utilisation_min', 0.40))
+    util_max = float(cfg.get('utilisation_max', 1.0))
     sigma_max = float(cfg.get('sigma_rel_max', 0.15))
     if railed:
         out['reason'] = f"mu={mu_hat:.3f} railed on mu_bounds - not identified by the data"
+    elif utilisation > util_max:
+        # mu*F_z is the model's own force ceiling, so a peak above it means the
+        # fit is not describing the data it was given. Measured driver is
+        # sensor noise: at 4x the nominal noise the fit returns 0.63 against a
+        # true 1.05 and every other gate still passes it.
+        out['reason'] = (f"peak grip utilisation {utilisation:.2f} > {util_max:.2f} - "
+                         f"mu={mu_hat:.3f} is below forces already observed, fit is inconsistent")
     elif utilisation < util_min:
         out['reason'] = (f"peak grip utilisation {utilisation:.2f} < {util_min:.2f} - "
                          "the tyre curve is still linear here, mu is not observable")

@@ -235,12 +235,16 @@ def _prior_weights(lam, F_y, n_samples, bounds):
 #                   C*atan() spans +/-C*pi/2, so C ~ 20 wraps the sine through
 #                   ~5 periods - the "tire curve" then changes sign 6 times over
 #                   alpha in [0, 0.4] rad and its Jacobian is meaningless.
-#   D  0.4 ..  2.0  peak friction coefficient (Fy = D*Fz). For the CARLA
-#                   asurt_fsai this should converge near 1.5, the PhysX
-#                   wheel tire_friction set in carla_interface_config.yaml.
+#   D  0.4 ..  4.0  peak friction coefficient (Fy = D*Fz). For the CARLA
+#                   asurt_fsai this should converge near 0.70 * the PhysX
+#                   wheel tire_friction set in carla_interface_config.yaml:
+#                   the road surface applies that factor (see
+#                   benchmark_runner/friction_schedule.py), so tire_friction
+#                   1.5 realises an axle mu of 1.05, and the benchmark
+#                   scenarios' 1.0 realises 0.70.
 #   E -3.0 ..  1.0  curvature factor; the Magic Formula requires E <= 1, above
 #                   which the argument folds back and the curve is non-physical.
-PACEJKA_BOUNDS = ([4.0, 1.2, 0.4, -3.0], [20.0, 2.2, 2.0, 1.0])
+PACEJKA_BOUNDS = ([4.0, 1.2, 0.4, -3.0], [20.0, 2.2, 4.0, 1.0])
 
 
 def solve_pacejka(model, v_x, v_y, omega, delta):

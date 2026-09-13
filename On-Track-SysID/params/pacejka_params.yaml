@@ -115,10 +115,21 @@ friction_warm_start:
   # Fiala brush model to IMU-reconstructed axle forces to identify the PEAK
   # friction instead of the utilised one. NOT enabled: on 2026-09-01 it
   # returned mu 1.71/1.58 against the 1.00-1.05 measured on this vehicle and,
-  # because the warm start is a floor, that bias can only push D up. Re-enable
-  # only after the mass in models/SIM/SIM_pacejka.txt (240.0 against a
-  # measured 269.6 kg) and I_z are corrected - the axle forces are linear in
-  # both - and after the identified mu is checked against the measurement.
+  # because the warm start is a floor, that bias can only push D up.
+  #
+  # The mass this used to blame is not the explanation (and is already fixed:
+  # SIM_pacejka.txt reads 269.84 kg). mu is a force RATIO, and m cancels out
+  # of all of it except the I_z*r_dot term of F_yf:
+  #     F_yf/F_zf = [I_z*r_dot/m + l_r*a_y] / (cos(delta)*(g*l_r - a_x*h_cg))
+  # At I_z 51.1 and m 269.84 that term is ~4 % of the numerator, so a 12 %
+  # mass error moves mu under 1 % - it cannot produce 1.71 against 1.05.
+  #
+  # Nor is it sensor noise or IMU bias: both drag the fit DOWN (4x nominal
+  # noise gives 0.63 against a true 1.05), which is what utilisation_max now
+  # catches. The 1.71 over-read is still unreproduced on synthetic data.
+  # Re-enable only after it is reproduced against an exported identification
+  # buffer and the fit is checked on two surfaces - it must return 0.70 *
+  # tire_friction (0.70 at the benchmark's 1.0, 1.05 at 1.5).
   brush:
     min_samples: 200             # gated samples needed per axle before fitting
     alpha_min: 0.005             # rad — below this a sample carries no tyre information
@@ -131,9 +142,20 @@ friction_warm_start:
                                  # 0.40 is where d(mu)/d(force ratio) stops blowing up, and is
                                  # the same 40 % floor Acosta & Kanarachos report for
                                  # lateral-dynamics friction estimation.
+    utilisation_max: 1.0         # reject above this: mu*F_z is the model's own force ceiling,
+                                 # so a peak above it means the fit undercuts its own data.
+                                 # Sensor noise is what drives it - at 4x nominal noise the fit
+                                 # returns 0.63 against a true 1.05 and every other gate passes.
+    peak_quantile: 0.98          # quantile of |F_y/F_z| used as the peak, for the mu initial
+                                 # guess and the utilisation gate. Not max(): F_y carries the
+                                 # savgol derivative of the yaw rate, where one spike reads
+                                 # as grip.
     sigma_rel_max: 0.15          # reject when the fit's own sigma_mu/mu exceeds this
     C_bounds: [2000.0, 300000.0] # N/rad, per axle
-    mu_bounds: [0.2, 2.0]        # mirrors PACEJKA_BOUNDS' D range
+    mu_bounds: [0.2, 2.0]        # deliberately tighter than PACEJKA_BOUNDS' D (0.4 .. 4.0):
+                                 # this is a measured friction coefficient, not a curve-fit
+                                 # coefficient, and 2.0 is already twice anything the road
+                                 # surface can realise (0.70 * tire_friction).
     f_scale: 0.05                # soft_l1 robust loss scale, in units of F_y/F_z
     savgol_window: 21            # samples — yaw-rate derivative and kinematic-accel fallback
     savgol_poly: 2
