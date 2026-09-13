@@ -81,3 +81,28 @@ def test_stack_forward_and_gradients_match_scan():
         model(x).pow(2).sum().backward()
         for k, v in model.named_parameters():
             assert (v.grad - ref_grads[k]).abs().max() < 1e-8, k
+
+
+def test_build_model_initialises_the_s4_projections_small():
+    """An untrained residual must start near zero, like every other arch.
+
+    With PyTorch's default Linear init the S4D residual starts at O(1) against
+    a ~2e-2 target, never recovers in 200 epochs, and diverges
+    simulated_data_gen()'s 500-step rollout - after which analyse_tires()
+    admits fewer than 8 samples and solve_pacejka() silently returns the
+    previous coefficients, so the identified D can never leave its prior.
+    """
+    from helpers.train_model import build_model
+
+    params = {'nn_architecture': 's4', 'leaky_relu_slope': 0.01,
+              's4': {'state_dim': 4, 'num_channels': 4, 'num_layers': 1,
+                     'sequence_length': 20, 'use_physics_inputs': True}}
+    torch.manual_seed(0)
+    net = build_model(params)
+
+    x = torch.tensor([[15.0, 0.2, 0.1, 0.02, 0.03, -0.01]]).repeat(20, 1).unsqueeze(0)
+    with torch.no_grad():
+        out = net(x)
+    # The residual target's own scale is ~3e-2; an untrained net must be well
+    # under it. Default init gives ~1 here.
+    assert out.abs().max() < 1e-2, f'untrained s4 residual is {out.abs().max():.3g}'

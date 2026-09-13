@@ -1,3 +1,4 @@
+import warnings
 from types import SimpleNamespace
 from scipy.optimize import least_squares, minimize, differential_evolution
 import numpy as np
@@ -263,7 +264,17 @@ def solve_pacejka(model, v_x, v_y, omega, delta):
     }
 
     # Fallback to previous coefficients when the filtered data is too sparse.
+    # This path means the rollout diverged, not that the fit was hard: it
+    # returns the coefficients unchanged, so a loop that hits it every
+    # iteration republishes its starting prior and looks like a converged
+    # identification. Say so - it is the difference between "D is 1.009
+    # because the road says so" and "D is 1.009 because nothing was fitted".
     if alpha_f.size < 8 or alpha_r.size < 8:
+        warnings.warn(
+            f"solve_pacejka: only {alpha_f.size} front / {alpha_r.size} rear samples "
+            "survived analyse_tires' filters (need 8). The Pacejka fit was NOT posed - "
+            "returning the previous coefficients unchanged. Check simulated_data_gen's "
+            "rollout for divergence.", RuntimeWarning, stacklevel=2)
         C_Pf = [round(float(x), 4) for x in model['C_Pf_model']]
         C_Pr = [round(float(x), 4) for x in model['C_Pr_model']]
         return C_Pf, C_Pr

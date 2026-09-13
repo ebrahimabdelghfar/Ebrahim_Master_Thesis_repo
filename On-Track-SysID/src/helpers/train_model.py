@@ -378,7 +378,7 @@ def build_model(params: dict) -> nn.Module:
     elif arch == 's4':
         s4_cfg = params.get('s4', {}) or {}
         d_in = 6 if s4_cfg.get('use_physics_inputs', False) else 4
-        return S4DResidual(
+        net = S4DResidual(
             d_in=d_in,
             H=s4_cfg.get('num_channels', 4),
             N=s4_cfg.get('state_dim', 4),
@@ -387,6 +387,21 @@ def build_model(params: dict) -> nn.Module:
             dt_max=s4_cfg.get('dt_max', 0.1),
             leaky_relu_slope=slope,
         )
+        # Every MLP arch applies init_weights in its own __init__; S4DResidual
+        # cannot (importing it here from train_model would be circular), so it
+        # is applied at construction instead. It touches only input_proj and
+        # output_proj - the S4D block keeps its own S4D-Lin initialisation.
+        # Without it those two Linears use PyTorch's default U(+/-1/sqrt(fan_in)),
+        # which makes the untrained residual O(1) against a 2e-2 target; 200
+        # epochs at lr 5e-4 never recover, the residual stays O(1), and
+        # simulated_data_gen()'s 500-step rollout diverges. Measured on a
+        # known-mu plant replay (2026-09-13): initial data loss 5.65 vs 9.2e-4
+        # with this line, rollout residual rms 1.4e36 vs 1.2e-3, and
+        # analyse_tires() then admitted 1 of 500 samples so solve_pacejka
+        # returned the previous coefficients for all 6 iterations - i.e. D was
+        # pinned at the prior whatever the road.
+        net.apply(init_weights)
+        return net
     else:
         raise ValueError(f"Unknown architecture: {arch}")
 
