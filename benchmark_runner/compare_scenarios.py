@@ -174,14 +174,22 @@ class ScenarioData:
 
 class Comparison:
 
-    def __init__(self, out_dir, plt, incomplete=()):
+    def __init__(self, out_dir, plt, names=(), incomplete=()):
         self.out_dir = Path(out_dir)
         self.plt = plt
         self.written = []
+        # Fixed colour per scenario, assigned once over the whole sweep. The
+        # per-Axes cycle would restart wherever a scenario has no data (a failed
+        # run), so the same colour would mean a different scenario per panel.
+        palette = plt.get_cmap('tab10').colors
+        self._colors = {name: palette[i % len(palette)] for i, name in enumerate(names)}
         # [(scenario, reason)] for the runs that did not finish. Every figure
         # carries the caveat, because any of them can mix a short run in with
         # complete ones and nothing else on the axes would say so.
         self.incomplete = list(incomplete)
+
+    def color(self, name):
+        return self._colors.get(name)
 
     def _banner(self, fig):
         if not self.incomplete:
@@ -228,7 +236,7 @@ class Comparison:
                 xs.append(cat_idx + (idx - (n - 1) / 2.0) * width)
                 ys.append(value)
                 rows.append([scenario, category, value])
-            ax.bar(xs, ys, width=width, label=scenario)
+            ax.bar(xs, ys, width=width, label=scenario, color=self.color(scenario))
         ax.set_xticks(range(len(categories)))
         ax.set_xticklabels(categories, rotation=15, ha='right')
         ax.set_ylabel(ylabel)
@@ -257,7 +265,8 @@ class Comparison:
             edges = _shared_bins(per_scenario.values())
             for scenario, samples in per_scenario.items():
                 weights = [1.0 / len(samples)] * len(samples)
-                ax.hist(samples, bins=edges, weights=weights, alpha=0.45, label=scenario)
+                ax.hist(samples, bins=edges, weights=weights, alpha=0.45, label=scenario,
+                        color=self.color(scenario))
             ax.set_title(signal)
             ax.set_xlabel(
                 f'Error (GT - estimate) [{unit_of.get(signal, "")}] (central 99 %)')
@@ -286,7 +295,8 @@ class Comparison:
                 if t:
                     ax.plot(t, gt, color='black', linewidth=1.0, alpha=0.6,
                             label='Ground truth')
-                    ax.plot(t, est, linewidth=1.0, linestyle='--', label='Estimate')
+                    ax.plot(t, est, linewidth=1.0, linestyle='--', label='Estimate',
+                            color=self.color(scenario))
                     rows.extend([scenario, signal, 'ground_truth', a, b]
                                 for a, b in zip(t, gt))
                     rows.extend([scenario, signal, 'estimate', a, b]
@@ -317,7 +327,7 @@ class Comparison:
                     continue
                 drew = True
                 err = [e - g for e, g in zip(est, gt)]
-                ax.plot(t, err, linewidth=1.0, label=scenario)
+                ax.plot(t, err, linewidth=1.0, label=scenario, color=self.color(scenario))
                 rows.extend([scenario, signal, a, b] for a, b in zip(t, err))
             ax.axhline(0.0, color='black', linewidth=0.8, alpha=0.6)
             ax.set_title(signal if drew else f'{signal} (no data)')
@@ -344,10 +354,10 @@ def build(scenarios, out_dir):
                   + list(out_dir.glob('*.csv'))):
         stale.unlink()
 
-    cmp = Comparison(
-        out_dir, plt,
-        incomplete=[(s.name, s.failure_reason) for s in scenarios if s.failure_reason])
     names = [s.name for s in scenarios]
+    cmp = Comparison(
+        out_dir, plt, names=names,
+        incomplete=[(s.name, s.failure_reason) for s in scenarios if s.failure_reason])
 
     _summary_csv(scenarios, out_dir)
     _lap_times(cmp, scenarios)
@@ -495,7 +505,7 @@ def _lap_times(cmp, scenarios):
     width = 0.8 / n
     for idx, s in enumerate(scenarios):
         xs = [lap + (idx - (n - 1) / 2.0) * width for lap in range(1, len(s.lap_times) + 1)]
-        ax.bar(xs, s.lap_times, width=width, label=s.name)
+        ax.bar(xs, s.lap_times, width=width, label=s.name, color=cmp.color(s.name))
         rows.extend([s.name, lap, t] for lap, t in enumerate(s.lap_times, start=1))
     ax.set_xticks(range(1, max_laps + 1))
     ax.set_xlabel('Lap number')
@@ -545,7 +555,8 @@ def _e_y_hist(cmp, scenarios):
         edges = _shared_bins(per_scenario.values(), bins=50)
         for scenario, samples in per_scenario.items():
             weights = [1.0 / len(samples)] * len(samples)
-            ax.hist(samples, bins=edges, weights=weights, alpha=0.45, label=scenario)
+            ax.hist(samples, bins=edges, weights=weights, alpha=0.45, label=scenario,
+                    color=cmp.color(scenario))
         ax.legend(fontsize=7)
     ax.set_xlabel('Signed lateral error e_y [m] (central 99 %)')
     ax.set_ylabel('Fraction of samples')
@@ -568,12 +579,14 @@ def _pacejka(cmp, scenarios):
         shared_nominal = len({tuple(nominal) for _, _, _, nominal in curves}) == 1
         for idx, (name, alpha, identified, nominal) in enumerate(curves):
             if not shared_nominal:
-                ax.plot(alpha, nominal, linewidth=2.0, alpha=0.6, label=f'{name} (nominal)')
+                ax.plot(alpha, nominal, linewidth=2.0, alpha=0.6, label=f'{name} (nominal)',
+                        color=cmp.color(name))
                 rows.extend([f'{name} (nominal)', axle, a, f] for a, f in zip(alpha, nominal))
             elif idx == 0:
                 ax.plot(alpha, nominal, color='black', linewidth=2.0, label='Nominal (plant)')
                 rows.extend(['(nominal)', axle, a, f] for a, f in zip(alpha, nominal))
-            ax.plot(alpha, identified, linewidth=1.6, linestyle='--', label=name)
+            ax.plot(alpha, identified, linewidth=1.6, linestyle='--', label=name,
+                    color=cmp.color(name))
             rows.extend([name, axle, a, f] for a, f in zip(alpha, identified))
         drew_nominal = bool(curves)
         ax.set_title(f'{axle.capitalize()} axle')
@@ -601,7 +614,7 @@ def _pacejka(cmp, scenarios):
                 xs.append(position + (idx - (n - 1) / 2.0) * width)
                 ys.append(value)
                 coeff_rows.append([s.name, f'{axle}_{label}', value])
-        ax.bar(xs, ys, width=width, label=s.name)
+        ax.bar(xs, ys, width=width, label=s.name, color=cmp.color(s.name))
     ax.set_xticks(range(len(categories)))
     ax.set_xticklabels(categories, rotation=30, ha='right')
     ax.set_ylabel('coefficient value')
@@ -631,7 +644,8 @@ def _mu_series(cmp, scenarios):
             t, gt, est = s.series(s.mu_series, signal)
             if t:
                 ax.plot(t, gt, color='black', linewidth=1.0, alpha=0.6, label='Plant $\\mu$')
-                ax.plot(t, est, linewidth=1.2, linestyle='--', label='Identified $D$')
+                ax.plot(t, est, linewidth=1.2, linestyle='--', label='Identified $D$',
+                        color=cmp.color(s.name))
                 rows.extend([s.name, signal, 'plant_mu', a, b] for a, b in zip(t, gt))
                 rows.extend([s.name, signal, 'identified_D', a, b] for a, b in zip(t, est))
             ax.set_title(f'{s.name} - {signal}' if t else f'{s.name} - {signal} (no data)')
