@@ -175,17 +175,27 @@ def _fit_axle(alpha, F_z, F_y, cfg, mu_floor):
         sigma = np.array([np.inf, np.inf])
 
     utilisation = float(np.max(np.abs(F_y) / (mu_hat * F_z)))
+    # The same quantity without the fit in the denominator. `utilisation`
+    # divides by mu_hat, so an axle whose mu comes out too low reports a high
+    # utilisation and clears the gate on its own mistake: measured 2026-09-13,
+    # a buffer that realised only 0.31 of F_z returned mu = 0.539 at
+    # utilisation 0.58 and passed, against a plant of 1.05.
+    force_ratio = float(np.max(np.abs(F_y / F_z)))
     span = max(mu_hi - mu_lo, 1e-9)
     railed = min(mu_hat - mu_lo, mu_hi - mu_hat) / span < 1e-3
 
     out.update({'mu': mu_hat, 'C_alpha': C_hat, 'sigma_mu': float(sigma[1]),
                 'sigma_C': float(sigma[0]), 'utilisation': utilisation,
+                'force_ratio': force_ratio,
                 'rmse': float(np.sqrt(np.mean(residual(sol.x) ** 2)))})
 
     util_min = float(cfg.get('utilisation_min', 0.40))
     sigma_max = float(cfg.get('sigma_rel_max', 0.15))
     if railed:
         out['reason'] = f"mu={mu_hat:.3f} railed on mu_bounds - not identified by the data"
+    elif force_ratio < util_min:
+        out['reason'] = (f"peak |F_y|/F_z = {force_ratio:.2f} < {util_min:.2f} - the axle "
+                         "never left the linear region, mu is not observable")
     elif utilisation < util_min:
         out['reason'] = (f"peak grip utilisation {utilisation:.2f} < {util_min:.2f} - "
                          "the tyre curve is still linear here, mu is not observable")

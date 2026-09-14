@@ -244,6 +244,24 @@ def _prior_weights(lam, F_y, n_samples, bounds):
 PACEJKA_BOUNDS = ([4.0, 1.2, 0.4, -3.0], [20.0, 2.2, 2.0, 1.0])
 
 
+def _bounds_with_d(bounds, start_params, fixed):
+    """Collapse D's box onto its start value when D was set from a measurement.
+
+    Only the product B*C*D is determined by analyse_tires' reconstruction, so
+    a free D slides along that hyperbola until a box edge stops it. When the
+    brush estimator has measured D off the recorded trace, pin it here and let
+    B, C and E carry the cornering stiffness - the part the rollout does
+    determine. See apply_friction_warm_start's docstring for the measurement.
+    """
+    if not fixed:
+        return bounds
+    d = float(start_params[2])
+    lo, hi = list(bounds[0]), list(bounds[1])
+    # least_squares needs lb < ub strictly; a hair either side pins D in practice.
+    lo[2], hi[2] = d - 1e-9, d + 1e-9
+    return (lo, hi)
+
+
 def solve_pacejka(model, v_x, v_y, omega, delta):
     alpha_f, alpha_r, F_zf, F_zr, F_yf, F_yr = analyse_tires(model, v_x, v_y, omega, delta)
     bounds = PACEJKA_BOUNDS
@@ -279,19 +297,25 @@ def solve_pacejka(model, v_x, v_y, omega, delta):
         C_Pr = [round(float(x), 4) for x in model['C_Pr_model']]
         return C_Pf, C_Pr
 
+    d_fixed = model.get('pacejka_d_fixed') or {}
+
     # front. C_P*_prior, when present, is the regularisation target and stays
     # fixed across nn_train's co-identification iterations while C_P*_model
     # (the start point / rollout nominal) keeps updating - see nn_train.
     start_params_front = model['C_Pf_model']
     solver_cfg['prior_params'] = model.get('C_Pf_prior', None)
-    sol_f = _fit_pacejka_axle(alpha_f, F_zf, F_yf, start_params_front, bounds, solver_cfg)
+    sol_f = _fit_pacejka_axle(alpha_f, F_zf, F_yf, start_params_front,
+                              _bounds_with_d(bounds, start_params_front, d_fixed.get('f')),
+                              solver_cfg)
     C_Pf = sol_f.x.tolist()
     C_Pf = [round(x, 4) for x in C_Pf]  # Formatting each element to 4 significant digits
 
     # rear
     start_params_rear = model['C_Pr_model']
     solver_cfg['prior_params'] = model.get('C_Pr_prior', None)
-    sol_r = _fit_pacejka_axle(alpha_r, F_zr, F_yr, start_params_rear, bounds, solver_cfg)
+    sol_r = _fit_pacejka_axle(alpha_r, F_zr, F_yr, start_params_rear,
+                              _bounds_with_d(bounds, start_params_rear, d_fixed.get('r')),
+                              solver_cfg)
     C_Pr = sol_r.x.tolist()
     C_Pr = [round(x, 4) for x in C_Pr]  # Formatting each element to 4 significant digits
     return C_Pf, C_Pr

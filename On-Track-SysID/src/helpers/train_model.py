@@ -808,53 +808,99 @@ def apply_friction_warm_start(model, warm_start_mu):
     produced by helpers/mu_estimator.py. The per-axle entries are a sharper
     estimate than `floor` and are preferred where present.
 
-    IT IS A FLOOR, NEVER A CEILING - for either kind of input, and even when
-    the brush fit reports high confidence. Two things downstream depend on
-    that:
+    The per-axle brush value is applied TWO-SIDED and the axle's D is then
+    PINNED for the whole co-identification loop (the returned dict tells
+    nn_train which). The `floor` fallback - peak utilised friction - stays
+    floor-only, because it is a lower bound by construction.
 
-      - nn_train() freezes C_P*_prior from C_P*_model right after this runs,
-        so whatever lands here is both the initial guess AND the frozen
-        regularisation target of every co-identification iteration.
-      - mpc_node re-ingests the raceline at
-        min(lateral_accel_max, gripCeiling * grip_utilization) on every
-        accepted mpc/update_params (see buglog bug-046), so a D that comes
-        out low rewrites the reference speed profile under the running
-        controller. A D that comes out low AND MOVES between cycles rewrites
-        it repeatedly, which is what letting this lower D produced on
-        2026-09-01: bug-sysid-mu-warm-start-lowered-D-and-destabilised-car.
+    Why pinning, and not merely seeding: solve_pacejka only ever sees the
+    product B*C*D. analyse_tires reconstructs F_y/F_z as v_x*omega/g, so the
+    fit reads back the rollout's own peak lateral acceleration, and D is the
+    free coordinate of that hyperbola. Measured on the mu 1.05 run's five
+    buffers (2026-09-13): B*C*D*F_zf converges to 20.3-20.7 kN/rad against a
+    plant measured at 20.4 - correct - while the SAME product is reached with
+    D anywhere from 0.69 to 2.00, and the loop walks D into the 2.0 bound
+    because B is bounded below at 4.0. A seed alone is simply overwritten:
+    a 0.785 seed ended the run at 2.000.
+
+    Two downstream consumers depend on D not wandering: nn_train() freezes
+    C_P*_prior from C_P*_model right after this runs, and mpc_node re-ingests
+    the raceline at min(lateral_accel_max, gripCeiling * grip_utilization) on
+    every accepted mpc/update_params (bug-046), so a moving D rewrites the
+    reference speed profile under the running controller. Pinning to a
+    measurement taken off the recorded trace satisfies both; the floor-only
+    rule of 2026-09-01 was protecting against a D that MOVED, not against a
+    D that was low.
 
     The brush fit's own sigma_mu is a precision figure, not an accuracy one -
     a wrong mass, a wrong I_z, an IMU bias or road bank all fit tightly and
-    wrongly - so it cannot license overriding this.
+    wrongly - so the estimator's own gates, not sigma alone, decide whether an
+    axle arrives here at all.
+
+    Returns {'f': bool, 'r': bool} - whether that axle's D was set from an
+    identified fit and should be held fixed by solve_pacejka.
     """
     d_lower, d_upper = PACEJKA_BOUNDS[0][2], PACEJKA_BOUNDS[1][2]
     if not isinstance(warm_start_mu, dict):
         warm_start_mu = {'f': None, 'r': None, 'floor': float(warm_start_mu)}
 
+    pinned = {'f': False, 'r': False}
     for key, axle in (('C_Pf_model', 'f'), ('C_Pr_model', 'r')):
         mu = warm_start_mu.get(axle)
-        source = 'identified mu'
-        if mu is None or not np.isfinite(mu):
-            mu, source = warm_start_mu.get('floor'), 'mu_hat'
+        identified = mu is not None and np.isfinite(mu)
+        if not identified:
+            mu = warm_start_mu.get('floor')
         if mu is None or not np.isfinite(mu):
             continue
         d_val = float(np.clip(mu, d_lower, d_upper))
-        if d_val > model[key][2]:
+
+        if identified:
+            log_info(f"Friction warm-start: setting {key} D {model[key][2]:.4f} -> "
+                     f"{d_val:.4f} (identified mu={mu:.4f}) and HOLDING it for the "
+                     "co-identification loop - only B*C*D is identifiable from the "
+                     "rollout, so a free D walks to its bound")
+            model[key][2] = d_val
+            pinned[axle] = True
+        elif d_val > model[key][2]:
             log_info(f"Friction warm-start: raising {key} D initial guess "
-                     f"{model[key][2]:.4f} -> {d_val:.4f} ({source}={mu:.4f})")
+                     f"{model[key][2]:.4f} -> {d_val:.4f} (mu_hat={mu:.4f})")
             model[key][2] = d_val
         else:
             log_info(f"Friction warm-start: keeping {key} D initial guess "
-                     f"{model[key][2]:.4f} ({source}={mu:.4f} does not exceed it; "
-                     "the warm start is a floor, never a ceiling)")
+                     f"{model[key][2]:.4f} (mu_hat={mu:.4f} does not exceed it; the "
+                     "utilisation bound is a floor, never a ceiling)")
+    return pinned
 
 
 def nn_train(training_data, racecar_version, save_LUT_name, plot_model, warm_start_mu=None):
     model = get_model_param(racecar_version)
     nn_params = get_nn_params()
 
+    pinned = {'f': False, 'r': False}
     if warm_start_mu is not None:
-        apply_friction_warm_start(model, warm_start_mu)
+        pinned = apply_friction_warm_start(model, warm_start_mu)
+
+    # An axle with no measured mu this cycle holds the D it came in with rather
+    # than letting the loop move it. Nothing in the rollout identifies D - only
+    # the product B*C*D - so an unpinned axle does not "fall back to fitting D",
+    # it walks to a box edge: measured on the mu 1.05 run's five buffers
+    # (2026-09-13), the two cycles the brush gate rejected ended at D = 1.43 and
+    # 1.29 having passed through 2.000, while the three it accepted sat still.
+    # Mean |D - 1.05| over the five: 0.585 free, 0.191 pinning only the measured
+    # axles, 0.084 holding the rest, and front cornering stiffness spread
+    # narrows 32.9 -> 18.5 kN/rad at the same time.
+    #
+    # Gated on the warm start being enabled so Baseline-NN-MSE - which runs with
+    # friction_warm_start.enable: false and is the control the comparison needs -
+    # keeps fitting D exactly as before.
+    if (model.get('friction_warm_start', {}) or {}).get('enable', False):
+        held = [a for a in ('f', 'r') if not pinned[a]]
+        if held:
+            log_info(f"No measured mu for axle(s) {held} this cycle - holding their D at "
+                     f"Df={model['C_Pf_model'][2]:.4f} Dr={model['C_Pr_model'][2]:.4f} "
+                     "instead of letting the co-identification loop move it.")
+        pinned = {'f': True, 'r': True}
+    model['pacejka_d_fixed'] = pinned
 
     num_of_iterations = nn_params.get('num_of_iterations', 6)
     arch = nn_params.get('nn_architecture', 'baseline')

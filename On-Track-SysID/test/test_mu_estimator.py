@@ -116,8 +116,24 @@ def test_refuses_when_the_tyre_curve_is_still_linear():
     out = estimate_mu(states, MODEL, CFG, DT, accels=accels)
 
     assert not out['ok_f'] and not out['ok_r']
-    assert 'utilisation' in out['front']['reason']
+    # Either excitation gate may be the one that fires - both say the same
+    # thing, that the axle stayed on the linear ramp.
+    assert 'linear' in out['front']['reason']
     assert np.isfinite(out['mu_utilisation'])
+
+
+def test_low_grip_use_cannot_clear_the_gate_by_underestimating_mu():
+    """`utilisation` divides by the fitted mu, so a mu that comes out too low
+    reports a high utilisation and clears the gate on its own mistake. The
+    absolute |F_y|/F_z gate is what catches that."""
+    states, accels = simulate(1.05, steer_amp=0.035)
+    out = estimate_mu(states, MODEL, CFG, DT, accels=accels)
+
+    ratio = out['front']['force_ratio']
+    if ratio < CFG['utilisation_min']:
+        assert not out['ok_f'], (
+            f"front accepted at |F_y|/F_z = {ratio:.2f} with mu = "
+            f"{out['front']['mu']:.3f} (utilisation {out['front']['utilisation']:.2f})")
 
 
 def test_survives_sensor_noise():

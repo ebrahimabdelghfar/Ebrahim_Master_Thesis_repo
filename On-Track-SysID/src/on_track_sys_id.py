@@ -401,15 +401,18 @@ class OnTrackSysId(Node):
     def maybe_compute_warm_start_mu(self):
         """
         Non-vision friction warm-start (see helpers/friction_warmstart.py):
-        estimates a D_f/D_r initial guess from the buffer this node already
-        collects, flooring the static pacejka_params.yaml default for the
-        FIRST identification cycle only. Every subsequent
-        reidentification_interval_s retrain cold-starts from pacejka_model's
-        static D exactly as before this feature was added: the warm start is
-        both the solver's initial guess and, via nn_train's C_P*_prior freeze,
-        its regularisation target, so re-running it every cycle rewrites the
-        tire model - and through it the MPC's reference speed profile - under
-        the running controller.
+        estimates D_f/D_r from the buffer this node already collects.
+
+        Runs on EVERY cycle. It used to be gated to the first one, on the
+        grounds that re-running it rewrites the tire model - and through it
+        the MPC's reference speed profile - under the running controller.
+        That reasoning was inverted: nn_train() re-reads the static yaml prior
+        at the start of every cycle, so the gate did not hold D still, it just
+        left every cycle after the first cold-starting from a D unrelated to
+        the road. Measured on the mu 1.05 run (2026-09-13), cycles 2-6 with no
+        warm start walked D to the 2.0 bound. What has to stay still is D
+        WITHIN a cycle, which apply_friction_warm_start now enforces by
+        pinning it.
 
         Must be called (and read self.data) BEFORE run_nn_train() -
         train_model.py's filter_data() mutates its training_data argument's
@@ -417,7 +420,7 @@ class OnTrackSysId(Node):
         after training would silently see Butterworth-filtered data instead
         of raw odom.
         """
-        if not self._is_first_identification or self.model_params is None:
+        if self.model_params is None:
             return None
         cfg = self.model_params.get('friction_warm_start', {})
         if not cfg.get('enable', False):
@@ -497,9 +500,30 @@ class OnTrackSysId(Node):
 
         if not (out['ok_f'] or out['ok_r']):
             return None
-        return {'f': out['mu_f'] if out['ok_f'] else None,
-                'r': out['mu_r'] if out['ok_r'] else None,
-                'floor': out['mu_utilisation']}
+
+        # The front axle is the only one this car excites. Its slip angle
+        # carries delta; the rear's does not, so the rear curve stays close to
+        # linear and its mu comes out high - measured 1.495/1.383/1.257 rear
+        # against 1.011/0.964/0.837 front on the mu 1.05 run's three admitted
+        # buffers. That is not a load-transfer or inertia error: in quasi-steady
+        # cornering F_yf/F_yr tends to l_r/l_f, the same ratio as F_zf/F_zr, so
+        # mu_f = mu_r whatever I_z is (swept 30-80 kg m^2: the gap only widens,
+        # 0.368 -> 0.550). It is the same too-little-curvature degeneracy, and
+        # sigma_mu does not catch it (rear 0.105 against a 0.15 relative gate).
+        # One road surface, so the identifiable axle speaks for both.
+        # A rear-only answer is worse than none: on the one buffer where only
+        # the rear passed, it did so with mu = 0.224 against a plant of 1.05
+        # (both axles had realised barely 0.15 of F_z). Front or nothing.
+        if not out['ok_f']:
+            self.get_logger().info(
+                "Front axle not identified - no mu for the warm start this cycle.")
+            return None
+        mu = out['mu_f']
+        if out['ok_r']:
+            self.get_logger().info(
+                f"Using the front-axle mu={mu:.4f} for both axles; the rear fit "
+                f"({out['mu_r']:.4f}) is not trusted at this excitation.")
+        return {'f': mu, 'r': mu, 'floor': out['mu_utilisation']}
 
     def publish_friction(self, warm_start_mu=None):
         """

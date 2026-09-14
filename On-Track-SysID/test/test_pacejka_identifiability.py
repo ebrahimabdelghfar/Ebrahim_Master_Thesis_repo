@@ -172,3 +172,48 @@ def test_wheelbase_is_the_sum_of_the_axle_distances():
     """analyse_tires() uses l_wb for F_z and l_f + l_r for the force split."""
     veh = _load(MODEL_TXT)
     assert veh['l_wb'] == pytest.approx(veh['l_f'] + veh['l_r'], abs=1e-6)
+
+
+def test_pinned_D_survives_a_rollout_that_would_otherwise_move_it():
+    """Only B*C*D is identifiable from analyse_tires' reconstruction, so a free
+    D slides along that hyperbola to a box edge. When the brush estimator has
+    measured D off the recorded trace, solve_pacejka must hold it."""
+    cpf = [7.0760, 1.3460, 1.0090, -2.0000]
+    cpr = [7.8730, 1.3830, 1.0020, -1.0240]
+    model = _vehicle(list(cpf), list(cpr))
+    v_x, v_y, omega, delta = _rollout(model, 15.0, delta_max=0.2)
+
+    free_f, free_r = solve_pacejka(model, v_x, v_y, omega, delta)
+
+    model['pacejka_d_fixed'] = {'f': True, 'r': True}
+    held_f, held_r = solve_pacejka(model, v_x, v_y, omega, delta)
+
+    assert abs(held_f[2] - cpf[2]) < 1e-3, f'front D moved to {held_f[2]}'
+    assert abs(held_r[2] - cpr[2]) < 1e-3, f'rear D moved to {held_r[2]}'
+    # B/C/E stay free: the pin must not freeze the whole axle.
+    assert abs(held_f[0] - cpf[0]) > 1e-3 or abs(held_f[1] - cpf[1]) > 1e-3
+
+
+def test_warm_start_is_two_sided_for_an_identified_mu():
+    """The per-axle brush value must be able to LOWER D, not only raise it -
+    the floor-only rule was what pinned D at the prior on a low-mu road."""
+    from helpers.train_model import apply_friction_warm_start
+
+    model = _vehicle([7.0760, 1.3460, 1.0090, -2.0000], [7.8730, 1.3830, 1.0020, -1.0240])
+    pinned = apply_friction_warm_start(model, {'f': 0.70, 'r': 0.70, 'floor': 0.31})
+
+    assert pinned == {'f': True, 'r': True}
+    assert abs(model['C_Pf_model'][2] - 0.70) < 1e-9
+    assert abs(model['C_Pr_model'][2] - 0.70) < 1e-9
+
+
+def test_utilisation_floor_alone_stays_floor_only():
+    """The mu_utilisation fallback is a lower bound by construction, so it may
+    only raise D, and it must not pin it."""
+    from helpers.train_model import apply_friction_warm_start
+
+    model = _vehicle([7.0760, 1.3460, 1.0090, -2.0000], [7.8730, 1.3830, 1.0020, -1.0240])
+    pinned = apply_friction_warm_start(model, {'f': None, 'r': None, 'floor': 0.31})
+
+    assert pinned == {'f': False, 'r': False}
+    assert abs(model['C_Pf_model'][2] - 1.0090) < 1e-9
