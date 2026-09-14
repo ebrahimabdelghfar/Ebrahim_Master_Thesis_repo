@@ -12,7 +12,7 @@ raceline_csv: traj_race_cl.csv
 psi_offset_rad: 1.5707963268   # TUM -> ROS heading convention; 0.0 for f1tenth_racetracks/*
 graphs_root: graphs
 racecar_version: SIM
-nominal_tire_friction: 1.5     # Sweep default, used by any scenario that omits
+nominal_tire_friction: 1.0     # Sweep default, used by any scenario that omits
                                # friction_value_const. The runner writes the value into
                                # vehicle.physics.wheels[*].tire_friction in the bridge config
                                # before configuring the bridge, and restores the file on
@@ -35,13 +35,13 @@ scenarios:
     nn_params_yaml: On-Track-SysID/params/nn_params.yaml
     pacejka_params_yaml: On-Track-SysID/params/pacejka_params.yaml
     friction_schedule: constant
-    friction_value_const: 1.5
+    friction_value_const: 1.0
 
   - name: Baseline-NN-MSE
     nn_params_yaml: On-Track-SysID/params/nn_params_base_line.yaml
     pacejka_params_yaml: On-Track-SysID/params/pacejka_params_base_line.yaml
     friction_schedule: constant
-    friction_value_const: 1.5
+    friction_value_const: 1.0
   # - name: test3_enhanced_mu_decay
   #   nn_params_yaml: On-Track-SysID/params/nn_params.yaml
   #   pacejka_params_yaml: On-Track-SysID/params/pacejka_params.yaml
