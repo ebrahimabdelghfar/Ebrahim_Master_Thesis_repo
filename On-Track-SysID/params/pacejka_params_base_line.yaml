@@ -24,25 +24,19 @@ pacejka_ref:
   C_Pf_ref: [7.0760, 1.3460, 1.0090, -2.0000]
   C_Pr_ref: [7.8730, 1.3830, 1.0020, -1.0240]
 
-# Speed of the synthetic steering sweep that simulated_data_gen() rolls out
-# and solve_pacejka() actually fits (the measured trace only trains the
-# residual NN). See train_model.rollout_speed() for the full derivation:
-# the rollout's reachable mu is v^2 * sweep_delta_max / (g * l_wb), so a
-# rollout slower than the tire's peak makes D unidentifiable.
-#
-# speed_max: null means "use the speed the car was actually driven at". The
-# previous hardcoded clip to 4.0 m/s capped the reachable mu at 0.43 on this
-# vehicle and pinned Df/Dr on the 0.4 bound.
+# Baseline = arXiv:2411.17508 Sec. III-E.2 verbatim: roll the corrected model
+# out at the mean measured longitudinal speed and ramp delta linearly from 0
+# to 0.4 rad, with no data-driven bound on the sweep. The excitation-limiting
+# clamps (speed floor, p99-|delta| extrapolation cap) are this thesis'
+# additions and are deliberately inert here.
 pacejka_rollout:
-  speed_min: 15.0          # m/s - below this the sweep cannot reach mu = 1.0
-  speed_max: null         # m/s, null = no upper clamp
-  sweep_delta_max: 0.54    # rad, hard cap on simulated_data_gen()'s delta sweep
-  # The sweep actually stops at sweep_delta_extrapolation * p99(|delta|) of
-  # the recorded lap (floored at sweep_delta_min), because past that the
-  # residual NN is extrapolating and the fit reads its invention as grip.
-  # See train_model.rollout_delta_max().
+  speed_min: 0.0           # m/s - no floor: use the measured mean speed
+  speed_max: null          # m/s, null = no upper clamp
+  sweep_delta_max: 0.4     # rad, the paper's fixed ramp end
+  # sweep_delta_min == sweep_delta_max makes rollout_delta_max() return the
+  # fixed 0.4 rad regardless of the recorded lap, i.e. no excitation bound.
   sweep_delta_extrapolation: 1.5
-  sweep_delta_min: 0.05   # rad
+  sweep_delta_min: 0.4    # rad
 
 # Nonlinear least-squares settings for Pacejka identification.
 # Defaults are robust for noisy on-track data while keeping runtime low.
@@ -69,12 +63,10 @@ pacejka_solver:
                                    # ignored by differential-evolution (already global)
   start_jitter: 0.05
   # Tikhonov pull toward C_P*_model, in units of the data residual budget
-  # (see solve_pacejka._prior_weights). Keeps the coefficients the manoeuvre
-  # does not excite - E above all - at their nominal value instead of on a
-  # box edge. 0.0 restores the unregularised fit.
-  # 0.05 measured: clears the E/C rails for both the measured prior and a
-  # D = 1.5 tire while still letting D move ~8 % and B ~13 % off the prior.
-  prior_weight: 0.05
+  # (see solve_pacejka._prior_weights). 0.0 = the unregularised least-squares
+  # fit of arXiv:2411.17508 Sec. III-E.3; the prior term is a thesis addition
+  # and is off in the baseline.
+  prior_weight: 0.0
   seed: null                       # also seeds differential-evolution's RNG
   de_popsize: null                  # differential-evolution only; null = scipy default (15)
   de_maxiter: null                  # differential-evolution only; null = scipy default (1000)

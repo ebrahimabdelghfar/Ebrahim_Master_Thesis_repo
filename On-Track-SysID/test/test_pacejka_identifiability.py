@@ -217,3 +217,65 @@ def test_utilisation_floor_alone_stays_floor_only():
 
     assert pinned == {'f': False, 'r': False}
     assert abs(model['C_Pf_model'][2] - 1.0090) < 1e-9
+
+
+def test_update_relaxation_damps_one_co_identification_step():
+    """beta scales how far one iteration moves the nominal model toward the
+    fit. The undamped loop reads its own rollout back and amplifies it."""
+    from helpers.train_model import relax_update
+
+    prior_f = [7.0760, 1.3460, 1.0090, -2.0000]
+    prior_r = [7.8730, 1.3830, 1.0020, -1.0240]
+    fit_f = [15.0, 1.2000, 1.0090, -3.0000]
+    fit_r = [16.0, 1.2000, 1.0020, -3.0000]
+
+    model = _vehicle(prior_f, prior_r, {'pacejka_update_relaxation': 0.2})
+    out_f, out_r = relax_update(model, fit_f, fit_r)
+    assert out_f[0] == pytest.approx(0.8 * 7.0760 + 0.2 * 15.0)
+    assert out_r[3] == pytest.approx(0.8 * -1.0240 + 0.2 * -3.0000)
+
+    # Plain floats, not numpy scalars: save() yaml.dump()s these into
+    # models/<v>/<v>_pacejka.txt and a np.float64 writes a python/object/apply
+    # tag the next safe_load() cannot read (bug-relax-update-returned-numpy-scalars).
+    assert all(type(v) is float for v in out_f + out_r)
+
+    # beta = 1 must leave the shipped behaviour byte-identical.
+    model = _vehicle(prior_f, prior_r, {'pacejka_update_relaxation': 1.0})
+    assert relax_update(model, fit_f, fit_r) == (fit_f, fit_r)
+
+
+def test_shipped_config_damps_the_co_identification_loop():
+    """The 'ours' parameter set must ship the damping - at beta = 1 the loop
+    amplified its own extrapolation (axle F_y RMSE 70.4/62.3 N against
+    28.0/19.4 N at 0.20, five real buffers of the mu 0.70 run)."""
+    beta = _load(PARAMS_YAML)['pacejka_solver'].get('update_relaxation', 1.0)
+    assert 0.0 < beta < 1.0
+
+
+def test_physics_loss_terms_are_commensurate_with_the_data_term():
+    """The steady term is a force and a moment; unnormalised its square ran
+    2.3e5 x the data term and the residual NN never fitted the data."""
+    torch = pytest.importorskip('torch')
+    from helpers.train_model import compute_physics_informed_loss
+
+    model = _vehicle([7.0760, 1.3460, 1.0090, -2.0000], [7.8730, 1.3830, 1.0020, -1.0240])
+    rng = np.random.default_rng(0)
+    n = 256
+    X = np.column_stack([
+        rng.uniform(8.0, 14.0, n), rng.uniform(-0.3, 0.3, n),
+        rng.uniform(-0.4, 0.4, n), rng.uniform(-0.05, 0.05, n)])
+    X_t = torch.tensor(X, dtype=torch.float32)
+    y_t = torch.zeros((n, 2), dtype=torch.float32)
+
+    net = torch.nn.Sequential(torch.nn.Linear(4, 16), torch.nn.Tanh(), torch.nn.Linear(16, 2))
+    for p in net.parameters():
+        torch.nn.init.zeros_(p)
+
+    _, terms = compute_physics_informed_loss(
+        net, X_t, y_t, model, 0.035,
+        {'lambda_steady': 0.1, 'lambda_symmetry': 0.05, 'lambda_smoothness': 1e-4})
+
+    # A zero residual against a zero target makes data_loss exactly 0, so the
+    # check is on the physics term's own magnitude: state-increment units put
+    # it near the 1e-2 m/s the residual is asked to predict, not near 1e3.
+    assert terms['steady'] < 1.0

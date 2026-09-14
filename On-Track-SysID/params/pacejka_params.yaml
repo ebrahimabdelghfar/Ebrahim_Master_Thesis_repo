@@ -46,6 +46,15 @@ pacejka_solver:
   # 0.05 measured: clears the E/C rails for both the measured prior and a
   # D = 1.5 tire while still letting D move ~8 % and B ~13 % off the prior.
   prior_weight: 0.05
+  # Damping on one co-identification step: C <- (1-beta)*C_prev + beta*C_fit.
+  # Each iteration's answer is also the model simulated_data_gen() rolls out,
+  # so the fit reads back its own forces and the undamped loop amplifies its
+  # own extrapolation instead of converging. 1.0 restores that behaviour.
+  # 0.20 measured over the five buffers of the 2026-09-14 mu 0.70 run: axle
+  # F_y RMSE against the plant's telemetry 70.4/62.3 N at 1.0 -> 28.0/19.4 N,
+  # against 92.5/71.8 N for the undamped prior (beta = 0). See
+  # train_model.relax_update for the full beta sweep.
+  update_relaxation: 0.2
   seed: null                       # also seeds differential-evolution's RNG
   de_popsize: null                  # differential-evolution only; null = scipy default (15)
   de_maxiter: null                  # differential-evolution only; null = scipy default (1000)

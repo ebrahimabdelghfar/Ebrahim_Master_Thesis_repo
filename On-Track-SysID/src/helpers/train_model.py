@@ -267,8 +267,18 @@ def compute_physics_informed_loss(nn_model, X_train, y_train, model, dt, lambda_
     F_f_next = torch_pacejka_force(model['C_Pf_model'], alpha_f_next, cache['F_zf'])
     F_r_next = torch_pacejka_force(model['C_Pr_model'], alpha_r_next, cache['F_zr'])
 
-    lat_dyn_residual = m * v_y_dot + m * v_x * omega_next - (F_r_next + F_f_next * cos_delta)
-    yaw_dyn_residual = I_z * omega_dot - (F_f_next * l_f * cos_delta - F_r_next * l_r)
+    # Both residuals are a force and a moment (N, N*m), so their squares run
+    # 1e4-1e6 while data_loss - a one-step increment in m/s and rad/s - runs
+    # 1e-3. Unnormalised, lambda_steady 0.1 made the steady term 2.3e5 x the
+    # data term (measured 365.6 against 0.00162 at init on a real buffer): the
+    # residual NN was fitted to cancel the nominal model's own force imbalance
+    # and never to the data. Dividing by m / I_z and multiplying by dt states
+    # each residual as the state increment it implies - the network's own
+    # output units - so the lambdas are the relative weights they read as.
+    lat_dyn_residual = (m * v_y_dot + m * v_x * omega_next
+                        - (F_r_next + F_f_next * cos_delta)) * (dt / m)
+    yaw_dyn_residual = (I_z * omega_dot
+                        - (F_f_next * l_f * cos_delta - F_r_next * l_r)) * (dt / I_z)
 
     steady_vy_dot_th = float(lambda_cfg.get('steady_vy_dot_threshold', 0.8))
     steady_omega_dot_th = float(lambda_cfg.get('steady_omega_dot_threshold', 6.0))
@@ -686,6 +696,7 @@ def get_model_param(racecar_version):
         "pacejka_max_nfev": solver_cfg.get('max_nfev', None),
         "pacejka_num_starts": solver_cfg.get('num_starts', 1),
         "pacejka_prior_weight": solver_cfg.get('prior_weight', 0.0),
+        "pacejka_update_relaxation": solver_cfg.get('update_relaxation', 1.0),
         "pacejka_start_jitter": solver_cfg.get('start_jitter', 0.05),
         "pacejka_seed": solver_cfg.get('seed', None),
         "pacejka_de_popsize": solver_cfg.get('de_popsize', None),
@@ -872,6 +883,37 @@ def apply_friction_warm_start(model, warm_start_mu):
     return pinned
 
 
+def relax_update(model, C_Pf_identified, C_Pr_identified):
+    """Damp one co-identification step: C <- (1-beta)*C_prev + beta*C_identified.
+
+    Each iteration's answer becomes the next iteration's nominal model AND the
+    model simulated_data_gen() rolls out, so the fit reads back its own forces
+    and the undamped loop (beta = 1) is a positive feedback path, not a
+    contraction. Measured over five real buffers of the 2026-09-14 mu 0.70 run,
+    scored as axle F_y RMSE against the plant's own telemetry:
+
+        beta   0.00   0.05   0.10   0.15   0.20   0.25   0.30   0.50   1.00
+        front  92.5   68.3   48.6   33.9   28.0   31.2   36.4   55.6   70.4  N
+        rear   71.8   49.0   31.3   19.8   19.4   26.0   30.2   38.4   62.3  N
+
+    beta = 0 is the pinned prior, i.e. no identification at all, and it is the
+    worst column - the loop does carry information, it just has to be damped to
+    keep it. The minimum sits at 0.20 (23.5 +/- 1.5 N over seeds 0/3/7).
+    """
+    beta = float(model.get('pacejka_update_relaxation', 1.0))
+    if beta >= 1.0:
+        return C_Pf_identified, C_Pr_identified
+    out = []
+    for prev, new in (('C_Pf_model', C_Pf_identified), ('C_Pr_model', C_Pr_identified)):
+        # Plain floats, not numpy scalars: these coefficients are yaml.dump()ed
+        # into models/<version>/<version>_pacejka.txt by save(), and a np.float64
+        # serialises as a !!python/object/apply tag that the next safe_load()
+        # refuses to read back.
+        out.append([float(v) for v in (np.asarray(model[prev], dtype=float) * (1.0 - beta)
+                                       + np.asarray(new, dtype=float) * beta)])
+    return out[0], out[1]
+
+
 def nn_train(training_data, racecar_version, save_LUT_name, plot_model, warm_start_mu=None):
     model = get_model_param(racecar_version)
     nn_params = get_nn_params()
@@ -964,6 +1006,8 @@ def nn_train(training_data, racecar_version, save_LUT_name, plot_model, warm_sta
                 model, v_x, v_y, omega, delta, C_Pf_identified, C_Pr_identified, i, racecar_version)
             log_info(f"Saved Pacejka fit plot to: {saved_path}")
             
+        C_Pf_identified, C_Pr_identified = relax_update(
+            model, C_Pf_identified, C_Pr_identified)
         model['C_Pf_model'] = C_Pf_identified
         model['C_Pr_model'] = C_Pr_identified
                 
