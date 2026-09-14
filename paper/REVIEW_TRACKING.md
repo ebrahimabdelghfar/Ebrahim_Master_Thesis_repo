@@ -9,7 +9,7 @@ One row per finding of `PAPER_REVIEW_FIXES_PROMPT.md`. Status is one of
 
 | # | Status | Edit site | Evidence |
 |---|---|---|---|
-| F1.1 warm start is first-cycle-only | done | `sections/method.tex` §V-H | `On-Track-SysID/src/on_track_sys_id.py:420` (`if not self._is_first_identification ... return`) |
+| F1.1 warm start is first-cycle-only | **reopened and resolved differently (2026-09-14)** | `sections/method.tex` §V-G | The first-cycle gate is deliberately removed. `nn_train()` re-reads the static yaml prior at the start of every cycle, so the gate did not hold `D` still — it left every later cycle cold-starting `D` from a value unrelated to the road, and on the μ = 1.05 run cycles 2–6 walked `D` to the 2.0 bound. What the controller interface needs is that `D` not move *within* a cycle, which `apply_friction_warm_start` now supplies by pinning. `on_track_sys_id.py::maybe_compute_warm_start_mu` runs every cycle |
 | F1.2 `delta_max` 0.34 → 0.54 rad | done | `sections/method.tex` §V-E | `params/pacejka_params.yaml: sweep_delta_max: 0.54`. Margin restated: 0.54 rad is 1.9× the 0.279 rad lock, the inherited 0.4 rad sweep 43 % above it |
 | F1.3 window 0.4 s → 0.7 s | done | `sections/method.tex` §V-A3; `params/nn_params.yaml:49` comment | 20 × `sample_dt` 0.035 = 0.7 s. Re-justified as a configured value ≈30× the fastest lateral mode's time constant; the "matched to tire-relaxation timescales" claim is removed |
 | F1.4 `T_s` provenance | done | `sections/platform.tex` §IV-E, `sections/appendix.tex` A8, `params/nn_params.yaml:3` | 0.035 matches neither 0.033 nor 1/50 = 0.020. Now stated as empirical, carried because identification at 0.020 and 0.035 returns the same accepted set. The wrong yaml comment ("MUST match 1/rate") is replaced |
@@ -40,6 +40,30 @@ One row per finding of `PAPER_REVIEW_FIXES_PROMPT.md`. Status is one of
 | F5 `physxvehicle` version | **partial** | `references.bib` | pinned to PhysX SDK 4.1 as bundled with UE 4.26 and linked by CARLA 0.9.16, with the matching NVIDIA-Omniverse `release/104.2` docs URL. **Needs author confirmation against the CARLA 0.9.16 build** — it is on the open-decisions list in `.wolf/STATUS.md` |
 | F5 upstream licence named | done | `main.tex` Data-and-Code Availability | MIT, per `On-Track-SysID/package.xml:10` |
 | F5 tagged release + Zenodo DOIs | **open** | `main.tex`, Appendix B | author action: mint the tag and the DOIs, then replace the branch URL |
+
+## Phase 4 — the 2026-09-14 identification pass
+
+Driven by `SYSID_METHOD_UPDATE_2026-09-14.md` (peak factor) and
+`SYSID_METHOD_UPDATE_2026-09-14b.md` (residual objective and the loop).
+
+| # | Status | Edit site | Evidence |
+|---|---|---|---|
+| G1 `B·C·D` identifiability of the rollout fit | done | new `sections/method.tex` §V-D1 (`subsec:bcd`), cited from §I, §II-C, §VIII | `analyse_tires` reconstructs `F_y/F_z = v_x ω / (g cos δ)`, so the objective depends on `B`, `C`, `D` only through their product. Measured: `B·C·D·F_zf` 18.9–21.1 kN/rad against a plant at 20.4 while the `D` reaching it spans 0.69–2.00 |
+| G2 warm start applied two-sided and pinned | done | `sections/method.tex` §V-F3d (retitled *Applied two-sided, then pinned*), Algorithm 1 lines 3–5 and 14 | `train_model.apply_friction_warm_start` returns the pinned set; `nn_train` holds the unmeasured axles. Mean \|D − 1.05\| over five buffers 0.585 free → 0.191 pin-measured → 0.084 pin-and-hold |
+| G3 front axle speaks for both | done | `sections/method.tex` §V-F3d | `on_track_sys_id.py::estimate_mu_brush`. Rear reads 1.495/1.383/1.257 against front 1.011/0.964/0.837; `F_yf/F_yr → l_r/l_f` makes it an excitation problem, not an `I_z` one (swept 30–80 kg·m², gap widens 0.368 → 0.550) |
+| G4 absolute \|F_y\|/F_z release gate | done | `sections/method.tex` §V-F3c (now four conditions) | `mu_estimator._fit_axle::force_ratio`. The utilisation test divides by the fitted μ and passes itself; the absolute ratio separates {0.146, 0.314} rejected from {0.541–0.677} accepted |
+| G5 physics-informed loss normalisation | done | `sections/method.tex` §V-A1 + Eq. (physnorm); `sections/supplement.tex` SV-A2 | `compute_physics_informed_loss` scales the residuals by `dt/m`, `dt/I_z`. Shares at init 0.0004 % / 99.9996 % → 98.53 % / 1.47 % |
+| G6 relaxed fixed-point iteration | done | `sections/method.tex` §V-D2 + Eq. (relax), Algorithm 1 line 16, Table III, Table VIII | `pacejka_solver.update_relaxation: 0.2`. β sweep in §VI-K; β = 0 (no identification) is the worst column, β = 1 the inherited update |
+| G7 §VI re-run at μ = 0.70 | done | all of `sections/experiments.tex`, Table VI | `graphs/comparison/comparison_summary.csv` and `graphs/identification/*/`. Configured wheel friction 1.0 × road factor 0.70. Deliberately not the 1.05 the prior was fitted on |
+| G8 headline claim changed from *preserve* to *identify* | done | abstract, §I-B, §VI-E, §IX | `D` now moves on evidence: prior 1.009 → 0.749–0.821 against a plant at 0.700; stiffness 13.2 → 16.9 kN/rad against 17.4 |
+| G9 ablations reported | done | new `sections/experiments.tex` §VI-K (`subsec:ablations`) | β sweep, `D`-pinning comparison, loss normalisation, S4D +21 % at matched settings, `loss_mode` a wash at 23.7 N each. All offline replay — stated as such |
+| G10 platform tables follow the surface | done | `sections/platform.tex` Tables I–II | effective μ 0.70, peak angle 8.0°, configured friction marked a scenario parameter |
+| G11 multi-μ sweep | **open** | `benchmark_runner/scenarios.yaml` | `step40_end_lap1` and `decay_2pct_s` are still commented out. One static surface is a mismatched prior, not adaptivity — recorded as limitation 2 in §VIII-C |
+| G12 closed-loop ablations | **open** | — | §VI-K is an offline replay of the identification stage; the ordering is not confirmed under closed-loop coupling. Recorded as limitation 5 |
+
+Build after this pass: `paper/build.sh` → main 26 pages, supplement 7 pages,
+0 errors, 0 overfull hboxes, 0 LaTeX warnings, 0 undefined references.
+Abstract 251 words.
 
 ## Phase 2 — runs
 
@@ -92,7 +116,7 @@ written from the artefact rather than from the expectation:
 |---|---|---|
 | F13 contributions 6 → 4 | done | `sections/intro.tex` §I-B | (1) the identifiability bound; (2) the corrections it implies, merging the old 2 and 3; (3) the admissibility gates; (4) the architecture that supplies the ground truth, merged with the closed-loop evaluation |
 | F13 every listed move | done | see below | §V-A3–A4 + Table IX, Table VII, §V-A1–A2 and ten §VI figures now live in `paper/supplement_main.pdf` (7 pages); §IV-D's interface detail is Appendix~B; §II-C is one paragraph; Algorithm 1 states the corrected loop |
-| F13 ≤ 14 pages | **partial — 27 → 23** | — | every move the review listed is applied and the main paper is 23 pages. The remaining 9 are not a formatting problem: §VI alone is 7 pages and §V is 4. Getting to 14 means deciding what the paper stops claiming, which is an author call — the menu is at the end of this file |
+| F13 ≤ 14 pages | **partial — 27 → 23, now 26 after the 2026-09-14 pass** | — | every move the review listed is applied; the main paper grew back to 26 pages with §V-D and §VI-K. The remaining 9 are not a formatting problem: §VI alone is 7 pages and §V is 4. Getting to 14 means deciding what the paper stops claiming, which is an author call — the menu is at the end of this file |
 | F14 title | **done** | now *Excitation-Aware On-Track System Identification at Full Scale: A Simulation Study* |
 | F14 keywords | **done** | redrawn from the IEEE taxonomy: autonomous vehicles, system identification, parameter estimation, vehicle dynamics, tires, predictive control, road vehicles, simulation |
 

@@ -44,8 +44,10 @@ from the \emph{curvature} of the force response, read through the pneumatic
 trail in steering torque. Our estimator uses the same observation on a
 different signal: the axle force curve reconstructed from the IMU and
 odometry, with no steering-torque sensor and no assumption about the steering
-system. It is then gated and applied as a one-way floor, which is a property
-of the interface to the controller rather than of the estimator.
+system. It is then gated, applied to both axles from the axle the manoeuvre
+identifies, and pinned for the co-identification loop, a property of the
+interface to the controller, and of what that loop can and cannot identify
+(Section~\ref{subsec:bcd}), rather than of the estimator.
 Gaussian-process approaches learn the mismatch of a nominal model and have
 been used both for identification and inside the controller
 \cite{hewing2018cautious,hewing2020cautious,kabzan2019lbmpc}. They are
@@ -81,13 +83,17 @@ state-space residual in place of the MLP, and Nelder--Mead for the iterative
 Pacejka extraction. The pipeline described here independently contains an S4D
 temporal residual~\cite{gu2022s4d,gu2022s4}, a friction warm-start, and
 Nelder--Mead and differential-evolution solver options, so we claim none of the
-three as contributions. Two differences are technical rather than
+three as contributions. Three differences are technical rather than
 chronological. Our friction prior is proprioceptive, so it needs no camera and
-no textured-surface assumption. And it is read from the \emph{curvature} of
+no textured-surface assumption. It is read from the \emph{curvature} of
 the axle force curve by a gated brush-model
 fit~\cite{fiala1954,acosta2017friction} rather than from utilised friction,
 which on a gentle lap measures \num{0.044} median on this vehicle and is a
-lower bound on what is available (Section~\ref{subsec:frictionfloor}). Neither
+lower bound on what is available (Section~\ref{subsec:frictionfloor}). And it
+is \emph{pinned} rather than used as an initialisation, because
+Section~\ref{subsec:bcd} shows the rollout fit cannot separate the peak factor
+from the cornering stiffness at any excitation, so a prior on $D$ that the fit
+is free to move is overwritten within one cycle. Neither
 prior work is the fix: the degeneracy is located in the rollout excitation,
 not in the initialisation, and to our knowledge the reachable-friction bound
 of Section~\ref{subsec:excitation} and its consequence for the virtual-data

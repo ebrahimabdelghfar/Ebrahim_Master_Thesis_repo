@@ -6,38 +6,52 @@ This paper studied the identifiability of a learning-based on-track Pacejka
 identification pipeline~\cite{ontrack2025} at full vehicle scale, using a CARLA
 simulation architecture that exposes the plant's own per-wheel forces as ground
 truth. Transplanted unchanged from a 1:10 platform, the pipeline fails in a
-specific, diagnosable and correctable way. The failure is not a solver, bounds
-or tuning problem. It is a loss of excitation created by the pipeline's own
-virtual-data step, whose reachable friction
+specific, diagnosable and correctable way. The failure is a loss of excitation
+created by the pipeline's own virtual-data step, which no change of solver,
+bounds or tuning removes, and whose reachable friction
 $\mu_{\mathrm{reach}}=v^{2}\delta_{\mathrm{sweep}}/(gL)$ depends on the rollout
 configuration and not on the tire. A rollout speed appropriate at 1:10 caps
 $\mu_{\mathrm{reach}}$ at \num{0.43} at full scale, below the plant's peak, so
 the peak factor is not identifiable from the synthetic data and the bounded
 optimiser resolves the ambiguity on a box edge.
 
+Two further properties of the loop follow from the same analysis. The fit's
+residual depends on $B$, $C$ and $D$ only through their product, because
+stage~3 reconstructs its forces from the rollout's own quasi-steady yaw balance
+and so observes nothing but the lateral acceleration the previous coefficient
+set produced; the peak factor is therefore not recoverable from the rollout at
+any excitation and must be measured on the recorded trace and held. And because
+each fit is handed the trajectory its own previous answer generated, the loop
+is a positive feedback path rather than a contraction, so stage~4 is
+reformulated as a relaxed fixed-point iteration.
+
 The correction comes with an extrapolation bound on the steering sweep, a
 frozen regularisation target, identification against the achieved rather than
-the commanded road-wheel angle, measured mass and geometry, and a friction
-warm start identified from the curvature of the axle force curve and applied
-only as a floor. Together these produce identifications with no railed
-coefficient and a peak factor of \num{1.009}/\num{1.002} against a plant
-realising \num{1.05}, with the correct understeer sign. Run against the
-inherited configuration over three timed laps on a static surface, the
-corrected pipeline \emph{preserves} that peak factor to \num{0.041} and
-\num{0.048} RMSE where the inherited configuration starts and ends on its
-\num{2.0} box constraint, and halves the MPC's lateral tracking error, from
-\SI{0.177}{\meter} to \SI{0.092}{\meter} RMS, at unchanged solver cost.
-Preserves, not identifies: this trajectory never approaches the tire's peak,
-the accepted fits return the configured prior to four decimal places, and the
-reported peak-friction accuracy is therefore the prior's
-(Section~\ref{subsubsec:priorprovenance}). That the peak factor is recoverable
-\emph{when the excitation reaches it} is shown on a known tire in
-Section~\ref{subsec:sweep}, not on these laps. Each configuration is a single
+the commanded road-wheel angle, measured mass and geometry, a friction
+warm start identified from the curvature of the axle force curve and pinned for
+the loop, a relaxation $\beta=\num{0.20}$ on the coefficient update, and a
+dynamics residual normalised to the units of the data term it is added to.
+Together these produce identifications with no railed coefficient and the
+correct understeer sign. Run against the inherited configuration over three
+timed laps on a \num{0.70} surface, deliberately not the \num{1.05} the
+configured prior was measured on, so that returning the prior scores badly,
+the corrected pipeline recovers axle cornering stiffness to
+\SI{3.2}{\percent} and \SI{1.4}{\percent} and the peak factor to
+\SI{11}{\percent}, against an inherited configuration that rails $D$ on its
+\num{2.0} box constraint in every cycle and overstates stiffness by
+\SIrange{118}{132}{\percent}. Axle force RMSE is \num{12.1}$\times$ and
+\num{10.5}$\times$ lower and MPC lateral tracking error \SI{32}{\percent}
+lower, from \SI{0.224}{\meter} to \SI{0.151}{\meter} RMS, at unchanged solver
+cost. Those numbers are an identification and not a preserved prior, with two
+qualifications. The peak factor is identified by the brush estimator on the
+recorded trace, not by the Pacejka fit, which Section~\ref{subsec:bcd} shows
+cannot identify it; and one surface is not adaptivity, which needs a friction
+\emph{change} the runs do not contain. That
+the peak factor is recoverable from the rollout \emph{when the excitation
+reaches it} is shown on a known tire in Section~\ref{subsec:sweep}, not on
+these laps. Each configuration is a single
 run, so the closed-loop margins are observations rather than estimates with a
-confidence interval. The inherited configuration is better on front-axle force
-and on lateral-velocity prediction, because the lap reaches \SI{2.2}{\degree}
-of slip and a wrong peak factor is not observable there, which is the same
-identifiability statement seen from the metric side. We further argue that
+confidence interval. We further argue that
 per-coefficient box constraints are not a sufficient admissibility criterion
 for handing a model to a model-based controller, and place gates on derived
 physical quantities at that interface instead. The earlier reference
@@ -49,26 +63,33 @@ loosened for it.
 
 \paragraph{Immediate}
 \begin{enumerate}
-\item Separate the four settings of Table~\ref{tab:scenarios}. The comparison
-reported here moves the residual architecture, the objective, the solver and
-the warm start together, so it establishes that the shipped configuration is
-better on the metrics that matter to a controller without saying which change
-earns it. The runtime objection to the temporal arm is removed
-(Section~\ref{subsec:runtime}).
-\item Excite the peak. Every result here is obtained at
-$P_{99}(|\alpha|)=\SI{2.2}{\degree}$ against a plant whose curve peaks at
-\SI{12.0}{\degree}, which is why a peak factor on its box constraint costs
-almost nothing in axle force. A trajectory or an injected manoeuvre that
-reaches further up the curve would make the two models separable on force as
-well as on friction.
+\item Run the ablations of Section~\ref{subsec:ablations} in the loop. The
+relaxation sweep, the $D$-pinning comparison and the S4D and objective
+ablations are offline replays of the identification stage on recorded buffers,
+which is enough to attribute the result but not to confirm that the ordering
+survives closed-loop coupling. Each is a scenario-file row.
+\item Sweep the friction, rather than merely mismatching it. These runs put the
+prior \SI{44}{\percent} away from a \emph{static} surface, which shows the
+pipeline moves on evidence but not that it tracks. The step and decay schedules
+already written in the scenario file are the intended vehicle, and are the
+strongest available argument for identifying on track at all.
+\item Excite the peak. The lap reaches
+$P_{99}(|\alpha|)=\SI{2.7}{\degree}$ and \SI{5.8}{\degree} at most, against a
+plant whose curve peaks at \SI{8.0}{\degree} on this surface, and an axle
+utilisation of \num{0.71}. That is enough for the friction gate to release,
+and it is also where the brush estimator's \SI{11}{\percent} bias comes from. A
+trajectory or an injected manoeuvre that traverses the peak would remove it.
 \item Run the noise sweep of~\cite{ontrack2025} on this platform using the
 bridge's odometry noise model, with a nonlinear least-squares identification of
 the same data as the comparison arm.
 \item Cross-check the friction warm start against the simulator's per-wheel
 forces across a pace sweep, including the $\sigma_{\mu}/\mu$ gate boundary and
 the IMU-versus-kinematics cross-check that guards the mass and inertia
-assumptions. It is so far validated against a synthetic brush-tire plant, where
-$\mu$ is known exactly (Table~\ref{tab:mu}).
+assumptions. It is exercised at one excitation level on the CARLA runs, where
+it returns $\mu$ \SI{11}{\percent} high, and swept only on a synthetic
+brush-tire plant where $\mu$ is known exactly (Table~\ref{tab:mu}). Since the
+published peak factor now \emph{is} that estimate, its bias is the pipeline's
+bias.
 \item Report lap time on the simulator's own clock. Lap timing currently runs
 on the ROS wall clock against a faster-than-real-time simulator, which makes
 lap time unusable as a comparison metric (Section~\ref{subsec:resultsclosedloop}).

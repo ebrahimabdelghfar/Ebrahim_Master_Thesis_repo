@@ -51,7 +51,7 @@ residual exists to absorb (load transfer, actuator dynamics, aerodynamic load,
 combined slip) are not functions of $\alpha$ alone, and $v_{x}$ in particular
 carries the load-dependent part. The geometry used for the augmentation is the
 same $l_{f},l_{r}$ the fit and the force recovery use, which is why
-$l_{wb}\equiv l_{f}+l_{r}$ is enforced (Section~V-E of the main paper): an
+$l_{wb}\equiv l_{f}+l_{r}$ is enforced (Section~V-F of the main paper): an
 augmentation computed from a different wheelbase than the one
 (7) assumes would inject a bias exactly where the network is
 meant to remove one.
@@ -83,6 +83,15 @@ one-step MSE,
 \end{equation}
 with $\lambda_{s}=0.1$, $\lambda_{m}=0.05$, $\lambda_{g}=10^{-4}$. Each answers
 a specific weakness of training a residual on one lap of ordinary driving.
+
+All four terms are stated in the units of the residual network's own output,
+which for the two dynamics residuals means scaling by $T_{s}/m$ and $T_{s}/I_{z}$
+before squaring, as Section~V-A1 of the main paper derives. Without that
+scaling $\lambda_{s}$ is not a relative weight: a force residual squared
+against a one-step increment in \si{\meter\per\second} puts
+\SI{99.9996}{\percent} of $\mathcal{L}$ on $\mathcal{L}_{\mathrm{steady}}$ at
+initialisation on a real \SI{30}{\second} buffer of this vehicle, against
+\SI{98.53}{\percent} on $\mathcal{L}_{\mathrm{data}}$ once it is applied.
 
 \paragraph{Dynamics consistency}
 $\mathcal{L}_{\mathrm{steady}}$ substitutes the \emph{corrected} next state
@@ -280,7 +289,7 @@ the per-iteration network re-initialisation and the six Pacejka fits.
 
 Two consequences follow. At \SI{20.9}{\second} the identification fits inside
 the \SI{30}{\second} re-identification period of
-Section~V-F of the main paper, so the temporal residual is a deployable
+Section~V-G of the main paper, so the temporal residual is a deployable
 option rather than an offline one; at \SI{181.4}{\second} it was not. And the
 device split is not incidental: the stage-2 rollout is strictly sequential and
 single-sample, so it is \num{4.4}$\times$ \emph{faster} on a CPU, while
@@ -298,11 +307,12 @@ Table~\ref{sup:tabbaseline} places the pipeline as published~\cite{ontrack2025}
 beside the pipeline as it stands here, on the axes that changed. The residual
 model, the data budget, the four-stage loop and the steady-state force recovery
 are inherited unchanged; what differs is the configuration of the virtual-data
-step, the regularisation topology, the measurement chain, and the contract at
+step, the relaxation on the loop closing it, the regularisation topology, the
+measurement chain, and the contract at
 the output. Table~III of the main paper's comparison is a subset of these axes:
 the rollout correction of Section~V-B of the main paper is active in both
 runs of Section~VI-C of the main paper, so that section measures the remaining
-four settings and not the rollout.
+five settings and not the rollout.
 
 \begin{table}[t]
 \caption{The baseline pipeline~\cite{ontrack2025} against this work, on the
@@ -330,7 +340,10 @@ Tikhonov to a \emph{frozen} prior; start point still tracks\\
 Steering signal & Command & Achieved road-wheel angle\\
 Mass, geometry & Configuration file & Measured static wheel loads\\
 Friction prior & --- & Per-axle brush fit of $(C_{\alpha},\mu)$ from IMU and
-odometry, gated; $P_{99}$ of $|a|/g$ as fallback; always a floor\\
+odometry, gated; applied two-sided and pinned for the per-axle fit; $P_{99}$ of
+$|a|/g$ as a floor-only fallback\\
+Coefficient update & $\phip\leftarrow\tilde\phip$ each iteration & Relaxed,
+$\phip\leftarrow(1-\beta)\phip+\beta\tilde\phip$, $\beta=\num{0.20}$\\
 Solver & Trust-region, single start & Multi-start, plus simplex and global
 options\\
 Output contract & Per-coefficient box constraints & Gates on derived
@@ -366,11 +379,12 @@ also in its cross-run comparison table.
 \centering
 \includegraphics[width=\columnwidth]{mu_error_by_scenario}
 \caption{Peak-friction error per axle against the effective coefficient the
-simulator reports per wheel ($\mu=1.05$, static for both runs). The corrected
+simulator reports per wheel ($\mu=0.70$, static for both runs). The corrected
 configuration's error is an order of magnitude smaller on both axles
-(\num{0.041} and \num{0.048} against \num{0.762} and \num{0.772} RMSE); the
-inherited configuration's error is not a mis-estimate but a coefficient parked
-on its upper bound.}
+(\num{0.145} and \num{0.142} against \num{1.300} on both, whole-run RMSE, and
+\num{0.078} once its friction gate has released); the
+inherited configuration's error comes from a coefficient parked on its upper
+bound for the entire run rather than from a mis-estimate.}
 \label{fig:muerror}
 \end{figure}
 
@@ -380,10 +394,11 @@ on its upper bound.}
 \includegraphics[width=\columnwidth]{tire_force_rmse_by_scenario}\\[2pt]
 \includegraphics[width=\columnwidth]{tire_force_r2_by_scenario}
 \caption{Axle lateral force against the plant's per-wheel telemetry, per axle:
-RMSE (top) and $R^{2}$ (bottom). The ordering reverses between axles, and this
-is the one family of metrics on which the inherited configuration is better:
-at the \SI{2.2}{\degree} of slip the lap reaches, a slope deficit costs force
-and a wrong peak factor costs nothing.}
+RMSE (top) and $R^{2}$ (bottom). The corrected configuration leads on both
+axles by an order of magnitude. The inherited configuration's negative $R^{2}$
+means its identified curve predicts the plant's axle force worse than the mean
+of that force does, which is what a railed $D=\num{2.0}$ does to the initial
+slope through (5) of the main paper.}
 \label{fig:forcebars}
 \end{figure}
 
@@ -393,10 +408,11 @@ and a wrong peak factor costs nothing.}
 \includegraphics[width=\textwidth]{tire_force_error_hist_by_scenario}
 \caption{Distribution of the axle lateral-force error (truth minus estimate),
 shared bin edges over the pooled central \SI{99}{\percent} and normalised to
-the sample count of each run. Both are centred; the inherited configuration
-buys its lower front RMSE with the heavier tail (maximum absolute error
-\SI{215}{\newton} against \SI{138}{\newton} front, \SI{223}{\newton} against
-\SI{85}{\newton} rear).}
+the sample count of each run. Both are centred, and the inherited
+configuration's distribution is roughly an order of magnitude wider at every
+quantile (maximum absolute error
+\SI{1295}{\newton} against \SI{264}{\newton} front, \SI{1316}{\newton} against
+\SI{135}{\newton} rear).}
 \label{fig:forcehist}
 \end{figure*}
 
@@ -407,8 +423,8 @@ buys its lower front RMSE with the heavier tail (maximum absolute error
 \caption{Axle lateral force over the run, one row per configuration. The two
 runs are separate laps and share only $t=0$, so each estimate is drawn against
 its own ground truth. Where the force is largest each model errs in the
-direction its initial slope predicts, the corrected configuration short and
-the inherited one long.}
+direction its initial slope predicts; the inherited configuration, whose slope
+is more than twice the plant's, runs long everywhere.}
 \label{fig:forcetime}
 \end{figure*}
 
@@ -426,10 +442,10 @@ persistence at the \SI{0.035}{\second} model step.}
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{state_error_hist_v_y}
-\caption{Lateral-velocity prediction error (truth minus estimate). The two
-configurations are indistinguishable on this channel
-(\SI{0.027}{\meter\per\second} against \SI{0.022}{\meter\per\second} RMSE);
-the yaw channel, not this one, is where they differ.}
+\caption{Lateral-velocity prediction error (truth minus estimate). The
+corrected configuration is an order of magnitude tighter on this channel
+(\SI{0.014}{\meter\per\second} against \SI{0.156}{\meter\per\second} RMSE),
+and neither model beats its own persistence baseline.}
 \label{fig:statehistvy}
 \end{figure}
 
@@ -447,7 +463,7 @@ between the configurations is tail mass, not centre.}
 \centering
 \includegraphics[width=\textwidth]{state_timeseries_by_scenario}
 \caption{Estimated states against truth over the run, one row per
-configuration, \SI{591}{\second} and \SI{564}{\second} of driving. At
+configuration, \SI{580}{\second} and \SI{555}{\second} of driving. At
 this compression the traces overlie their ground truth almost everywhere,
 which is the point: a one-step metric on a smooth racing line is close to
 uninformative, and the visible departures are the yaw-rate excursions that
@@ -461,8 +477,8 @@ separate the two configurations in Fig.~\ref{fig:statehistomega}.}
 \includegraphics[width=\columnwidth]{e_y_error_hist_by_scenario}
 \caption{Signed lateral tracking error over the whole run. The corrected
 configuration's distribution is narrower about a comparable centre, at sample
-standard deviation \SI{0.279}{\meter} against \SI{0.301}{\meter} and mean
-\SI{0.014}{\meter} against \SI{0.039}{\meter}, so the improvement is in
+standard deviation \SI{0.256}{\meter} against \SI{0.318}{\meter} and mean
+\SI{0.021}{\meter} against \SI{0.024}{\meter}, so the improvement is in
 spread, not in bias.}
 \label{fig:eyhist}
 \end{figure}
@@ -472,7 +488,8 @@ spread, not in bias.}
 \centering
 \includegraphics[width=\columnwidth]{itae_by_scenario}
 \caption{ITAE of the lateral error, overall and split by the active
-controller. The pure-pursuit phase is ordered the other way and is two orders
-of magnitude smaller.}
+controller. The pure-pursuit phases agree to \SI{3}{\percent} and are two
+orders of magnitude smaller, so the whole difference sits in the MPC phase,
+where the identified model is in the loop.}
 \label{fig:itae}
 \end{figure}

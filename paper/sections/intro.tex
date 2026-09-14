@@ -70,9 +70,10 @@ be scored against the forces the plant actually generated.
 
 \subsection{Contributions}
 
-The contributions are an identifiability result, the corrections it implies,
+The contributions are an identifiability result, two structural properties of
+the co-identification loop, the corrections all three imply,
 the gate that keeps an unidentified model out of the controller, and the
-architecture that makes all three measurable against the plant's own forces.
+architecture that makes them measurable against the plant's own forces.
 
 \begin{enumerate}
 \item \textbf{An identifiability analysis of the virtual-data step}
@@ -88,6 +89,21 @@ method~\cite{ontrack2025} at any scale. It stays latent at 1:10 because a
 \SIrange{2}{4}{\meter\per\second} rollout is representative there and is not
 here.
 
+\item \textbf{Two structural properties of the loop, and the corrections they
+imply} (Section~\ref{subsec:contraction}). First, the fit's residual depends on
+$B$, $C$ and $D$ only through their product, because stage~3 reconstructs its
+forces from the rollout's own quasi-steady yaw balance and therefore observes
+nothing but the lateral acceleration the previous coefficient set produced. The
+peak factor is consequently not recoverable from the rollout \emph{at any
+excitation}, which is a stronger statement than the low-slip degeneracy, and it
+must instead be measured on the recorded trace and held. Second, because each
+fit is handed the trajectory its own previous answer generated, the loop is a
+positive feedback path rather than a contraction, and iterating it undamped
+degrades the estimate monotonically. Stage~4 becomes a relaxed fixed-point
+iteration at $\beta=\num{0.20}$; the $\beta=0$ control, which performs no
+identification at all, is the worst setting of the sweep, so the iterations do
+carry the information.
+
 \item \textbf{The corrections the bound implies}, on both sides of the fit.
 On the rollout side (Section~\ref{subsec:iterative}), the synthetic sweep is
 bounded at $1.5\times$ the 99th percentile of the observed steering, so the
@@ -98,9 +114,11 @@ tracks the iterations. Together those remove a drift that took $D$ from the
 six iterations. On the measurement side (Section~\ref{subsec:measurement}),
 slip angles are built from the \emph{achieved} road-wheel angle rather than
 the command, mass and wheelbase come from measured static wheel loads rather
-than from a configuration file, and a friction warm start is read from the
-\emph{curvature} of the axle force curve and applied as a floor rather than as
-a median over a low-slip mask.
+than from a configuration file, a friction warm start is read from the
+\emph{curvature} of the axle force curve rather than as
+a median over a low-slip mask, and the dynamics residuals of the
+physics-informed objective are normalised to the state-increment units of the
+data term, which the published form leaves a factor \num{2.3e5} apart.
 
 \item \textbf{Admissibility gates on derived physical quantities}
 (Section~\ref{sec:integration}) at the model-to-controller boundary: axle
@@ -114,16 +132,19 @@ closed-loop evaluation on it} (Sections~\ref{subsec:platform}--\ref{subsec:data}
 and \ref{sec:results}). \bridge{} exposes the plant's own per-wheel forces,
 slip angles and loads as ROS~2 topics alongside a conventional autonomy
 interface, so an on-track identifier can be scored against the forces the plant
-generated. On a static \num{1.05} friction surface over three timed laps the
-corrected pipeline \emph{preserves} a peak factor within \num{0.05} of the
-plant's effective friction where the inherited configuration starts and ends on
-its box constraint, and halves the lateral tracking error under MPC. On this
-trajectory that factor is carried by the configured prior rather than
-recovered from the lap, the accepted fits returning the prior to four decimal
-places, and Section~\ref{subsubsec:priorprovenance} states where the prior
-came from. We also report the two axes on which the inherited configuration is
-better, and the reason: the lap reaches \SI{2.2}{\degree} of slip, where a
-wrong peak factor costs nothing.
+generated. The evaluation runs on a static \num{0.70} friction surface, which
+is deliberately not the \num{1.05} surface the configured tire prior was
+measured on: the prior overstates this run's grip by \SI{44}{\percent} and
+understates its axle cornering stiffness by \SIrange{16}{24}{\percent}, so a
+pipeline that cannot move off its prior has nowhere to hide
+(Section~\ref{subsubsec:priorprovenance}). Over three timed
+laps the corrected pipeline identifies axle cornering stiffness to
+\SI{3.2}{\percent} front and \SI{1.4}{\percent} rear and tracks the peak factor
+to \SI{11}{\percent}, against an inherited configuration that rails $D$ on its
+\num{2.0} bound in every cycle and overstates stiffness by
+\SIrange{118}{132}{\percent}. Axle force RMSE against the plant's telemetry is
+\num{12.1}$\times$ and \num{10.5}$\times$ lower, and MPC lateral tracking error
+\SI{32}{\percent} lower, at unchanged solver cost.
 \end{enumerate}
 
 The paper follows that order. Section~\ref{sec:related} places the work

@@ -72,10 +72,10 @@ $l_{f}$ / $l_{r}$              & 0.7381 / 0.7953 & \si{\meter}\\
 Yaw inertia $I_{z}$\textsuperscript{c} & 51.1 & \si{\kilo\gram\meter\squared}\\
 Wheel radius                   & 0.25 & \si{\meter}\\
 Max road-wheel angle           & 16.0 & \si{\degree}\\
-Configured wheel friction & 1.5 & ---\\
+Configured wheel friction\textsuperscript{d} & 1.0 & ---\\
 Road-surface factor & 0.70 & ---\\
-Effective friction\textsuperscript{d} & 1.05 & ---\\
-Realised peak axle friction    & 1.00--1.05 & ---\\
+Effective friction\textsuperscript{e} & 0.70 & ---\\
+Realised peak axle friction    & 0.71 & ---\\
 Drag coefficient               & 0.426 & ---\\
 \bottomrule
 \end{tabular}
@@ -88,7 +88,11 @@ from the simulator's per-wheel telemetry.
 $g=\SI{9.81}{\meter\per\second\squared}$ ($\num{2644.5}/\num{9.81}=\num{269.6}$). This is the mass every equation in this paper uses, not the configured
 body mass. \textsuperscript{b}Total minus body mass; not measured
 independently. \textsuperscript{c}Assumed; see
-Section~\ref{subsec:assumptions}. \textsuperscript{d}Configured wheel friction
+Section~\ref{subsec:assumptions}. \textsuperscript{d}A scenario parameter, not
+a vehicle property: the runs of Section~\ref{sec:results} set it to \num{1.0};
+the dedicated limit-excitation run that produced the tire prior of
+Section~\ref{subsubsec:priorprovenance} used \num{1.5}.
+\textsuperscript{e}Configured wheel friction
 multiplied by the road surface's own coefficient, as reported per wheel by
 \texttt{feedback/\allowbreak tire\_forces}. It is the effective value, not the
 configured one, that the identifier is scored against
@@ -131,19 +135,19 @@ rather than fitted to it.
 \toprule
 Quantity & Value & Unit\\
 \midrule
-Effective friction $\mu$ & 1.05 & ---\\
+Effective friction $\mu$ & 0.70 & ---\\
 Lateral stiffness $k_{y}$         & 17.0 & \si{\per\radian}\\
 Max normalised load $k_{x}$       & 2.0 & ---\\
 Initial slope $C_{\mathrm{lat}}$ at $\bar F_{z}=1$ & 14.875\,$F_{z}^{\mathrm{rest}}$ & \si{\newton\per\radian}\\
 \quad front axle, $F_{z,f}=\SI{1373}{\newton}$ & 20.4 & \si{\kilo\newton\per\radian}\\
 \quad rear axle, $F_{z,r}=\SI{1274}{\newton}$ & 19.0 & \si{\kilo\newton\per\radian}\\
-Peak reached at, $\bar F_{z}=1$, $\mu=1.05$ & 12.0 & \si{\degree}\\
+Peak reached at, $\bar F_{z}=1$, $\mu=0.70$ & 8.0 & \si{\degree}\\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}[flushleft]\scriptsize
 \item The initial slope is set by the \emph{rest} load and by the normalised load through $S_{1}$, not by $F_{z}$ alone: $C_{\mathrm{lat}}=k_{y}S_{1}(3\bar F_{z}/k_{x})\,F_{z}^{\mathrm{rest}}$ evaluates to $14.875\,F_{z}^{\mathrm{rest}}$ at $\bar F_{z}=1$ and falls monotonically with $\bar F_{z}$.
 \item Every axle slope quoted in this paper is therefore taken at $\bar F_{z}=1$ and at the static axle loads listed here (the geometric split $l_{r}/L$, $l_{f}/L$ of the total wheel load; see Section~\ref{subsec:assumptions}, A2, for its \SI{1.4}{\percent} disagreement with the measured load split of Table~\ref{tab:vehicle}).
-\item The peak angle follows from $K=3$ in \eqref{eq:physx}, i.e.\ $\tan\alpha_{\mathrm{peak}}=3\mu/\big(k_{y}S_{1}(3\bar F_{z}/k_{x})\big)$, and therefore moves with $\mu$: \SI{12.0}{\degree} at the effective $\mu=\num{1.05}$.
+\item The peak angle follows from $K=3$ in \eqref{eq:physx}, i.e.\ $\tan\alpha_{\mathrm{peak}}=3\mu/\big(k_{y}S_{1}(3\bar F_{z}/k_{x})\big)$, and therefore moves with $\mu$: \SI{8.0}{\degree} at the effective $\mu=\num{0.70}$ of the runs reported here, \SI{12.0}{\degree} at the $\mu=\num{1.05}$ of the prior-fitting run. The initial slope does not move with $\mu$; the \emph{effective} slope fitted over a given run's load range does, and falls below the $\bar F_{z}=1$ value tabulated here.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}
