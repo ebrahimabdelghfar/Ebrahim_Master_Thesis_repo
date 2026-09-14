@@ -1,9 +1,9 @@
 scenario,category,value
-ours,v_y,0.012
-ours,v_y_persistence,0.009
-ours,omega,0.042
+ours,v_y,0.014
+ours,v_y_persistence,0.011
+ours,omega,0.049
 ours,omega_persistence,0.005
-Baseline-NN-MSE,v_y,0.022
-Baseline-NN-MSE,v_y_persistence,0.01
-Baseline-NN-MSE,omega,0.063
-Baseline-NN-MSE,omega_persistence,0.005
+Baseline-NN-MSE,v_y,0.156
+Baseline-NN-MSE,v_y_persistence,0.017
+Baseline-NN-MSE,omega,0.104
+Baseline-NN-MSE,omega_persistence,0.007

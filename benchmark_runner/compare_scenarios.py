@@ -13,6 +13,7 @@ scenario, plus a PNG and a same-named CSV per comparison figure.
 """
 import argparse
 import csv
+import math
 import sys
 from collections import OrderedDict
 from pathlib import Path
@@ -265,8 +266,10 @@ class Comparison:
             edges = _shared_bins(per_scenario.values())
             for scenario, samples in per_scenario.items():
                 weights = [1.0 / len(samples)] * len(samples)
-                ax.hist(samples, bins=edges, weights=weights, alpha=0.45, label=scenario,
-                        color=self.color(scenario))
+                # RMSE in the label: peak height is a bin-alignment artifact, not spread.
+                rmse = math.sqrt(sum(v * v for v in samples) / len(samples))
+                ax.hist(samples, bins=edges, weights=weights, alpha=0.45,
+                        label=f'{scenario} (RMSE {rmse:.3g})', color=self.color(scenario))
             ax.set_title(signal)
             ax.set_xlabel(
                 f'Error (GT - estimate) [{unit_of.get(signal, "")}] (central 99 %)')
