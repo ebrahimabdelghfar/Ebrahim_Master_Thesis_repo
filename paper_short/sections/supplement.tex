@@ -65,7 +65,7 @@ where the data supports it. Deep Dynamics~\cite{deepdynamics2024} makes the
 complementary choice of constraining coefficients \emph{inside} the network;
 here the network is left unconstrained and its input space is made physical
 instead. The augmentation is available on its own (\texttt{physics\_inputs})
-and combined with the temporal residual (\textbf{s4} with
+and combined with the temporal residual (\texttt{s4} with
 \texttt{use\_physics\_inputs}), and is rank-agnostic, so the same code path
 serves a flat batch and a windowed sequence batch.
 
@@ -184,9 +184,9 @@ CPU. Profiled as first written, the S4D path cost \SI{125.7}{\milli\second} per
 epoch on a GPU and \SI{898}{\milli\second} per stage-2 rollout, putting a
 six-iteration identification at \SI{181.4}{\second}, longer than the
 \SI{30}{\second} data window it consumes. Three changes remove that cost
-without altering the arithmetic. None is novel as a technique; what matters
-here is that the resulting pipeline is real-time-plausible on commodity
-hardware, and that the equivalence was verified rather than assumed.
+without altering the arithmetic. None is novel as a technique. What they buy
+here is a pipeline that is real-time-plausible on commodity hardware, with the
+equivalence verified rather than assumed.
 
 \paragraph{Closed-form kernel instead of a scan}
 A diagonal $A$ makes the block's impulse response available in closed form,
@@ -464,8 +464,8 @@ between the configurations is tail mass, not centre.}
 \includegraphics[width=\textwidth]{state_timeseries_by_scenario}
 \caption{Estimated states against truth over the run, one row per
 configuration, \SI{580}{\second} and \SI{555}{\second} of driving. At
-this compression the traces overlie their ground truth almost everywhere,
-which is the point: a one-step metric on a smooth racing line is close to
+this compression the traces overlie their ground truth almost everywhere:
+a one-step metric on a smooth racing line is close to
 uninformative, and the visible departures are the yaw-rate excursions that
 separate the two configurations in Fig.~\ref{fig:statehistomega}.}
 \label{fig:statetime}

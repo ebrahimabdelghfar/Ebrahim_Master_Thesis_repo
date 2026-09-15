@@ -10,7 +10,7 @@ methodological contribution.
 
 \begin{figure*}[t]
 \centering
-\resizebox{0.84\textwidth}{!}{\input{figures/pipeline}}
+\resizebox{0.98\textwidth}{!}{\input{figures/pipeline}}
 \caption{The identification pipeline. Recorded lap data trains the residual
 network, the corrected model is rolled out through a synthetic steering sweep,
 Pacejka coefficients are fitted to that sweep, and the fit becomes the next
@@ -86,8 +86,8 @@ with $\lambda_{s}=0.1$, $\lambda_{m}=0.05$, $\lambda_{g}=10^{-4}$, adds three
 penalties to the one-step MSE~\cite{raissi2019pinn,deepdynamics2024}:
 $\mathcal{L}_{\mathrm{steady}}$ keeps the two residual channels jointly
 consistent with \eqref{eq:vydot}--\eqref{eq:omdot} on a quasi-steady mask, so
-they cannot imply an axle force pair no tire could produce --- and it is that
-force pair, not the state prediction, that stage~3 fits;
+they cannot imply an axle force pair no tire could produce (stage~3 fits that
+force pair, not the state prediction);
 $\mathcal{L}_{\mathrm{sym}}$ enforces the odd symmetry $e(-\vecz)=-e(\vecz)$ of
 a laterally symmetric vehicle; $\mathcal{L}_{\mathrm{smooth}}$ is a soft
 Lipschitz bound.
@@ -99,8 +99,8 @@ magnitude apart, so $\lambda_{s}$ is not a relative weight at all: measured at
 initialisation on a \SI{30}{\second} buffer of this vehicle, the unnormalised
 steady term contributes \SI{99.9996}{\percent} of $\mathcal{L}$ against
 \SI{0.0004}{\percent} for the data term, a ratio of $\num{2.3e5}$. Such a
-residual is fitted to cancel the nominal model's own force imbalance and never
-to the data it was given. Each residual is therefore expressed as the state
+residual fits the nominal model's own force imbalance rather than the data it
+was given. Each residual is therefore expressed as the state
 increment it implies, the unit the network's output is in,
 \begin{equation}
 r_{\mathrm{lat}}=\frac{T_{s}}{m}\,\Big(m\dot v_{y}+mv_{x}\omega-(\Fyr+\Fyf\cos\delta)\Big),
@@ -109,12 +109,12 @@ r_{\mathrm{lat}}=\frac{T_{s}}{m}\,\Big(m\dot v_{y}+mv_{x}\omega-(\Fyr+\Fyf\cos\d
 and $r_{\mathrm{yaw}}$ likewise with $T_{s}/I_{z}$. The shares become
 \SI{98.53}{\percent} data and \SI{1.47}{\percent} steady, recovering the meaning
 \eqref{eq:pinnloss} gives $\lambda_{s}$. This is a correction to the objective
-as published, not an implementation detail.
+as published.
 
 \subsection{Excitation-aware virtual rollout}
 \label{subsec:excitation}
 
-This is the central correction. Consider stage~2 of
+Consider stage~2 of
 Section~\ref{subsec:baseline}: a constant-speed rollout at $v$ with the steering
 ramped to $\delta_{\mathrm{sweep}}$. In quasi-steady cornering the lateral
 acceleration a single-track vehicle develops kinematically is
@@ -162,7 +162,7 @@ compounds: $D$ walked from the \num{1.009}/\num{1.002} prior to
 \num{1.5402}/\num{1.8721} over six iterations, a claimed \SI{1.7}{\g} on a
 vehicle measuring \SI{1.0}{\g} in steady state.
 
-Two changes close the loop. First, an \textbf{extrapolation bound}: the sweep
+Two changes close the loop. First, an extrapolation bound: the sweep
 terminates at $\delta_{\mathrm{sweep}}=\mathrm{clip}\big(\lambda_{e}
 P_{99}(|\delta_{\mathrm{obs}}|),\,\delta_{\min},\,\delta_{\max}\big)$ with
 $\lambda_{e}=1.5$, $\delta_{\min}=\SI{0.05}{\radian}$ and
@@ -172,7 +172,7 @@ $\delta_{\max}$ and the inherited \SI{0.4}{\radian} lie above the plant's
 \SI{0.279}{\radian} mechanical lock deliberately: the sweep is a \emph{virtual}
 rollout, and clamping it to the lock would cap $\mu_{\mathrm{reach}}$ a second
 time, by the actuator instead of the rollout speed
-(Section~\ref{subsec:assumptions}, A6). Second, a \textbf{frozen prior}: the
+(Section~\ref{subsec:assumptions}, A6). Second, a frozen prior: the
 Tikhonov target is held at the configured $\phip^{0}$ for all iterations while
 the optimiser's \emph{start point} continues to track the previous iteration,
 giving the per-axle objective
@@ -201,8 +201,8 @@ synthetic trajectory reduces to
 \label{eq:rollobs}
 \end{equation}
 so the only quantity \eqref{eq:fitobj} ever compares against is the lateral
-acceleration the rollout realises --- produced by the \emph{previous}
-coefficient set through its slope $F_{z}BCD$. The fit's residual therefore
+acceleration the rollout realises, which the \emph{previous} coefficient set
+produced through its slope $F_{z}BCD$. The fit's residual therefore
 depends on $(B,C,D)$ only through their product, and $D$ is the free coordinate
 of the hyperbola $BCD=\mathrm{const}$. Replayed on five identification buffers
 of a live $\mu=\num{1.05}$ run, the product is recovered tightly, $BCDF_{z,f}$
@@ -233,7 +233,7 @@ with $\beta=\num{0.20}$; $\beta=1$ recovers the inherited update exactly. The
 sweep over $\beta$ (Section~\ref{subsec:ablations}) carries the control the
 contribution needs: $\beta=0$ freezes the coefficients at the pinned prior,
 performing no identification at all, and is the worst setting. The iterations do
-carry information; they have to be damped for it to survive.
+carry information, but only a damped update preserves it.
 
 Fitting itself applies \eqref{eq:ssforces} to the synthetic data under box
 constraints $\phip\in([4.0,1.2,0.4,-3.0],[20.0,2.2,2.0,1.0])$ per axle, over
@@ -294,7 +294,7 @@ loss~\cite{virtanen2020scipy,branch1999trust}. The brush model replaces
 can support, against the four of the model whose non-identifiability at low slip
 this paper is about. What beats the utilisation bound is that $\mu$ enters
 \eqref{eq:brush} through the \emph{curvature} of $F_{y}(\alpha)$ and not only
-its asymptote: writing $r=|F_{y}|/(C_{\alpha}|\tan\alpha|)$ for the force's
+through its asymptote: writing $r=|F_{y}|/(C_{\alpha}|\tan\alpha|)$ for the force's
 departure from its own linear extrapolation, \eqref{eq:brush} inverts to
 \begin{equation}
 \mu=\frac{2k}{3-\sqrt{3(4r-1)}},\qquad k=\frac{C_{\alpha}|\tan\alpha|}{3F_{z}},
@@ -351,7 +351,7 @@ uses, the server multiplying it by the road surface's \num{0.70}.
 \label{subsec:deployment}
 
 The identifier runs as a single ROS~2 node cycling a rolling FIFO buffer through
-four states --- collect, train, await the controller's acknowledgement, run ---
+four states (collect, train, await the controller's acknowledgement, run),
 re-identifying every $T_{\mathrm{reid}}=\SI{30}{\second}$. Coefficients are
 submitted over a service call whose non-acknowledgement leaves the previous
 model in place, so a rejected identification degrades to the last accepted model
@@ -362,15 +362,15 @@ seconds between a fit completing and its acknowledgement landing are seconds
 still driven on the previous model.
 
 Three levels of validation are used, in increasing strength, and all three score
-the \emph{accepted} model only. \textbf{One-step prediction} on a held-out run,
+the \emph{accepted} model only. One-step prediction on a held-out run,
 as in the baseline: RMSE and $R^{2}$ of $v_{y}$ and $\omega$, with online
 statistics in Welford's form~\cite{welford1962} and samples admitted only above
-\SI{1}{\meter\per\second}. \textbf{Direct force comparison} against
+\SI{1}{\meter\per\second}. Direct force comparison against
 \texttt{feedback/\allowbreak tire\_forces}: the identified curve is evaluated at
 the measured $(\alpha,F_{z})$ and compared per axle against the measured
 $F_{y}$, and against the plant's own curve~\eqref{eq:physx} at the same points,
 which separates the error of the fit from the error of representing a PhysX
-tire. \textbf{Closed-loop tracking} under the MPC: lateral deviation, its
+tire. Closed-loop tracking under the MPC: lateral deviation, its
 time-weighted integral, heading error and solver cost, split by active
 controller so the pure-pursuit acquisition phase is not scored against a model
 it does not use.

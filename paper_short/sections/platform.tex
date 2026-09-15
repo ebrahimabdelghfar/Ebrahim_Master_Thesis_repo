@@ -10,7 +10,7 @@ selected because it exposes per-wheel slip angle, normal load and tire force
 rather than chassis states alone, and because its synchronous mode with a fixed
 physics step (\SI{0.033}{\second} here) stamps every sample on the simulation
 clock; those two properties are what make the identifiability claims of
-Section~\ref{sec:method} checkable rather than merely
+Section~\ref{sec:method} checkable rather than
 arguable~\cite{kaur2021simsurvey}.
 
 \subsection{Plant: Formula AI vehicle in CARLA}
@@ -66,8 +66,8 @@ configured one, that the identifier is scored against
 \subsection{The plant's tire curve, in closed form}
 \label{subsec:planttire}
 
-The identification target is worth stating exactly, because it is knowable
-here. PhysX computes the lateral force of each wheel with
+The identification target is known here in closed form.
+PhysX computes the lateral force of each wheel with
 \texttt{PxVehicle\-Compute\-Tire\-Force\-Default}~\cite{physxvehicle}; at zero
 longitudinal slip and zero camber that expression collapses to
 \begin{equation}
@@ -80,10 +80,11 @@ S_{1}\!\big(3\bar F_{z}/k_{x}\big)$, $\bar F_{z}=F_{z}/F_{z}^{\mathrm{rest}}$
 the normalised load, $(k_{y},k_{x})$ the wheel's lateral-stiffness parameters,
 and $S_{1}(K)=\min(1,\,K-K^{2}/3+K^{3}/27)$ the engine's smoothing function.
 
-Two properties of \eqref{eq:physx} shape everything downstream. It saturates at
-$\mu F_{z}$, first reached at $K=3$, and it \emph{never falls off} past that
-peak, so a Magic Formula --- whose $E$ and post-peak decay exist precisely to
-describe a falling branch --- can match it up to the peak and no further. Its
+Two properties of \eqref{eq:physx} matter downstream. It saturates at
+$\mu F_{z}$, first reached at $K=3$, and it never falls off past that
+peak, so a Magic Formula can match it up to the peak and no further: $E$ and
+the post-peak decay exist to describe a falling branch this curve does not
+have. Its
 scale is set entirely by $\mu$ and $C_{\mathrm{lat}}$, both of which the
 simulator publishes, so the curve of Table~\ref{tab:ref} is read off the plant
 rather than fitted to it.
@@ -126,7 +127,7 @@ identified fit from the error of representing \eqref{eq:physx} in the form
 
 \begin{figure*}[t]
 \centering
-\resizebox{0.86\textwidth}{!}{\input{figures/bridge_architecture}}
+\resizebox{\textwidth}{!}{\input{figures/bridge_architecture}}
 \caption{Architecture of the \bridge{} ROS~2 interface. The bridge links
 against CARLA's C\texttt{++} client, drives the ego vehicle through CARLA's
 native Ackermann controller, and republishes state, sensors and per-wheel

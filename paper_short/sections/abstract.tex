@@ -1,12 +1,12 @@
 % === ABSTRACT & KEYWORDS =====================================================
 \begin{abstract}
-On-track system identification promises tire models learned from ordinary
-racing laps rather than dedicated manoeuvres. We study one such
-residual-learning pipeline at full vehicle scale, in a simulator publishing
-per-wheel forces as ground truth. Transplanted unchanged from a 1:10 platform
-it converges on a tire with less than half the vehicle's grip ceiling and most
-Pacejka coefficients railed: not a solver or tuning failure but a loss of
-excitation created by the pipeline's own virtual-data step. The friction the
+On-track system identification learns tire models from ordinary racing laps
+instead of dedicated manoeuvres. We study one such residual-learning pipeline
+at full vehicle scale, in a simulator publishing per-wheel forces as ground
+truth. Transplanted unchanged from a 1:10 platform it converges on a tire with
+less than half the vehicle's grip ceiling and most Pacejka coefficients railed.
+The cause is a loss of excitation created by the pipeline's own virtual-data
+step, which no change of solver or tuning removes. The friction the
 synthetic rollout can demand,
 $\mu_{\mathrm{reach}}=v^{2}\delta_{\mathrm{sweep}}/(gL)$, is a property of the
 rollout configuration and not of the tire, as a grid on a known tire confirms.
@@ -17,7 +17,7 @@ its own previous answer is not a contraction. We correct all three (rollout
 speed from the measured lap, sweep bounded to the observed steering, peak
 factor measured off the trace and pinned, update damped into a relaxed
 fixed-point iteration) and gate the controller interface on derived physical
-quantities, not coefficient bounds. Over three timed laps on a surface
+quantities rather than on coefficient bounds. Over three timed laps on a surface
 \SI{33}{\percent} below the one its prior was measured on, no coefficient
 rails, axle cornering stiffness is recovered to \SI{3}{\percent} and the peak
 factor to \SI{11}{\percent}, against a railed peak factor and a

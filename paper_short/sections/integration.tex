@@ -52,10 +52,10 @@ QP setup-and-solve cost of \SI{0.36}{\milli\second} against the
 \SI{50}{\milli\second} control period.
 
 
-The gates are the contract between identification and control: an
-identification that passes is a model the controller can be held responsible
-for, one that fails is reported as unidentified rather than silently deployed.
-Two further controller-side changes were required before any identified model
-could be evaluated at full-scale speeds --- reference speeds are clamped at
-ingest, and the solved state is rolled forward by the measured transport delay
-before each solve --- recorded for completeness, not as identification results.
+An identification that passes the gates is a model the controller can be held
+responsible for; one that fails is reported as unidentified rather than
+deployed. Two further controller-side changes were required before any
+identified model could be evaluated at full-scale speeds: reference speeds are
+clamped at ingest, and the solved state is rolled forward by the measured
+transport delay before each solve. Both are recorded for completeness and are
+not identification results.

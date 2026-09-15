@@ -28,7 +28,7 @@ the peak from the \emph{curvature} of the force response, read through the
 pneumatic trail in steering torque. Our estimator uses the same observation on
 the axle force curve reconstructed from the IMU and odometry, with no
 steering-torque sensor; it is then gated, applied to both axles from the axle
-the manoeuvre identifies, and pinned for the co-identification loop --- a
+the manoeuvre identifies, and pinned for the co-identification loop, which is a
 property of what that loop can identify (Section~\ref{subsec:bcd}) rather than
 of the estimator. Gaussian-process approaches learn the mismatch of a nominal
 model \cite{hewing2018cautious,hewing2020cautious,kabzan2019lbmpc} at a
@@ -40,17 +40,17 @@ physics-constraint axis: it estimates Pacejka coefficients inside a neural
 network and adds a \emph{Physics Guard} layer clamping them into nominal ranges.
 Our admissibility gates share the motivation but differ in placement. We report
 as a substantive finding that per-coefficient box constraints are
-\emph{insufficient}: the degenerate fit that motivated this work satisfied every
+insufficient: the degenerate fit that motivated this work satisfied every
 box constraint while five of eight coefficients sat exactly on a bound, and a
 later fit satisfied every box constraint while being pairwise oversteering and
 open-loop unstable above \SI{14.5}{\meter\per\second}. We therefore gate on
 derived quantities at the model-to-controller interface and treat a coefficient
 resting on a bound as a diagnostic of non-identifiability rather than a
 successful clamp. The hybrid residual-plus-virtual-data structure
-of~\cite{ontrack2025} is the pipeline we extend; its key idea, to query the
-learned model only where it interpolates and extract physically parameterised
-coefficients from it, is retained unchanged, and what we correct is the
-mechanism deciding \emph{where} the learned model is queried.
+of~\cite{ontrack2025} is the pipeline we extend; the idea it rests on, to query
+the learned model only where it interpolates and extract physically
+parameterised coefficients from it, is retained unchanged, and what we correct
+is the mechanism deciding \emph{where} the learned model is queried.
 
 \subsection{Overlap with concurrent work}
 

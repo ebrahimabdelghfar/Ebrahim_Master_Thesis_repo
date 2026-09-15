@@ -21,8 +21,8 @@ top of it makes the effective coefficient \num{0.70}, constant to the last digit
 the simulator reports over all \num{10744} and \num{12025} force-validation
 samples of the two runs. It is deliberately \emph{not} the $\mu=\num{1.05}$
 surface the tire prior was measured on
-(Section~\ref{subsubsec:priorprovenance}), so a pipeline that cannot move off
-its prior has nowhere to hide. It remains a \emph{single} surface: the
+(Section~\ref{subsubsec:priorprovenance}), so an arm that cannot move off
+its prior cannot score well here. It remains a \emph{single} surface: the
 adaptivity claim a friction sweep would support is not made
 (Section~\ref{subsec:limits}).
 
@@ -43,7 +43,7 @@ plant; that regeneration, not a relaxed gate, unblocked the closed-loop runs.
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.86\textwidth]{raceline.pdf}
+\includegraphics[width=\textwidth]{raceline.pdf}
 \caption{The optimised raceline used for both
 runs~\cite{tumracetraj,heilmeier2020}. (a) Track layout, coloured by lateral
 demand, with the marked corner ($R=\SI{18.7}{\meter}$) the tightest on the lap.
@@ -113,8 +113,8 @@ slopes of \SI{13.2}{\kilo\newton\per\radian} front and
 \SI{13.9}{\kilo\newton\per\radian} rear against the \num{0.70} and the
 \num{17.4} and \SI{16.6}{\kilo\newton\per\radian} this surface realises.
 Returning it unchanged is a \SI{44}{\percent} grip overstatement and a
-\SIrange{16}{24}{\percent} stiffness deficit; to score well an arm has to
-\emph{move}, in the right direction, from a prior that is wrong.
+\SIrange{16}{24}{\percent} stiffness deficit, so an arm has to move away from
+that prior, in the right direction, to score well.
 
 \subsection{Identifiability of the peak factor against rollout excitation}
 \label{subsec:sweep}
@@ -193,8 +193,8 @@ collapse onto a common $\mu_{\mathrm{reach}}$, for the upper-bound reason of
 Section~\ref{subsec:excitation}: at $v=\SI{20}{\meter\per\second}$
 \eqref{eq:mureach} reads \num{10.64} against a realised \numrange{1.40}{2.18}.
 Read against the realised demand both axes behave alike, so \eqref{eq:mureach}
-should be used as the pipeline uses it --- a cheap screening bound, conclusive
-when it falls below $D$, not a measure of excitation achieved. One property
+should be used as the pipeline uses it: a cheap screening bound, conclusive
+when it falls below $D$, and not a measure of excitation achieved. One property
 bounds how all of this should be read: with the residual set to zero, a Magic
 Formula is fitted to Magic-Formula data under exactly matched structure, so the
 recovery is a best case.
@@ -297,7 +297,7 @@ $\mu=\num{1.05}$ runs it did not.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.74\columnwidth]{pacejka_identified_vs_nominal_by_scenario}
+\includegraphics[width=\columnwidth]{pacejka_identified_vs_nominal_by_scenario}
 \caption{Identified tire models against the plant. Top and middle: the plant's
 own curve~\eqref{eq:physx} at the measured static load of each axle (black)
 against each run's last accepted identification. Bottom: the identified Magic
@@ -331,7 +331,7 @@ release it is \num{0.078} on both axles. \basearm{} returns
 $D=\num{2.000}$ on both axles in every accepted identification and never leaves
 the bound, a constant $\mu$ error of \num{1.300}, so \oursarm{} is
 \num{9.0}$\times$ better on the whole-run figure and \num{16.7}$\times$ better
-once its warm start has released --- a difference worth \SI{1.23}{\g} of claimed
+once its warm start has released, a difference worth \SI{1.23}{\g} of claimed
 grip against a plant that sustains \num{0.71}. Two qualifications belong on that
 column: the peak factor is \emph{measured} by the brush estimator on the
 recorded trace and then held, not recovered by the Pacejka fit, which
@@ -341,15 +341,22 @@ tendency to over-read $\mu$ where the curve is not fully traversed.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\columnwidth]{mu_timeseries_by_scenario}
-\caption{Peak friction over the run, one row per configuration: the plant's
-effective $\mu$ (black) against the identified peak factor $D$ published at
-each accepted identification. The surface is static, so every
-departure from the black line is estimator error. \oursarm{} publishes the
+% Front-axle column only: the rear panels are numerically identical (D is pinned
+% to the same value on both axles), so they are cropped to give the front panels
+% the full column width. Trim is in PDF points on an 864x460.8 pt page; the
+% gutter between the two panel columns sits at x = 652..669 px of a 1320 px
+% raster, and the top 40 px carry the now-redundant suptitle.
+\includegraphics[trim=0 0 431 26, clip, width=0.85\columnwidth]{mu_timeseries_by_scenario}
+\caption{Peak friction over the run, front axle, one row per configuration: the
+plant's effective $\mu$ (black) against the identified peak factor $D$ published
+at each accepted identification. The rear axle is identical and is omitted,
+since $D$ is pinned to the same value on both axles
+(Section~\ref{subsec:frictionfloor}). The surface is static, so every departure
+from the black line is estimator error. \oursarm{} publishes the
 $\mu=\num{1.05}$ prior while the friction gate is closed, then steps down onto
 the plant within \SI{11}{\percent} at the first release and holds there for the
-remaining five cycles, while \basearm{} sits on the
-$D\le\num{2.0}$ box constraint for the whole run.}
+remaining five cycles, while \basearm{} sits on the $D\le\num{2.0}$ box
+constraint for the whole run.}
 \label{fig:mutimeseries}
 \end{figure}
 
@@ -363,7 +370,7 @@ magnitude in RMSE and in the error tails; the baseline's negative $R^{2}$ means
 its curve predicts the plant's axle force worse than the mean of that force
 does. This is the linear-range result seen as force: at
 $P_{99}(|\alpha|)=\SI{2.7}{\degree}$ the metric is dominated by cornering
-stiffness, so the models separate almost entirely on slope --- but because $D$
+stiffness, so the models separate almost entirely on slope. Because $D$
 multiplies that slope in \eqref{eq:stiffness}, \basearm{}'s railed
 $D$ is the direct cause of its force error. The comparison is also why the
 relaxed update of \eqref{eq:relax} belongs in the method rather than a
@@ -445,7 +452,7 @@ control period. \oursarm{} only; not a comparison between arms.}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.85\columnwidth]{tracking_error_by_scenario}
+\includegraphics[width=\columnwidth]{tracking_error_by_scenario}
 \caption{Absolute lateral tracking error by configuration and active
 controller. The pure-pursuit boxes cover the acquisition phase before handover
 and do not use the identified model. The MPC boxes do.}
@@ -523,15 +530,15 @@ Table~\ref{tab:beta} sweeps $\beta$ of \eqref{eq:relax} at six iterations
 throughout; two columns are the argument. At $\beta=\num{1.00}$, the inherited
 undamped update, axle force RMSE is \num{70.4} and \SI{62.3}{\newton}, reached
 by degrading monotonically from \num{38.9} and \SI{26.3}{\newton} at a single
-iteration: the loop is not refining the estimate, it is amplifying its own
-extrapolation. At $\beta=\num{0.00}$ the coefficients never move from the pinned
-prior --- no identification at all --- and that is the \emph{worst} column,
+iteration: the loop amplifies its own extrapolation instead of refining the
+estimate. At $\beta=\num{0.00}$ the coefficients never move from the pinned
+prior, which is no identification at all, and that is the worst column,
 \num{92.5} and \SI{71.8}{\newton}. The minimum sits between them at
 $\beta=\num{0.20}$, \num{28.0} and \SI{19.4}{\newton}, a mean of
 \SI{23.7}{\newton}, and the identified $BCD$ rises monotonically with $\beta$,
 so the damping trades how much of each fit is accepted against how much
 extrapolation error comes with it. Six iterations are therefore defensible on
-evidence, but only damped.
+this evidence, provided the update is damped.
 
 \begin{table}[t]
 \caption{Relaxation sweep. Five recorded buffers, six iterations, offline replay.}
@@ -560,9 +567,9 @@ Pinning the peak factor accounts for most of what remains. Replayed on five
 buffers of a $\mu=\num{1.05}$ run, letting the fit move $D$ gives a mean
 $|D-\mu|$ of \num{0.585} and a front-stiffness spread of
 \SI{32.9}{\kilo\newton\per\radian}; pinning only the axles whose brush fit was
-released reduces those to \num{0.191} and \num{32.3}, and additionally holding
+released reduces those to \num{0.191} and \num{32.3}, and also holding
 the axles with no released measurement, the shipped rule, to \num{0.084} and
-\SI{18.5}{\kilo\newton\per\radian} --- so what removes most of the error is
+\SI{18.5}{\kilo\newton\per\radian}. What removes most of the error is
 refusing to let an unmeasured $D$ be fitted at all. Normalising the
 physics-informed objective is necessary but not sufficient alone: it moves the
 loss shares from \SI{99.9996}{\percent} on the dynamics residual to

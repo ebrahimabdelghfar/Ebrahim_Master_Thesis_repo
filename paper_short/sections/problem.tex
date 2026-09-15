@@ -61,7 +61,7 @@ $v_{\mathrm{crit}}=L\sqrt{C_{f}C_{r}/\big(m(l_{f}C_{f}-l_{r}C_{r})\big)}$
 
 Two properties of \eqref{eq:mf} are used throughout. First, its slope at zero
 slip is $F_{z}BCD$, so the cornering stiffness depends on the coefficients only
-through that product, and $E$ drops out. Second, and decisively, if the data
+through that product, and $E$ drops out. Second, if the data
 never approaches the peak, \eqref{eq:mf} linearises to $F_{y}\approx
 F_{z}(BCD)\alpha$ and $B$, $C$, $D$ become mutually unidentifiable. Given data
 that does reach the peak, \eqref{eq:mf} is \emph{structurally}
@@ -93,7 +93,7 @@ and $\phip$ is fitted to $(\alpha_{i},F_{y,i})$ by bounded least squares
 (stage~3); the fitted $\phip$ then becomes the next iteration's nominal model
 (stage~4). Algorithm~\ref{alg:loop} gives the corrected cycle in full.
 
-The point that drives the rest of this paper is that stage~3 \emph{never sees
-the recorded lap}. It sees the output of stage~2. The recorded lap enters only
-through the residual network, so the excitation available to the fit is set by
-the rollout configuration and not by how the vehicle was driven.
+The rest of this paper follows from one property of that structure: stage~3
+never sees the recorded lap, only the output of stage~2. The recorded lap
+enters only through the residual network, so the excitation available to the
+fit is set by the rollout configuration and not by how the vehicle was driven.
