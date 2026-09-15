@@ -83,7 +83,8 @@ frozen at the configured prior, slip angles built from the \emph{achieved}
 road-wheel angle, mass and wheelbase from measured static wheel loads, a
 friction warm start from the \emph{curvature} of the axle force curve, and
 physics-informed dynamics residuals normalised to the state-increment units of
-the data term, which the published form leaves a factor \num{2.3e5} apart.
+the data term, from which raw force and moment residuals sit a factor
+\num{2.3e5} away.
 
 \item \textbf{Admissibility gates on derived physical quantities} at the
 model-to-controller boundary (Section~\ref{sec:integration}): axle cornering
