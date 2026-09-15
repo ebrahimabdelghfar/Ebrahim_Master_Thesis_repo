@@ -6,24 +6,23 @@ This paper studied the identifiability of a learning-based on-track Pacejka
 identification pipeline~\cite{ontrack2025} at full vehicle scale, using a CARLA
 simulation architecture that exposes the plant's own per-wheel forces as ground
 truth. Transplanted unchanged from a 1:10 platform, the pipeline fails in a
-specific, diagnosable and correctable way. The failure is a loss of excitation
-created by the pipeline's own virtual-data step, which no change of solver,
-bounds or tuning removes, and whose reachable friction
+specific, diagnosable and correctable way: a loss of excitation created by its
+own virtual-data step, which no change of solver, bounds or tuning removes, and
+whose reachable friction
 $\mu_{\mathrm{reach}}=v^{2}\delta_{\mathrm{sweep}}/(gL)$ depends on the rollout
-configuration and not on the tire. A rollout speed appropriate at 1:10 caps
+configuration and not the tire. A rollout speed appropriate at 1:10 caps
 $\mu_{\mathrm{reach}}$ at \num{0.43} at full scale, below the plant's peak, so
 the peak factor is not identifiable from the synthetic data and the bounded
-optimiser resolves the ambiguity on a box edge.
-
-Two further properties of the loop follow from the same analysis. The fit's
-residual depends on $B$, $C$ and $D$ only through their product, because
-stage~3 reconstructs its forces from the rollout's own quasi-steady yaw balance
-and so observes nothing but the lateral acceleration the previous coefficient
-set produced; the peak factor is therefore not recoverable from the rollout at
-any excitation and must be measured on the recorded trace and held. And because
-each fit is handed the trajectory its own previous answer generated, the loop
-is a positive feedback path rather than a contraction, so stage~4 is
-reformulated as a relaxed fixed-point iteration.
+optimiser resolves the ambiguity on a box edge. Two further properties of the
+loop follow from the same analysis. The fit's residual depends on $B$, $C$ and
+$D$ only through their product, because stage~3 reconstructs its forces from
+the rollout's own quasi-steady yaw balance and so observes nothing but the
+lateral acceleration the previous coefficient set produced; the peak factor is
+therefore not recoverable from the rollout at any excitation and must be
+measured on the recorded trace and held. And because each fit is handed the
+trajectory its own previous answer generated, the loop is a positive feedback
+path rather than a contraction, so stage~4 is reformulated as a relaxed
+fixed-point iteration.
 
 The correction comes with an extrapolation bound on the steering sweep, a
 frozen regularisation target, identification against the achieved rather than
@@ -34,30 +33,27 @@ dynamics residual normalised to the units of the data term it is added to.
 Together these produce identifications with no railed coefficient and the
 correct understeer sign. Run against the inherited configuration over three
 timed laps on a \num{0.70} surface, deliberately not the \num{1.05} the
-configured prior was measured on, so that returning the prior scores badly,
-the corrected pipeline recovers axle cornering stiffness to
-\SI{3.2}{\percent} and \SI{1.4}{\percent} and the peak factor to
-\SI{11}{\percent}, against an inherited configuration that rails $D$ on its
-\num{2.0} box constraint in every cycle and overstates stiffness by
-\SIrange{118}{132}{\percent}. Axle force RMSE is \num{12.1}$\times$ and
-\num{10.5}$\times$ lower and MPC lateral tracking error \SI{32}{\percent}
-lower, from \SI{0.224}{\meter} to \SI{0.151}{\meter} RMS, at unchanged solver
-cost. Those numbers are an identification and not a preserved prior, with two
-qualifications. The peak factor is identified by the brush estimator on the
-recorded trace, not by the Pacejka fit, which Section~\ref{subsec:bcd} shows
-cannot identify it; and one surface is not adaptivity, which needs a friction
-\emph{change} the runs do not contain. That
-the peak factor is recoverable from the rollout \emph{when the excitation
-reaches it} is shown on a known tire in Section~\ref{subsec:sweep}, not on
-these laps. Each configuration is a single
-run, so the closed-loop margins are observations rather than estimates with a
-confidence interval. We further argue that
+configured prior was measured on so that returning the prior scores badly, the
+corrected pipeline recovers axle cornering stiffness to \SI{3.2}{\percent} and
+\SI{1.4}{\percent} and the peak factor to \SI{11}{\percent}, against an
+inherited configuration that rails $D$ on its \num{2.0} box constraint in every
+cycle and overstates stiffness by \SIrange{118}{132}{\percent}; axle force RMSE
+is over ten times lower and MPC lateral tracking error \SI{32}{\percent} lower,
+at unchanged solver cost. Those numbers are an identification and not a
+preserved prior, with three qualifications: the peak factor is identified by
+the brush estimator on the recorded trace, not by the Pacejka fit, which cannot
+identify it (Section~\ref{subsec:bcd}); one surface is not adaptivity, which
+needs a friction \emph{change} the runs do not contain; and each configuration
+is a single run, so the closed-loop margins are observations rather than
+estimates with a confidence interval. That the peak factor is recoverable from
+the rollout \emph{when the excitation reaches it} is shown on a known tire in
+Section~\ref{subsec:sweep}, not on these laps. We further argue that
 per-coefficient box constraints are not a sufficient admissibility criterion
 for handing a model to a model-based controller, and place gates on derived
-physical quantities at that interface instead. The earlier reference
+physical quantities at that interface instead; the earlier reference
 trajectory, which demanded \SI{1.22}{\g} from a vehicle sustaining
-\SI{1.0}{\g}, was regenerated because that gate refused it rather than
-loosened for it.
+\SI{1.0}{\g}, was regenerated because that gate refused it rather than loosened
+for it.
 
 \subsection{Future work}
 
@@ -65,34 +61,31 @@ loosened for it.
 \begin{enumerate}
 \item Run the ablations of Section~\ref{subsec:ablations} in the loop. The
 relaxation sweep, the $D$-pinning comparison and the S4D and objective
-ablations are offline replays of the identification stage on recorded buffers,
-which is enough to attribute the result but not to confirm that the ordering
-survives closed-loop coupling. Each is a scenario-file row.
-\item Sweep the friction, rather than merely mismatching it. These runs put the
-prior \SI{44}{\percent} away from a \emph{static} surface, which shows the
-pipeline moves on evidence but not that it tracks. The step and decay schedules
-already written in the scenario file are the intended vehicle, and are the
-strongest available argument for identifying on track at all.
+ablations are offline replays, enough to attribute the result but not to
+confirm the ordering survives closed-loop coupling. Each is a scenario-file
+row.
+\item Sweep the friction rather than merely mismatching it. These runs put the
+prior \SI{44}{\percent} away from a \emph{static} surface, showing the pipeline
+moves on evidence but not that it tracks; the step and decay schedules already
+in the scenario file are the intended vehicle, and the strongest available
+argument for identifying on track at all.
 \item Excite the peak. The lap reaches
 $P_{99}(|\alpha|)=\SI{2.7}{\degree}$ and \SI{5.8}{\degree} at most, against a
-plant whose curve peaks at \SI{8.0}{\degree} on this surface, and an axle
-utilisation of \num{0.71}. That is enough for the friction gate to release,
-and it is also where the brush estimator's \SI{11}{\percent} bias comes from. A
-trajectory or an injected manoeuvre that traverses the peak would remove it.
+plant whose curve peaks at \SI{8.0}{\degree} on this surface, at an axle
+utilisation of \num{0.71}. That is enough for the friction gate to release, and
+it is also where the brush estimator's \SI{11}{\percent} bias comes from; a
+trajectory or injected manoeuvre traversing the peak would remove it.
 \item Run the noise sweep of~\cite{ontrack2025} on this platform using the
 bridge's odometry noise model, with a nonlinear least-squares identification of
 the same data as the comparison arm.
 \item Cross-check the friction warm start against the simulator's per-wheel
 forces across a pace sweep, including the $\sigma_{\mu}/\mu$ gate boundary and
-the IMU-versus-kinematics cross-check that guards the mass and inertia
-assumptions. It is exercised at one excitation level on the CARLA runs, where
-it returns $\mu$ \SI{11}{\percent} high, and swept only on a synthetic
-brush-tire plant where $\mu$ is known exactly (Table~\ref{tab:mu}). Since the
-published peak factor now \emph{is} that estimate, its bias is the pipeline's
-bias.
-\item Report lap time on the simulator's own clock. Lap timing currently runs
-on the ROS wall clock against a faster-than-real-time simulator, which makes
-lap time unusable as a comparison metric (Section~\ref{subsec:resultsclosedloop}).
+the IMU-versus-kinematics cross-check guarding the mass and inertia
+assumptions. Since the published peak factor now \emph{is} that estimate, its
+bias is the pipeline's bias.
+\item Report lap time on the simulator's own clock, which currently makes lap
+time unusable as a comparison metric
+(Section~\ref{subsec:resultsclosedloop}).
 \item Measure $I_{z}$ rather than assuming it
 (Section~\ref{subsec:assumptions}).
 \end{enumerate}
@@ -103,9 +96,9 @@ lap time unusable as a comparison metric (Section~\ref{subsec:resultsclosedloop}
 inverts into a requirement on the manoeuvre. A controller that deliberately
 inserts bounded slalom or ramp-steer excitation when the identifier reports
 insufficient slip-angle coverage would move the pipeline from passive on-track
-identification toward active, safety-bounded on-track experiment design. That
-is optimal input design~\cite{goodwin1977design} under a safety constraint,
-and is where the literature for this step already exists.
+identification toward active, safety-bounded experiment design: optimal input
+design~\cite{goodwin1977design} under a safety constraint, where the literature
+for this step already exists.
 \item \textbf{Uncertainty-aware output.} The gates of
 Section~\ref{subsec:gates} are binary. Reporting a posterior over the
 coefficients, through the Bayesian variational path already implemented
@@ -113,7 +106,7 @@ alongside the deterministic solvers, would let the controller weight the model
 by its confidence rather than accept or reject it.
 \item \textbf{Hardware replication.} The decisive test of every claim in
 Section~\ref{sec:disc} is a physical Formula Student vehicle. The
-identification code is unchanged between simulation and hardware. What changes
+identification code is unchanged between simulation and hardware; what changes
 is the availability of ground truth, and that is what makes the simulation
 study a necessary precursor rather than a substitute.
 \end{enumerate}

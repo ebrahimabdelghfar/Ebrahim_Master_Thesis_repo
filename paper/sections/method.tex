@@ -2,14 +2,11 @@
 \section{Identification Methodology}
 \label{sec:method}
 
-Section~\ref{subsec:residual} covers the residual model,
-\ref{subsec:excitation}--\ref{subsec:iterative} the two changes to the
-virtual-data step that constitute the paper's central methodological
-contribution, \ref{subsec:fit} the fit itself, \ref{subsec:measurement} the
-measurement chain, and \ref{subsec:validation} the validation protocol.
-Figure~\ref{fig:pipeline} summarises the loop, and Algorithm~\ref{alg:loop}
-states it in the form needed to reimplement it. The lines marked
-$\triangleright$ are this paper's changes to the inherited pipeline.
+Figure~\ref{fig:pipeline} summarises the loop and Algorithm~\ref{alg:loop}
+states it in the form needed to reimplement it; lines marked $\triangleright$
+are this paper's changes to the inherited pipeline.
+Sections~\ref{subsec:excitation}--\ref{subsec:iterative} carry the central
+methodological contribution, the two changes to the virtual-data step.
 
 \begin{figure*}[t]
 \centering
@@ -67,16 +64,12 @@ change to the inherited pipeline~\cite{ontrack2025}.}
 \label{subsec:residual}
 
 The residual carries whatever the nominal model
-\eqref{eq:vydot}--\eqref{eq:mf} does not represent, and how that map is
-parameterised is a modelling decision rather than a hyperparameter. Two
-decisions are made here, both of the same kind. Known vehicle physics shapes
-the residual's \emph{input space} and, optionally, its \emph{objective}
-(Section~\ref{subsec:physinputs}), so that the network's small capacity is
-spent on what is genuinely unmodelled instead of on rediscovering structure
-that \eqref{eq:slip} and \eqref{eq:vydot}--\eqref{eq:omdot} already state
-exactly. The rest of this subsection states both and why they were chosen.
-Both are active in the configuration evaluated in Section~\ref{sec:results},
-and neither is scored on its own.
+\eqref{eq:vydot}--\eqref{eq:mf} does not represent. How that map is
+parameterised is a modelling decision: known vehicle physics shapes its input
+space and, optionally, its objective (Section~\ref{subsec:physinputs}), so that
+the network's small capacity is spent on what is genuinely unmodelled rather
+than on rediscovering structure \eqref{eq:slip} and
+\eqref{eq:vydot}--\eqref{eq:omdot} already state exactly.
 
 The default residual is the baseline multilayer perceptron: 4 inputs, one
 hidden layer of 8 units, 2 outputs, LeakyReLU, 58 parameters, full-batch
@@ -93,12 +86,11 @@ with a change of residual.
 
 \subsubsection{Physics-augmented inputs and objective}
 \label{subsec:physinputs}
-Two options shape the residual with known vehicle physics rather than with
-capacity. The \emph{input space} is augmented with the axle slip angles of
-\eqref{eq:slip}. Since the tire law \eqref{eq:mf} is a function of
+The \emph{input space} is augmented with the axle slip angles of
+\eqref{eq:slip}: since the tire law \eqref{eq:mf} is a function of
 $(\alpha,F_{z})$ and of nothing else in $\vecz$, supplying
-$\alpha_{f},\alpha_{r}$ directly spares the network from rediscovering a
-relation the model already states exactly. The \emph{objective}
+$\alpha_{f},\alpha_{r}$ directly spares the network a relation the model
+already states. The \emph{objective}
 \begin{equation}
 \mathcal{L}=\mathcal{L}_{\mathrm{data}}
 +\lambda_{s}\mathcal{L}_{\mathrm{steady}}
@@ -107,61 +99,56 @@ relation the model already states exactly. The \emph{objective}
 \label{eq:pinnloss}
 \end{equation}
 with $\lambda_{s}=0.1$, $\lambda_{m}=0.05$, $\lambda_{g}=10^{-4}$, adds three
-penalties to the one-step MSE~\cite{raissi2019pinn,deepdynamics2024}. Each
-answers a weakness of training a residual on one lap of ordinary driving.
+penalties to the one-step MSE~\cite{raissi2019pinn,deepdynamics2024}, each
+answering a weakness of training on one lap of ordinary driving.
 $\mathcal{L}_{\mathrm{steady}}$ keeps the two residual channels jointly
 consistent with \eqref{eq:vydot}--\eqref{eq:omdot} on a quasi-steady mask, so
-they cannot imply an axle force pair no tire could produce, and it is that
+they cannot imply an axle force pair no tire could produce --- and it is that
 force pair, not the state prediction, that stage~3 fits.
-$\mathcal{L}_{\mathrm{sym}}$ enforces the odd symmetry
-$e(-\vecz)=-e(\vecz)$ that a laterally symmetric vehicle has, supplying from
-geometry the half of the input domain a circuit under-covers.
-$\mathcal{L}_{\mathrm{smooth}}$ is a soft Lipschitz bound that decides how fast
-the residual may grow inside the range the extrapolation bound of
-Section~\ref{subsec:iterative} allows it to be queried over. The derivations,
-the masks and the precomputation that makes the nominal-model half of
+$\mathcal{L}_{\mathrm{sym}}$ enforces the odd symmetry $e(-\vecz)=-e(\vecz)$ of
+a laterally symmetric vehicle, supplying from geometry the half of the input
+domain a circuit under-covers. $\mathcal{L}_{\mathrm{smooth}}$ is a soft
+Lipschitz bound on how fast the residual may grow inside the range the
+extrapolation bound of Section~\ref{subsec:iterative} allows. Derivations,
+masks and the precomputation that makes the nominal-model half of
 \eqref{eq:pinnloss} free are in the supplementary material.
 
-One property of \eqref{eq:pinnloss} is not a hyperparameter and has to be
-stated with the objective. $\mathcal{L}_{\mathrm{data}}$ is a mean square over
-a one-step increment in \si{\meter\per\second} and
-\si{\radian\per\second}, whereas the two balance residuals of
-\eqref{eq:vydot}--\eqref{eq:omdot} are a force and a moment. Written in those
-units the terms are four to six orders of magnitude apart, and $\lambda_{s}$
-is then not a relative weight at all: measured at initialisation on a
+One property of \eqref{eq:pinnloss} is not a hyperparameter.
+$\mathcal{L}_{\mathrm{data}}$ is a mean square over a one-step increment in
+\si{\meter\per\second} and \si{\radian\per\second}, whereas the two balance
+residuals of \eqref{eq:vydot}--\eqref{eq:omdot} are a force and a moment; in
+those units the terms are four to six orders of magnitude apart and
+$\lambda_{s}$ is not a relative weight at all. Measured at initialisation on a
 \SI{30}{\second} buffer of this vehicle, the unnormalised steady term
-contributes \SI{99.9996}{\percent} of $\mathcal{L}$ and the data term
-\SI{0.0004}{\percent}, a ratio of $\num{2.3e5}$. A residual trained on that
-objective is fitted to cancel the nominal model's own force imbalance and
-never to the data it was given. Each residual is therefore expressed as the
-state increment it implies, which is the unit the residual network's output is
-in,
+contributes \SI{99.9996}{\percent} of $\mathcal{L}$ against
+\SI{0.0004}{\percent} for the data term, a ratio of $\num{2.3e5}$: such a
+residual is fitted to cancel the nominal model's own force imbalance and never
+to the data it was given. Each residual is therefore expressed as the state
+increment it implies, the unit the network's output is in,
 \begin{equation}
 r_{\mathrm{lat}}=\frac{T_{s}}{m}\,\Big(m\dot v_{y}+mv_{x}\omega-(\Fyr+\Fyf\cos\delta)\Big),
 \label{eq:physnorm}
 \end{equation}
 and $r_{\mathrm{yaw}}$ likewise with $T_{s}/I_{z}$, before
 $\mathcal{L}_{\mathrm{steady}}=\mathrm{mean}(r_{\mathrm{lat}}^{2})+\mathrm{mean}(r_{\mathrm{yaw}}^{2})$
-is formed. On the same buffer the shares become \SI{98.53}{\percent} data and
-\SI{1.47}{\percent} steady, so $\lambda_{s}$ recovers the meaning
-\eqref{eq:pinnloss} gives it. This is a correction to the objective as
-published rather than an implementation detail.
+is formed. The shares then become \SI{98.53}{\percent} data and
+\SI{1.47}{\percent} steady, recovering the meaning \eqref{eq:pinnloss} gives
+$\lambda_{s}$. This is a correction to the objective as published, not an
+implementation detail.
 
 \subsubsection{Temporal residual}
 \label{subsec:s4}
 The \texttt{s4} architecture replaces the memoryless MLP with an S4D diagonal
 state-space residual~\cite{gu2022s4d} over a sliding window of $W=20$ samples
 (\SI{0.7}{\second} at $T_{s}=\SI{0.035}{\second}$), so the residual can carry
-the tire-relaxation and yaw-damping dynamics that a per-sample map cannot. We
-do not claim the architecture as a contribution, since it is also in
-concurrent work~\cite{visionsysid2026}, and neither is the \num{8.7}$\times$
-reduction in its training cost, which is an exact algebraic rewrite of the
-same forward pass and changes no identified coefficient. Both are specified,
-derived and measured in the supplementary material. Its effect on accuracy is
-measured in Section~\ref{subsec:ablations} and is positive, but on an offline
-replay of recorded buffers rather than in the loop. Nothing in the argument of
-this paper depends on it, and the identifiability result of
-Section~\ref{subsec:excitation} holds for either residual architecture.
+tire-relaxation and yaw-damping dynamics a per-sample map cannot. We claim
+neither the architecture, which is also in concurrent
+work~\cite{visionsysid2026}, nor the \num{8.7}$\times$ reduction in its
+training cost, an exact algebraic rewrite of the same forward pass that changes
+no identified coefficient; both are derived and measured in the supplementary
+material. Its accuracy effect is positive but measured offline
+(Section~\ref{subsec:ablations}), and the identifiability result of
+Section~\ref{subsec:excitation} holds for either architecture.
 
 \subsection{Excitation-aware virtual rollout}
 \label{subsec:excitation}
@@ -176,27 +163,26 @@ coefficient the rollout can \emph{demand} of the tire is
 \boxed{\;\mu_{\mathrm{reach}}\;\approx\;\frac{v^{2}\,\delta_{\mathrm{sweep}}}{g\,L}\;}
 \label{eq:mureach}
 \end{equation}
-Equation~\eqref{eq:mureach} contains no tire parameter. It is a property of
-the rollout configuration alone, and an \emph{upper} bound on what the rollout
-demands rather than an equality, because $\kappa\approx\delta/L$ is the
-Ackermann (kinematic) curvature while the steady-state curvature a compliant
-vehicle actually holds, $\kappa=\delta/(L+K_{us}v^{2}/g)$, is smaller. Reading
-\eqref{eq:mureach} as a ceiling is all the argument needs: if even the ceiling
-sits below $D$, the peak is certainly not reached. If
-$\mu_{\mathrm{reach}}<D$, the synthetic data never leaves the linear ramp of
-\eqref{eq:mf}, only the product $BCD$ is identifiable
+Equation~\eqref{eq:mureach} contains no tire parameter: it is a property of the
+rollout configuration alone, and an \emph{upper} bound rather than an equality,
+because $\kappa\approx\delta/L$ is the Ackermann curvature while the
+steady-state curvature a compliant vehicle holds,
+$\kappa=\delta/(L+K_{us}v^{2}/g)$, is smaller. Reading it as a ceiling is all
+the argument needs: if even the ceiling sits below $D$, the peak is certainly
+not reached, the synthetic data never leaves the linear ramp of \eqref{eq:mf},
+only the product $BCD$ is identifiable
 (Section~\ref{subsec:identifiability}), and the bounded optimiser resolves the
-residual freedom on a box edge, the signature measured in
+residual freedom on a box edge --- the signature measured in
 Section~\ref{subsec:resultstire}.
 
 The baseline implementation selects the rollout speed as
-$v=\mathrm{clip}(\overline{v_{x}},\,2,\,4)\,\si{\meter\per\second}$, a value
+$v=\mathrm{clip}(\overline{v_{x}},\,2,\,4)\,\si{\meter\per\second}$,
 representative of a 1:10 platform. On our vehicle, with
 $\delta_{\mathrm{sweep}}=\SI{0.4}{\radian}$ and $L=\SI{1.5334}{\meter}$,
 \eqref{eq:mureach} gives $\mu_{\mathrm{reach}}=0.43$ at
 \SI{4}{\meter\per\second}: the rollout cannot ask the tire for more than
 \SI{0.43}{\g} whatever the tire is. At 1:10 scale, with
-$L\approx\SI{0.32}{\meter}$, the same rollout speed yields
+$L\approx\SI{0.32}{\meter}$, the same speed yields
 $\mu_{\mathrm{reach}}\approx2.0$ and the pathology is invisible.
 
 \subsubsection{Correction}
@@ -204,10 +190,9 @@ $\mu_{\mathrm{reach}}\approx2.0$ and the pathology is invisible.
 The rollout speed is now taken from the speed the vehicle was actually driven
 at, clamped by configuration bounds (lower bound \SI{15}{\meter\per\second},
 no upper bound), and the pipeline warns whenever \eqref{eq:mureach} evaluates
-below the prior's $D$, which turns a silent degeneracy into a startup
-diagnostic. The same bound is the right tool for choosing a data-collection
-speed: identification data should be gathered at
-$v\ge\sqrt{gLD/\delta_{\mathrm{sweep}}}$.
+below the prior's $D$, turning a silent degeneracy into a startup diagnostic.
+The same bound sets a data-collection speed: identification data should be
+gathered at $v\ge\sqrt{gLD/\delta_{\mathrm{sweep}}}$.
 
 \subsection{Bounded extrapolation and frozen-prior regularisation}
 \label{subsec:iterative}
@@ -216,7 +201,7 @@ Raising the rollout speed exposes a second, opposite failure: the rollout
 queries the residual network at steering angles it has never seen, the
 observed $|\delta|$ on a pure-pursuit lap staying below
 $\approx\SI{0.06}{\radian}$ while the sweep ran to \SI{0.4}{\radian}. The fit
-then reads the network's extrapolation as additional grip, and because each
+reads the network's extrapolation as additional grip, and because each
 iteration's answer became both the next iteration's nominal model \emph{and}
 its regularisation target, the error compounds: $D$ walked from the
 \num{1.009}/\num{1.002} prior to \num{1.5402}/\num{1.8721} over six iterations,
@@ -232,16 +217,13 @@ $\delta_{\max}=\SI{0.54}{\radian}$, so the network is never queried more than
 \SI{50}{\percent} beyond the steering range it was trained on. Both
 $\delta_{\max}$ and the inherited $\delta_{\mathrm{sweep}}=\SI{0.4}{\radian}$
 lie above the plant's \SI{16.0}{\degree} ($\SI{0.279}{\radian}$) mechanical
-lock, $\delta_{\max}$ by a factor of \num{1.9} and the inherited sweep by
-\SI{43}{\percent}. That is deliberate. The sweep is a \emph{virtual} rollout
-of the corrected model, and clamping it to the lock would cap
-$\mu_{\mathrm{reach}}$ in \eqref{eq:mureach} a second time, by the actuator
-instead of by the rollout speed, which is the failure this section exists to
-remove. In practice the binding limit is the data-driven
-$\lambda_{e}P_{99}(|\delta_{\mathrm{obs}}|)$ term rather than $\delta_{\max}$.
-The residual is nonetheless evaluated outside the plant's reachable steering
-set, which is the extrapolation recorded in Section~\ref{subsec:assumptions},
-A6.
+lock, by a factor of \num{1.9} and by \SI{43}{\percent} respectively. That is
+deliberate: the sweep is a \emph{virtual} rollout, and clamping it to the lock
+would cap $\mu_{\mathrm{reach}}$ a second time, by the actuator instead of the
+rollout speed. In practice the binding limit is the data-driven
+$\lambda_{e}P_{99}(|\delta_{\mathrm{obs}}|)$ term. The residual is nonetheless
+evaluated outside the plant's reachable steering set, the extrapolation
+recorded in Section~\ref{subsec:assumptions}, A6.
 \item \textbf{Frozen prior.} The Tikhonov target is frozen at the configured
 prior $\phip^{0}$ for all iterations, while the optimiser's \emph{start point}
 continues to track the previous iteration. The per-axle objective is
@@ -251,65 +233,61 @@ continues to track the previous iteration. The per-axle objective is
 \end{equation}
 with $r_{k}$ the force residual, $\rho$ a soft-$\ell_{1}$ robust loss and
 $w_{j}$ scaled to the data residual budget by a single dimensionless weight
-$\lambda=0.05$. The regulariser exists for one purpose: to hold the
-coefficients the manoeuvre does not excite, $E$ above all, at their nominal
-value instead of on a box edge.
+$\lambda=0.05$. The regulariser exists to hold the coefficients the manoeuvre
+does not excite, $E$ above all, at their nominal value instead of on a box
+edge.
 \end{enumerate}
 
 \subsection{What the rollout fit identifies, and why the loop must be damped}
 \label{subsec:contraction}
 
-Sections~\ref{subsec:excitation}--\ref{subsec:iterative} configure the rollout.
 Two further properties belong to the loop itself, and together they account for
 everything the corrected pipeline does with $D$ and with the linear range.
 
 \subsubsection{The rollout fit sees only the product $BCD$}
 \label{subsec:bcd}
-Section~\ref{subsec:identifiability} states the familiar low-slip degeneracy:
-below the peak, \eqref{eq:mf} linearises and $B$, $C$, $D$ become mutually
-unidentifiable. In the virtual-data step the degeneracy is stronger than that,
-and it is structural rather than excitation-dependent. Stage~3 does not observe
-a force; it reconstructs one from the rollout's own quasi-steady yaw balance
-\eqref{eq:ssforces}, which on the synthetic trajectory reduces to
+In the virtual-data step the low-slip degeneracy of
+Section~\ref{subsec:identifiability} is stronger, and structural rather than
+excitation-dependent. Stage~3 does not observe a force; it reconstructs one
+from the rollout's own quasi-steady yaw balance \eqref{eq:ssforces}, which on
+the synthetic trajectory reduces to
 \begin{equation}
 \frac{F_{y,f}}{F_{z,f}}=\frac{v_{x}\omega}{g\cos\delta},\qquad
 \frac{F_{y,r}}{F_{z,r}}=\frac{v_{x}\omega}{g},
 \label{eq:rollobs}
 \end{equation}
-so the only quantity the objective of \eqref{eq:fitobj} ever compares against
-is the lateral acceleration the rollout realises. That acceleration is produced
-by the \emph{previous} coefficient set through its slope $F_{z}BCD$. The fit's
-residual therefore depends on $(B,C,D)$ only through their product, and $D$ is
-the free coordinate of the hyperbola $BCD=\mathrm{const}$: it is not separable
-from $B$, and where it stops is decided by the box constraint the other factors
-reach first. Replayed on the five identification buffers of a live run on a
-$\mu=\num{1.05}$ surface (Section~\ref{subsec:ablations}), the product is
-recovered tightly and repeatably,
-$BCDF_{z,f}$ over \SIrange{18.9}{21.1}{\kilo\newton\per\radian} against a
-plant measured at \SI{20.4}{\kilo\newton\per\radian}, from a prior
-\SI{35}{\percent} below it, while the $D$ that reaches that same product
-ranges over \numrange{0.69}{2.00}.
+so the only quantity \eqref{eq:fitobj} ever compares against is the lateral
+acceleration the rollout realises --- produced by the \emph{previous}
+coefficient set through its slope $F_{z}BCD$. The fit's residual therefore
+depends on $(B,C,D)$ only through their product, and $D$ is the free coordinate
+of the hyperbola $BCD=\mathrm{const}$: not separable from $B$, and stopping
+wherever the box constraint the other factors reach first puts it. Replayed on
+five identification buffers of a live $\mu=\num{1.05}$ run
+(Section~\ref{subsec:ablations}), the product is recovered tightly and
+repeatably, $BCDF_{z,f}$ over \SIrange{18.9}{21.1}{\kilo\newton\per\radian}
+against a plant measured at \SI{20.4}{\kilo\newton\per\radian} from a prior
+\SI{35}{\percent} below it, while the $D$ reaching that same product ranges
+over \numrange{0.69}{2.00}.
 
-The consequence for the method is that $D$ must not be asked of this fit at
-all. It is instead measured on the \emph{recorded} trace by the brush estimator
-of Section~\ref{subsec:friction}, which fits $F_{y}(\alpha)$ directly and is
-therefore not subject to \eqref{eq:rollobs}, and is then held fixed while
-$B$, $C$ and $E$ carry the stiffness the rollout does determine
-(Algorithm~\ref{alg:loop}, lines 3--5 and 14).
+$D$ must therefore not be asked of this fit at all. It is measured on the
+\emph{recorded} trace by the brush estimator of
+Section~\ref{subsec:friction}, which fits $F_{y}(\alpha)$ directly and is not
+subject to \eqref{eq:rollobs}, then held fixed while $B$, $C$ and $E$ carry the
+stiffness the rollout does determine (Algorithm~\ref{alg:loop}, lines 3--5
+and 14).
 
 \subsubsection{The loop is not a contraction}
 \label{subsec:relax}
-Stage~4 makes each iteration's answer the nominal model that stage~2 rolls out,
-and stage~3 then fits the trajectory that model produced, over a steering range
-that already extrapolates $\lambda_{e}=1.5\times$ past the observed one. The
-fit reads its own forces back. The loop is consequently a positive feedback
-path on its own extrapolation error rather than a contraction, and iterating it
-is not a refinement: replayed offline on five recorded buffers, axle force RMSE
-against the plant's telemetry degrades monotonically with iteration count,
-\num{38.9}, \num{53.0}, \num{58.5} and \SI{70.4}{\newton} at the front for
-$N_{\mathrm{it}}\in\{1,2,3,6\}$. This is the same mechanism as
-Section~\ref{subsec:bcd}'s: pinning $D$ removes it from $D$ and relocates it
-into $B$, $C$ and $E$.
+Stage~4 makes each iteration's answer the nominal model stage~2 rolls out, and
+stage~3 then fits the trajectory that model produced, over a steering range
+already extrapolating $\lambda_{e}=1.5\times$ past the observed one. The fit
+reads its own forces back, so the loop is a positive feedback path on its own
+extrapolation error rather than a contraction, and iterating it is not a
+refinement: replayed offline on five recorded buffers, axle force RMSE against
+the plant's telemetry degrades monotonically with iteration count, \num{38.9},
+\num{53.0}, \num{58.5} and \SI{70.4}{\newton} at the front for
+$N_{\mathrm{it}}\in\{1,2,3,6\}$. Pinning $D$ does not remove this; it relocates
+it into $B$, $C$ and $E$.
 
 The remedy is to damp the step, not to shorten the loop. Stage~4 becomes a
 relaxed fixed-point iteration,
@@ -318,12 +296,11 @@ relaxed fixed-point iteration,
 \label{eq:relax}
 \end{equation}
 with $\tilde\phip^{(i)}$ the solution of \eqref{eq:fitobj} at iteration $i$ and
-$\beta=\num{0.20}$; $\beta=1$ recovers the inherited update exactly.
-Section~\ref{subsec:ablations} reports the sweep over $\beta$ and, with it, the
-control the contribution needs: $\beta=0$ freezes the coefficients at the
-pinned prior, i.e.\ performs no identification at all, and is the worst setting
-of the sweep. The iterations do carry information; they have to be damped for
-it to survive.
+$\beta=\num{0.20}$; $\beta=1$ recovers the inherited update exactly. The sweep
+over $\beta$ (Section~\ref{subsec:ablations}) carries the control the
+contribution needs: $\beta=0$ freezes the coefficients at the pinned prior,
+performing no identification at all, and is the worst setting. The iterations
+do carry information; they have to be damped for it to survive.
 
 \subsection{Pacejka fit}
 \label{subsec:fit}
@@ -331,25 +308,22 @@ it to survive.
 Fitting applies the steady-state force recovery of \eqref{eq:ssforces} to the
 synthetic data under box constraints
 $\phip\in([4.0,1.2,0.4,-3.0],[20.0,2.2,2.0,1.0])$ per axle, over $B$, $C$ and
-$E$ with $D$ held at the value Section~\ref{subsec:friction} put there. Relative to the
-baseline we (i) raised the number of jittered multi-starts from 1 to 8, (ii)
-added a derivative-free simplex~\cite{neldermead1965} and a global
-differential-evolution solver~\cite{storn1997de} as alternatives to
-trust-region reflective~\cite{branch1999trust}, all through the same
-optimisation library~\cite{virtanen2020scipy}. Population-based global search
-on Magic-Formula coefficients follows Cabrera \emph{et
+$E$ with $D$ held at the value Section~\ref{subsec:friction} put there.
+Relative to the baseline we (i) raised the jittered multi-starts from 1 to 8
+and (ii) added a derivative-free simplex~\cite{neldermead1965} and a global
+differential-evolution solver~\cite{storn1997de} alongside trust-region
+reflective~\cite{branch1999trust}, all through the same optimisation
+library~\cite{virtanen2020scipy}; population-based global search on
+Magic-Formula coefficients follows Cabrera \emph{et
 al.}~\cite{cabrera2004genetic}. The prior carries the measured tire of
-Table~\ref{tab:ref}. One caveat on (i): \texttt{num\_starts} is honoured by
-the trust-region and simplex solvers only, differential evolution being a
+Table~\ref{tab:ref}. One caveat on (i): \texttt{num\_starts} is honoured by the
+trust-region and simplex solvers only, differential evolution being a
 population search that ignores it, so the multi-start claim describes the
-\texttt{Baseline-NN-MSE} arm and not the shipped \texttt{Ours} arm.
-
-Neither (i) nor (ii) addresses the degeneracy, and both are verified as
-secondary in Section~\ref{subsec:sweep}, which sweeps rollout speed against
-true $D$ on a known tire: with the rollout speed left at
-\SI{4}{\meter\per\second} every tire tested fits back as
-$\hat D\approx\num{0.5}$ with coefficients railed, and the answer does not move
-with the multi-start seed or with a jitter seven times wider.
+\texttt{Baseline-NN-MSE} arm and not the shipped \texttt{Ours} arm. Neither
+change addresses the degeneracy, and Section~\ref{subsec:sweep} verifies both
+as secondary: at a \SI{4}{\meter\per\second} rollout every tire tested fits
+back as $\hat D\approx\num{0.5}$ with coefficients railed, and the answer moves
+neither with the multi-start seed nor with a jitter seven times wider.
 
 \subsection{Measurement-side corrections}
 \label{subsec:measurement}
@@ -362,12 +336,11 @@ The measured achieved/commanded ratio is \num{0.76}, so $\alpha_{f}$ was
 systematically $\approx\SI{25}{\percent}$ too large and the fitted front
 stiffness $\approx\SI{20}{\percent}$ too small
 (\SI{13725}{\newton\per\radian} against \SI{17198}{\newton\per\radian} fitted
-to the simulator's own per-wheel forces over the same run). Using
+to the simulator's own per-wheel forces over the same run); using
 \texttt{feedback/\allowbreak steering\_angle} recovers
-\SI{18486}{\newton\per\radian}. All three are effective slopes fitted over
-that run's load range and therefore fall below the $\bar F_{z}=1$ closed-form
-value of Table~\ref{tab:ref}. The comparison is between them, not against the
-tabulated slope.
+\SI{18486}{\newton\per\radian}. All three are effective slopes over that run's
+load range and so fall below the $\bar F_{z}=1$ value of Table~\ref{tab:ref};
+the comparison is between them.
 
 \subsubsection{Mass and geometry}
 $m$ and $l_{wb}$ are taken from the measured static wheel loads
@@ -378,99 +351,89 @@ for the force division, and the two disagreeing is a silent bias.
 
 \subsubsection{Proprioceptive friction warm-start}
 \label{subsec:friction}
-The third correction is to where the peak factor's prior comes from. The
-inherited pipeline had none: $D$ started from a configuration constant and was
-left to the fit. What follows recovers a prior for it from the sensors the
-vehicle already carries, in four steps. Axle forces and slip angles come from
-the body's own motion (a). A two-parameter brush fit reads $\mu$ from the
-\emph{curvature} of those forces rather than from their asymptote (b). A
-release gate says when that reading means anything (c). And a last rule decides
-how the released value enters the loop: two-sided, and pinned (d).
+The inherited pipeline had no prior for the peak factor: $D$ started from a
+configuration constant and was left to the fit. What follows recovers one from
+the sensors the vehicle already carries, in four steps.
 
 \paragraph{Axle forces and slip angles without a force sensor}
 Newton--Euler on the single-track body of
-\eqref{eq:vydot}--\eqref{eq:omdot}, solved for the axle forces rather than for
-the accelerations, gives
+\eqref{eq:vydot}--\eqref{eq:omdot}, solved for the axle forces rather than the
+accelerations, gives
 \begin{equation}
 F_{y,f}=\frac{I_{z}\dot\omega+l_{r}m a_{y}}{L\cos\delta},\qquad
 F_{y,r}=\frac{l_{f}m a_{y}-I_{z}\dot\omega}{L},
 \label{eq:newtoneuler}
 \end{equation}
-which requires the IMU's lateral acceleration and the yaw acceleration and no
-tire model at all. Vertical loads carry the longitudinal transfer
-$F_{z,f/r}=m(g\,l_{r/f}\mp a_{x}h_{cg})/L$ \cite{rajamani2012}. The yaw
-acceleration is taken as the derivative of a local polynomial fit to the yaw
-rate (Savitzky--Golay, window 21, order 2) \cite{savitzky1964} rather than by
-differencing, because $I_{z}\dot\omega$ is a $\approx\SI{10}{\percent}$ term in
-$F_{y,f}$ on this vehicle and a differenced odometry yaw rate puts its noise
-straight into it. Slip angles come from \eqref{eq:slip} on the buffer that is
-already collected. Where no IMU is available the accelerations are
-differentiated from the states by the same filter, and where one is available
-the RMS difference between the two is logged as a bias diagnostic.
+which needs the IMU's lateral acceleration and the yaw acceleration and no tire
+model. Vertical loads carry the longitudinal transfer
+$F_{z,f/r}=m(g\,l_{r/f}\mp a_{x}h_{cg})/L$ \cite{rajamani2012}. Yaw
+acceleration is the derivative of a local polynomial fit to the yaw rate
+(Savitzky--Golay, window 21, order 2) \cite{savitzky1964} rather than a
+difference, because $I_{z}\dot\omega$ is a $\approx\SI{10}{\percent}$ term in
+$F_{y,f}$ here and a differenced odometry yaw rate puts its noise straight into
+it. Slip angles come from \eqref{eq:slip} on the buffer already collected.
+Without an IMU the accelerations are differentiated from the states by the same
+filter; with one, the RMS difference between the two is logged as a bias
+diagnostic.
 
 \paragraph{Joint fit of stiffness and peak friction}
-Per axle, both the cornering stiffness and the peak friction are fitted to the
-Fiala brush model~\cite{fiala1954,svendenius2004brush,pacejka2012book}
+Per axle, cornering stiffness and peak friction are fitted jointly to the Fiala
+brush model~\cite{fiala1954,svendenius2004brush,pacejka2012book}
 \begin{equation}
 F_{y}=\mu F_{z}\big(1-(1-\xi)^{3}\big)\mathrm{sgn}\,\alpha,\quad
 \xi=\min\!\Big(\frac{C_{\alpha}|\tan\alpha|}{3\mu F_{z}},1\Big),
 \label{eq:brush}
 \end{equation}
 by bounded nonlinear least squares with a soft-$\ell_{1}$ loss
-\cite{virtanen2020scipy,branch1999trust}. The brush model is used here in place
-of \eqref{eq:mf} for one reason: it has two parameters, both of which the
-manoeuvre can support, whereas \eqref{eq:mf} has four and is exactly the model
-whose non-identifiability at low slip this paper is about.
+\cite{virtanen2020scipy,branch1999trust}. The brush model replaces
+\eqref{eq:mf} here because it has two parameters, both of which the manoeuvre
+can support, against the four of the model whose non-identifiability at low
+slip this paper is about. A two-stage fit is avoided because estimating
+$C_{\alpha}$ first, on data already slightly nonlinear, biases it.
 
-What makes this beat the utilisation bound is that $\mu$ enters
-\eqref{eq:brush} through the \emph{curvature} of $F_{y}(\alpha)$ and not only
-through its asymptote. Writing $r=|F_{y}|/(C_{\alpha}|\tan\alpha|)$ for the
-force's departure from its own linear extrapolation, \eqref{eq:brush} inverts
-in closed form to
+What beats the utilisation bound is that $\mu$ enters \eqref{eq:brush} through
+the \emph{curvature} of $F_{y}(\alpha)$ and not only its asymptote. Writing
+$r=|F_{y}|/(C_{\alpha}|\tan\alpha|)$ for the force's departure from its own
+linear extrapolation, \eqref{eq:brush} inverts to
 \begin{equation}
 \mu=\frac{2k}{3-\sqrt{3(4r-1)}},\qquad k=\frac{C_{\alpha}|\tan\alpha|}{3F_{z}},
 \label{eq:brushinv}
 \end{equation}
 so a \SI{30}{\percent} departure from linearity ($r=0.7$) already pins $\mu$,
 well below the limit. Equation~\eqref{eq:brushinv} is used only for the
-excitation diagnostics; $C_{\alpha}$ and $\mu$ are fitted jointly, because a
-two-stage fit would inherit the bias of estimating $C_{\alpha}$ on data that is
-itself already slightly nonlinear.
+excitation diagnostics.
 
 \paragraph{When the estimate is released}
-Equation~\eqref{eq:brushinv} also states its own failure mode:
-$\mathrm{d}\mu/\mathrm{d}r$ grows without bound as $r\to1$, i.e.\ as the tire
-curve stays linear. The estimate is therefore released only when four conditions hold:
-absolute grip demand $\max|F_{y}|/F_{z}\ge\num{0.40}$, peak
-friction utilisation $\max|F_{y}|/(\hat\mu F_{z})\ge\num{0.40}$, relative
-precision $\sigma_{\hat\mu}/\hat\mu\le\num{0.15}$ from the Gauss--Newton
-covariance, and $\hat\mu$ not resting on its own search bound. Otherwise the
-module logs which condition failed and falls back to the utilisation bound.
+Equation~\eqref{eq:brushinv} states its own failure mode:
+$\mathrm{d}\mu/\mathrm{d}r$ grows without bound as $r\to1$, i.e.\ as the curve
+stays linear. The estimate is released only when four conditions hold:
+absolute grip demand $\max|F_{y}|/F_{z}\ge\num{0.40}$, peak friction
+utilisation $\max|F_{y}|/(\hat\mu F_{z})\ge\num{0.40}$, relative precision
+$\sigma_{\hat\mu}/\hat\mu\le\num{0.15}$ from the Gauss--Newton covariance, and
+$\hat\mu$ not resting on its own search bound; otherwise the module logs which
+condition failed and falls back to the utilisation bound.
 
-The first two conditions are the same quantity with and without the fit in the
+The first two are the same quantity with and without the fit in the
 denominator, and both are needed. The utilisation test divides by the
-\emph{fitted} $\hat\mu$ of the same least-squares call, so it is on its own
-circular: an axle whose $\mu$ comes out too low reports a correspondingly high
-utilisation and clears the gate on its own error. Measured on a live run, a
-buffer that realised only \num{0.31} of $F_{z}$ returned
-$\hat\mu=\num{0.539}$ at utilisation \num{0.58} and passed, against a plant of
-\num{1.05}. The absolute ratio has no such freedom, and on the five buffers of
-that run it separates the usable from the unusable exactly: $\{\num{0.146},
-\num{0.314}\}$ rejected, $\{\numrange{0.541}{0.677}\}$ accepted. The precision
-and railing conditions then remove what survives both: a fit driven low by data
-that is still linear returns a wide $\sigma_{\hat\mu}$, and a fit driven onto
-its search bound is rejected as railed.
-The \SI{40}{\percent} floor is not tuned here. It is the excitation level the
-lateral-dynamics friction-estimation literature converges on, as surveyed by
-Acosta \emph{et al.}~\cite{acosta2017friction}, whose review reports estimators
-failing below $|a_{y}|=\SI{0.4}{\g}$ ``due to the proximity of the tyre force
-curves in the low slip regions'' and a \SIrange{40}{80}{\percent} utilisation
-working range. Samples with $|a_{x}|>\SI{0.35}{\g}$ are dropped rather than
-corrected, since the axle longitudinal force split a friction-ellipse
-correction would need is not observable from this sensor set; samples below
-\SI{2.5}{\meter\per\second} are dropped because \eqref{eq:slip} is
-ill-conditioned there; and samples whose force opposes their own slip angle are
-dropped as sign errors or noise.
+\emph{fitted} $\hat\mu$ of the same least-squares call, so it is circular: an
+axle whose $\mu$ comes out too low reports a correspondingly high utilisation
+and clears the gate on its own error --- on a live run a buffer realising only
+\num{0.31} of $F_{z}$ returned $\hat\mu=\num{0.539}$ at utilisation \num{0.58}
+and passed, against a plant of \num{1.05}. The absolute ratio has no such
+freedom, and on the five buffers of that run it separates usable from unusable
+exactly: $\{\num{0.146},\num{0.314}\}$ rejected,
+$\{\numrange{0.541}{0.677}\}$ accepted. The precision and railing conditions
+remove what survives both. The \SI{40}{\percent} floor is not tuned here; it is
+the level the lateral-dynamics friction-estimation literature converges on, as
+surveyed by Acosta \emph{et al.}~\cite{acosta2017friction}, who report
+estimators failing below $|a_{y}|=\SI{0.4}{\g}$ ``due to the proximity of the
+tyre force curves in the low slip regions'' and a \SIrange{40}{80}{\percent}
+utilisation working range. Samples with $|a_{x}|>\SI{0.35}{\g}$ are dropped
+rather than corrected, since the axle longitudinal force split a
+friction-ellipse correction needs is not observable from this sensor set;
+samples below \SI{2.5}{\meter\per\second} are dropped because \eqref{eq:slip}
+is ill-conditioned there; and samples whose force opposes their own slip angle
+are dropped as sign errors or noise.
 
 \paragraph{Applied two-sided, then pinned}
 \label{subsec:frictionfloor}
@@ -478,101 +441,81 @@ The released $\hat\mu$ \emph{replaces} $D$ on both axles, in either direction,
 and $D$ is then held fixed for the whole co-identification loop. Four points
 fix that rule.
 
-First, the released value is applied to both axles from the \emph{front} fit
-alone. The rear slip angle does not carry $\delta$, so on this trajectory the
-rear force curve has too little curvature to support \eqref{eq:brushinv} and
-its $\mu$ comes out high: \num{1.495}/\num{1.383}/\num{1.257} at the rear
-against \num{1.011}/\num{0.964}/\num{0.837} at the front on the three admitted
-buffers of a $\mu=\num{1.05}$ run, with $\sigma_{\hat\mu}/\hat\mu=\num{0.105}$
-at the rear, inside the gate. This is not a yaw-inertia error. In quasi-steady
-cornering $F_{y,f}/F_{y,r}\to l_{r}/l_{f}$, which is the same ratio as
-$F_{z,f}/F_{z,r}$, so $\mu_{f}=\mu_{r}$ whatever $I_{z}$ is; sweeping $I_{z}$
-over \SIrange{30}{80}{\kilo\gram\meter\squared} only widens the axle gap, from
+First, both axles take the \emph{front} fit. The rear slip angle does not carry
+$\delta$, so on this trajectory the rear force curve has too little curvature
+to support \eqref{eq:brushinv} and its $\mu$ comes out high:
+\num{1.495}/\num{1.383}/\num{1.257} rear against
+\num{1.011}/\num{0.964}/\num{0.837} front on the three admitted buffers of a
+$\mu=\num{1.05}$ run, with $\sigma_{\hat\mu}/\hat\mu=\num{0.105}$ at the rear,
+inside the gate. This is not a yaw-inertia error: in quasi-steady cornering
+$F_{y,f}/F_{y,r}\to l_{r}/l_{f}$, the same ratio as $F_{z,f}/F_{z,r}$, so
+$\mu_{f}=\mu_{r}$ whatever $I_{z}$ is, and sweeping $I_{z}$ over
+\SIrange{30}{80}{\kilo\gram\meter\squared} only widens the axle gap from
 \num{0.368} to \num{0.550}. There is one road surface, so the axle the
-manoeuvre identifies speaks for both, and a rear-only release is refused.
+manoeuvre identifies speaks for both.
 
-Second, it is applied two-sided rather than as a floor. The floor rule this
-replaces was protecting against a $D$ that \emph{moved} between cycles, not
-against a $D$ that was low; pinning supplies that protection directly, and
-without a one-way bias that a low-friction surface makes untenable.
+Second, it is two-sided rather than a floor: the floor rule it replaces was
+protecting against a $D$ that \emph{moved} between cycles, not one that was
+low, and pinning supplies that directly without a one-way bias a low-friction
+surface makes untenable. Third, it is pinned and not merely seeded, since
+\eqref{eq:rollobs} leaves $D$ free along $BCD=\mathrm{const}$ and on a live run
+a \num{0.785} seed ended at the \num{2.000} bound within one cycle. Fourth, an
+axle with no released $\hat\mu$ holds the $D$ it came in with rather than
+reverting to fitting it, since Section~\ref{subsec:bcd} shows there is nothing
+in the rollout to fit it against.
 
-Third, it is pinned and not merely seeded. A seed is overwritten inside one
-cycle, because \eqref{eq:rollobs} leaves $D$ free along $BCD=\mathrm{const}$:
-on a live run a \num{0.785} seed ended at the \num{2.000} bound.
+Two downstream mechanisms make the fixed $D$ what the interface needs. The
+frozen Tikhonov target of \eqref{eq:fitobj} is taken from the warm-started
+prior, so whatever lands there is both initial guess and regularisation target
+for all $N_{\mathrm{it}}$ iterations; and the controller re-ingests the
+reference speed profile at
+$\min(a_{y,\max}^{\mathrm{cfg}},\,a_{y}^{\max}\eta)$ on every accepted update,
+so a $D$ moving \emph{within} a cycle rewrites the reference under the running
+controller. The requirement is that $D$ not move during a cycle, not that it
+only ever rise.
 
-Fourth, an axle with no released $\hat\mu$ this cycle holds the $D$ it came in
-with. It does not revert to fitting $D$, because
-Section~\ref{subsec:bcd} shows there is nothing in the rollout to fit it
-against; an unpinned $D$ walks to a box edge.
-
-Two downstream mechanisms make the fixed $D$ the property the interface needs.
-The frozen Tikhonov target of \eqref{eq:fitobj} is taken from the warm-started
-prior immediately after the warm start is applied, so whatever lands there is
-both the initial guess and the regularisation target of all $N_{\mathrm{it}}$
-iterations; and the controller re-ingests the reference speed profile at
-$\min(a_{y,\max}^{\mathrm{cfg}},\,a_{y}^{\max}\eta)$ on every accepted model
-update, so a $D$ that moves \emph{within} a cycle rewrites the reference under
-the running controller. What that interface requires is that $D$ not move
-during a cycle, which pinning gives, and not that it only ever rise.
-
-Pinning puts the whole weight of the result on the gate, which makes it worth
-being precise about what the gate cannot see.
-$\sigma_{\mu}/\mu$ from the fit covariance is a \emph{precision} figure,
-not an accuracy one. A wrong mass, a wrong yaw inertia, an IMU bias or a road
-bank all fit tightly and wrongly through \eqref{eq:newtoneuler}, since axle
-force scales linearly with $m$. On this vehicle the configuration file's
-\SI{240.0}{\kilo\gram} against the \SI{269.6}{\kilo\gram} the wheels actually
-carry biased $\mu$ \SI{11}{\percent} low on its own, the \SI{29.6}{\kilo\gram}
-shortfall taken on the \SI{269.6}{\kilo\gram} the wheels carry, until the
-measured value replaced it (Table~\ref{tab:vehicle}). That is
-measurement-chain work (Section~\ref{subsec:measurement}) and not something a
-confidence interval can see. The same holds for the friction the result is compared against: the
-configured wheel coefficient is not the effective one the physics step uses,
-the server multiplying it by the road surface's own factor of \num{0.70}, and
-an estimate validated against the former would be judged \SI{30}{\percent}
-short while being correct. Of the inputs to \eqref{eq:newtoneuler}, only $I_{z}$ now
-remains unmeasured on this vehicle; it enters $F_{y,f}$ at the
-\SI{10}{\percent} level and is listed among the assumptions of
-Section~\ref{subsec:assumptions}.
+Pinning puts the whole weight of the result on the gate, and
+$\sigma_{\mu}/\mu$ from the fit covariance is a \emph{precision} figure, not an
+accuracy one: a wrong mass, wrong yaw inertia, IMU bias or road bank all fit
+tightly and wrongly through \eqref{eq:newtoneuler}, axle force scaling linearly
+with $m$. Here the configuration file's \SI{240.0}{\kilo\gram} against the
+\SI{269.6}{\kilo\gram} the wheels actually carry biased $\mu$
+\SI{11}{\percent} low until the measured value replaced it
+(Table~\ref{tab:vehicle}); likewise the configured wheel coefficient is not the
+effective one the physics step uses, the server multiplying it by the road
+surface's factor of \num{0.70}, so an estimate validated against the former
+would be judged \SI{30}{\percent} short while being correct. Of the inputs to
+\eqref{eq:newtoneuler} only $I_{z}$ now remains unmeasured; it enters
+$F_{y,f}$ at the \SI{10}{\percent} level (Section~\ref{subsec:assumptions}).
 
 \subsection{Deployment}
 \label{subsec:deployment}
 
-The identifier runs as a single ROS~2 node whose acquisition and
-state-machine timer ticks at \SI{50}{\hertz} (the \SI{20}{\hertz} quoted
-elsewhere in this paper is the controller's period, not the identifier's),
-with a rolling FIFO buffer of the collected signals, cycling through four
-states: collect a full buffer, train, await the controller's acknowledgement
-of the submitted coefficients, then run, re-identifying every
-$T_{\mathrm{reid}}=\SI{30}{\second}$ from the newest buffer. Three interface
-details matter for reproducing the results. The achieved road-wheel angle is
-used when the platform publishes one and falls back to the commanded
-setpoint on staleness, with the substitution logged
-(Section~\ref{subsec:measurement}). The friction warm start runs on
-\emph{every} identification cycle. Restricting it to the first cycle, as an
-earlier version did, does not hold $D$ still: the node re-reads the static
-\texttt{pacejka\_model} prior at the start of each cycle, so the restriction
-only leaves every cycle after the first cold-starting $D$ from a value
-unrelated to the road, and on a live run cycles 2--6 then walked $D$ to its
-\num{2.0} bound. What the controller interface requires is that $D$ not move
-\emph{within} a cycle, and that is supplied by the pinning of
-Section~\ref{subsec:frictionfloor}, not by a first-cycle gate. Finally, the identified
-coefficients are submitted over a service call and the node keeps the previous
-model if the call is not acknowledged, so a rejected identification degrades
-to the last accepted model rather than to no model. The peak-friction outputs
-are published on a latched diagnostic topic, so a late-starting consumer still
-sees the current value.
+The identifier runs as a single ROS~2 node whose acquisition and state-machine
+timer ticks at \SI{50}{\hertz} (the \SI{20}{\hertz} quoted elsewhere is the
+controller's period), cycling a rolling FIFO buffer through four states:
+collect, train, await the controller's acknowledgement, run, re-identifying
+every $T_{\mathrm{reid}}=\SI{30}{\second}$ from the newest buffer. Three
+interface details matter for reproduction. The achieved road-wheel angle is
+used where published, falling back to the commanded setpoint on staleness with
+the substitution logged. The friction warm start runs on \emph{every} cycle:
+restricting it to the first, as an earlier version did, does not hold $D$
+still, since the node re-reads the static \texttt{pacejka\_model} prior each
+cycle, so every later cycle cold-starts $D$ from a value unrelated to the road
+--- on a live run cycles 2--6 then walked $D$ to its \num{2.0} bound. And the
+coefficients are submitted over a service call whose non-acknowledgement leaves
+the previous model in place, so a rejected identification degrades to the last
+accepted model rather than to none; the peak-friction outputs are published on
+a latched diagnostic topic so a late-starting consumer sees the current value.
 
-That acknowledgement is also what arms the scoring. The node's own online
-metrics, and the parameter forward to the passive benchmark node, both fire
-from the acknowledgement handler rather than from the end of training. The
-distinction is not cosmetic. A submission the controller \emph{rejects} on its
-admissibility gate (Section~\ref{sec:integration}) is a model the car never
-drove on, and the seconds between a fit completing and its acknowledgement
-landing are seconds in which the car is still driving the previous model.
-Scoring either of them attributes to the identified model behaviour that
-belongs to another one, which is exactly the confusion the validation protocol
-below exists to avoid.
+That acknowledgement also arms the scoring: the node's own online metrics and
+the parameter forward to the passive benchmark node both fire from the
+acknowledgement handler, not from the end of training. A submission the
+controller \emph{rejects} on its admissibility gate
+(Section~\ref{sec:integration}) is a model the car never drove on, and the
+seconds between a fit completing and its acknowledgement landing are seconds
+still driven on the previous model; scoring either attributes to one model the
+behaviour of another.
 
 \subsection{Validation protocol}
 \label{subsec:validation}
@@ -584,26 +527,25 @@ and $R^{2}$ of $v_{y}$ and $\omega$ under
 $\hat\vecx_{k+1}=f(\vecx_{k},\vecu_{k},\phip)$. A dedicated ROS~2 node extends
 this to configurable multi-step horizons (1/5/10 steps) with Euler/Heun/RK4
 integration and online statistics in Welford's form~\cite{welford1962}.
-Samples are admitted only above \SI{1}{\meter\per\second}, the same gate the
-identification data itself uses. This is not a division-by-zero guard. Since
+Samples are admitted only above \SI{1}{\meter\per\second}, the gate the
+identification data uses. This is not a division-by-zero guard: since
 $\alpha=\arctan(v_{y}/v_{x})$, a few tenths of a metre per second of lateral
-drift saturates the tire curve and the one-step model predicts yaw rates of
-several \si{\radian\per\second} against a ground truth of a few tenths, so a
-looser gate lets the low-speed bootstrap dominate a metric meant to describe
-the racing regime the model was fitted on.
+drift saturates the tire curve and the model predicts yaw rates of several
+\si{\radian\per\second} against a ground truth of a few tenths, so a looser
+gate lets the low-speed bootstrap dominate a metric meant for the racing
+regime.
 \item \textbf{Direct force comparison} against
 \texttt{feedback/\allowbreak tire\_forces}: the identified curve is evaluated at
 the measured $(\alpha,F_{z})$ and compared per axle against the measured
-$F_{y}$, and against the plant's own curve~\eqref{eq:physx} evaluated at the
-same points (Table~\ref{tab:ref}), which separates the error of the fit from
-the error of representing a PhysX tire.
+$F_{y}$, and against the plant's own curve~\eqref{eq:physx} at the same points
+(Table~\ref{tab:ref}), which separates the error of the fit from the error of
+representing a PhysX tire.
 \item \textbf{Closed-loop tracking} under the MPC using the identified model:
 mean and maximum lateral deviation, its time-weighted integral, heading error
-and solver cost, split by the active controller so that the pure-pursuit
-acquisition phase is not scored against a model it does not use. Lap counting
-runs from the first crossing of the raceline's $s=0$, so the drive from the
-spawn point up to the start line is an untimed out-lap
-(Section~\ref{subsec:resultsclosedloop}).
+and solver cost, split by active controller so the pure-pursuit acquisition
+phase is not scored against a model it does not use. Lap counting runs from the
+first crossing of the raceline's $s=0$, so the drive from the spawn point is an
+untimed out-lap.
 \end{enumerate}
 
 All three levels score the \emph{accepted} model only, for the reason given in

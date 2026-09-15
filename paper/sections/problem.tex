@@ -38,8 +38,9 @@ stiffer relative to $T_{s}$ than the scaled platform's.
 The objective is to recover $\phip$ from a single \SI{30}{\second} segment of
 ordinary lap data, without dedicated manoeuvres, such that the resulting model
 is both predictive and \emph{admissible} for the controller that consumes it.
-Admissibility is expressed on derived quantities rather than on coefficients. The linearised axle cornering stiffness is the
-slope of \eqref{eq:mf} at zero slip,
+Admissibility is expressed on derived quantities rather than on coefficients.
+The linearised axle cornering stiffness is the slope of \eqref{eq:mf} at zero
+slip,
 \begin{equation}
 C_{i}=F_{z,i}B_{i}C_{i}^{\mathrm{MF}}D_{i},\qquad i\in\{f,r\},
 \label{eq:stiffness}
@@ -62,22 +63,21 @@ Two properties of \eqref{eq:mf} are used throughout. First, its slope at zero
 slip is $F_{z}BCD$, so the cornering stiffness depends on the coefficients
 only through that product, and $E$ drops out. Second, and decisively, if the
 data never approaches the peak, \eqref{eq:mf} linearises to $F_{y}\approx
-F_{z}(BCD)\alpha$ and $B$, $C$, $D$ become mutually unidentifiable. The
-distinction matters for what is being claimed. Given data that does reach the
-peak, \eqref{eq:mf} is \emph{structurally} identifiable in the sense of
-Bellman and {\AA}str{\"o}m~\cite{bellman1970structural}: the map from
-coefficients to noise-free outputs is injective, and no excitation design is
-needed to make it so. What fails here is \emph{practical} (a-posteriori)
-identifiability~\cite{raue2009practical}. Under a specific excitation the
+F_{z}(BCD)\alpha$ and $B$, $C$, $D$ become mutually unidentifiable. Given data
+that does reach the peak, \eqref{eq:mf} is \emph{structurally} identifiable in
+the sense of Bellman and {\AA}str{\"o}m~\cite{bellman1970structural}, the map
+from coefficients to noise-free outputs being injective. What fails here is
+\emph{practical} (a-posteriori)
+identifiability~\cite{raue2009practical}: under a specific excitation the
 likelihood is flat along the $BCD$ direction, so the parameters are not
-recoverable from the data at hand even though the structure admits them. This
+recoverable from the data at hand even though the structure admits them. That
 is the standard persistent-excitation
 condition~\cite{ljung1999sysid,astrom1995adaptive} written on this model, and
-we claim neither the structural result nor the excitation condition as novel.
-Our claim, demonstrated in Section~\ref{subsec:excitation}, is that the
-baseline pipeline's virtual-data step can silently violate that condition, and
-that a bounded optimiser then resolves the remaining freedom by sliding onto a
-box edge. The violation surfaces as a converged fit rather than as a failure.
+we claim neither it nor the structural result as novel. Our claim, demonstrated
+in Section~\ref{subsec:excitation}, is that the baseline pipeline's
+virtual-data step can silently violate that condition, and that a bounded
+optimiser then resolves the remaining freedom by sliding onto a box edge. The
+violation surfaces as a converged fit rather than a failure.
 
 \subsection{Baseline pipeline}
 \label{subsec:baseline}
@@ -107,8 +107,7 @@ $(\alpha_{i},F_{y,i})$ by bounded least squares.
 nominal model and the residual network is reinitialised.
 \end{enumerate}
 
-The point that drives the rest of this paper is that stage~3
-\emph{never sees the recorded lap}. It sees the output of stage~2. The recorded
-lap enters only through the residual network, so the excitation available to
-the fit is set by the rollout configuration and not by how the vehicle was
-driven.
+The point that drives the rest of this paper is that stage~3 \emph{never sees
+the recorded lap}. It sees the output of stage~2. The recorded lap enters only
+through the residual network, so the excitation available to the fit is set by
+the rollout configuration and not by how the vehicle was driven.

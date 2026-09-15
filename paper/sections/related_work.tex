@@ -7,73 +7,69 @@
 The Magic Formula of Bakker, Nyborg and Pacejka~\cite{pacejka1987sae} and its
 consolidation~\cite{pacejka1992magic,pacejka2012book} remains the standard
 empirical description of steady-state tire force generation, and it is the
-model identified here. Its lateral form and the two properties this paper
+model identified here; its lateral form and the two properties this paper
 relies on are stated in Section~\ref{sec:problem}. Classical characterisation
 obtains the coefficients from steady-state manoeuvres in a controlled space
 \cite{ontrack2025,amz2020}: clean data at high logistical cost. Direct fitting
-to measured contact-patch forces is the most informative variant and requires
-a force-measuring hub or a simulator's own wheel telemetry. Here it is used
-only as a \emph{reference} against which the on-track identifier is scored,
-never inside the identification loop. Between the two sits interactive
+to measured contact-patch forces is the most informative variant and needs a
+force-measuring hub or a simulator's own wheel telemetry; here it is used only
+as a \emph{reference} against which the on-track identifier is scored, never
+inside the identification loop. Between the two sits operator-guided
 identification from track or rig data, of which TRIP-ID
-\cite{farroni2018tripid} is representative: an operator-guided fit of the full
-Magic Formula to recorded manoeuvres. The pipeline studied here targets the
-same output with no operator and no dedicated manoeuvre, which is exactly what
-puts its excitation, and therefore its identifiability, outside the engineer's
-control.
+\cite{farroni2018tripid} is representative. The pipeline studied here targets
+the same output with no operator and no dedicated manoeuvre, which is exactly
+what puts its excitation, and therefore its identifiability, outside the
+engineer's control.
 
 \subsection{On-track and data-driven identification}
 
 On-track methods trade excitation quality for operational simplicity.
 Nonlinear least squares on lap data is the classical baseline and is brittle
-under noise \cite{ontrack2025}. The recursive alternative to a batch fit is a
-dual or joint filter that carries states and parameters together. Wenzel
-\emph{et al.}~\cite{wenzel2006dekf} is the canonical vehicle instance, and
-Sierra \emph{et al.}~\cite{sierra2006cornering} the lateral-dynamics
-cornering-stiffness variant. The recursive form is subject to the same
-excitation condition this paper is about. A filter run on a smooth racing line
-has as little information about the tire's peak as a batch fit of the same
-data. It merely expresses that as a parameter covariance that never shrinks,
-rather than as a coefficient on a bound. Dedicated friction
+under noise \cite{ontrack2025}. The recursive alternative is a dual or joint
+filter carrying states and parameters together, of which Wenzel \emph{et
+al.}~\cite{wenzel2006dekf} is the canonical vehicle instance and Sierra
+\emph{et al.}~\cite{sierra2006cornering} the cornering-stiffness variant. It is
+subject to the same excitation condition this paper is about: a filter run on a
+smooth racing line has as little information about the tire's peak as a batch
+fit of the same data, and merely expresses that as a parameter covariance that
+never shrinks rather than as a coefficient on a bound. Dedicated friction
 estimators make the excitation dependence explicit
 \cite{rajamani2012wheelfriction,ahn2013friction,acosta2017friction,khaleghian2017survey},
-and Hsu
-\emph{et al.}~\cite{hsu2010trail} is the closest prior art to the warm start of
-Section~\ref{subsec:friction}. They recover the friction limit below the peak
-from the \emph{curvature} of the force response, read through the pneumatic
-trail in steering torque. Our estimator uses the same observation on a
-different signal: the axle force curve reconstructed from the IMU and
+and Hsu \emph{et al.}~\cite{hsu2010trail} is the closest prior art to the warm
+start of Section~\ref{subsec:friction}: they recover the friction limit below
+the peak from the \emph{curvature} of the force response, read through the
+pneumatic trail in steering torque. Our estimator uses the same observation on
+a different signal, the axle force curve reconstructed from the IMU and
 odometry, with no steering-torque sensor and no assumption about the steering
 system. It is then gated, applied to both axles from the axle the manoeuvre
-identifies, and pinned for the co-identification loop, a property of the
-interface to the controller, and of what that loop can and cannot identify
-(Section~\ref{subsec:bcd}), rather than of the estimator.
-Gaussian-process approaches learn the mismatch of a nominal model and have
-been used both for identification and inside the controller
-\cite{hewing2018cautious,hewing2020cautious,kabzan2019lbmpc}. They are
-accurate, but they carry a continuing computational cost and, as
+identifies, and pinned for the co-identification loop --- a property of the
+controller interface and of what that loop can identify
+(Section~\ref{subsec:bcd}) rather than of the estimator. Gaussian-process
+approaches learn the mismatch of a nominal model, for identification and inside
+the controller alike \cite{hewing2018cautious,hewing2020cautious,kabzan2019lbmpc};
+they are accurate, but carry a continuing computational cost and, as
 \cite{ontrack2025} observes, are usually evaluated starting from an already
 accurate physical model. Neural residuals replace the Gaussian process with a
 cheaper regressor at the cost of generalisation guarantees.
 
 Deep Dynamics~\cite{deepdynamics2024} is the closest work on the
 physics-constraint axis: it estimates Pacejka coefficients inside a neural
-network and adds a \emph{Physics Guard} layer clamping the internal estimates
-into nominal ranges. Our admissibility gates share the motivation but differ
-in placement and in what they constrain. We report as a substantive finding
-that per-coefficient box constraints are \emph{insufficient}. The degenerate
-fit that motivated this work satisfied every box constraint while five of
-eight coefficients sat exactly on a bound, and a later fit satisfied every box
-constraint while being pairwise oversteering and open-loop unstable above
-\SI{14.5}{\meter\per\second}. We therefore gate on derived quantities at the
-model-to-controller interface and treat a coefficient resting on a bound as a
-diagnostic of non-identifiability rather than as a successful clamp.
+network and adds a \emph{Physics Guard} layer clamping them into nominal
+ranges. Our admissibility gates share the motivation but differ in placement.
+We report as a substantive finding that per-coefficient box constraints are
+\emph{insufficient}: the degenerate fit that motivated this work satisfied
+every box constraint while five of eight coefficients sat exactly on a bound,
+and a later fit satisfied every box constraint while being pairwise
+oversteering and open-loop unstable above \SI{14.5}{\meter\per\second}. We
+therefore gate on derived quantities at the model-to-controller interface and
+treat a coefficient resting on a bound as a diagnostic of non-identifiability
+rather than a successful clamp.
 
 The hybrid residual-plus-virtual-data structure of~\cite{ontrack2025} is the
 pipeline we extend. Its key idea, to query the learned model only where it
 interpolates and extract physically parameterised coefficients from it, is
-retained unchanged. What we correct is the mechanism that decides \emph{where}
-the learned model is queried.
+retained unchanged. What we correct is the mechanism deciding \emph{where} the
+learned model is queried.
 
 \subsection{Overlap with concurrent work}
 
@@ -85,19 +81,18 @@ temporal residual~\cite{gu2022s4d,gu2022s4}, a friction warm-start, and
 Nelder--Mead and differential-evolution solver options, so we claim none of the
 three as contributions. Three differences are technical rather than
 chronological. Our friction prior is proprioceptive, so it needs no camera and
-no textured-surface assumption. It is read from the \emph{curvature} of
-the axle force curve by a gated brush-model
+no textured-surface assumption. It is read from the \emph{curvature} of the
+axle force curve by a gated brush-model
 fit~\cite{fiala1954,acosta2017friction} rather than from utilised friction,
-which on a gentle lap measures \num{0.044} median on this vehicle and is a
-lower bound on what is available (Section~\ref{subsec:frictionfloor}). And it
-is \emph{pinned} rather than used as an initialisation, because
-Section~\ref{subsec:bcd} shows the rollout fit cannot separate the peak factor
-from the cornering stiffness at any excitation, so a prior on $D$ that the fit
-is free to move is overwritten within one cycle. Neither
-prior work is the fix: the degeneracy is located in the rollout excitation,
-not in the initialisation, and to our knowledge the reachable-friction bound
-of Section~\ref{subsec:excitation} and its consequence for the virtual-data
-step have not been stated before.
+which on a gentle lap measures \num{0.044} median on this vehicle and is only a
+lower bound (Section~\ref{subsec:frictionfloor}). And it is \emph{pinned}
+rather than used as an initialisation, because Section~\ref{subsec:bcd} shows
+the rollout fit cannot separate the peak factor from the cornering stiffness at
+any excitation, so a prior on $D$ the fit is free to move is overwritten within
+one cycle. Neither prior work is the fix: the degeneracy is located in the
+rollout excitation, not the initialisation, and to our knowledge the
+reachable-friction bound of Section~\ref{subsec:excitation} and its consequence
+for the virtual-data step have not been stated before.
 
 \subsection{Simulation architectures for identification and validation}
 
@@ -106,22 +101,22 @@ research and supplies the sensor and scenario infrastructure used here. Its
 native dynamics come from the underlying PhysX wheeled-vehicle
 model~\cite{physxvehicle}, a saturating friction-and-stiffness tire law
 (Section~\ref{subsec:planttire}) rather than an empirical Magic Formula fit to
-measured data. That is why this study treats the simulator as a
+measured data, which is why this study treats the simulator as a
 well-instrumented \emph{plant} to be identified and not as a source of
 ground-truth Pacejka coefficients. Recent work addresses the fidelity gap
-directly. R-CARLA~\cite{rcarla2025} makes the dynamics model interchangeable
+directly: R-CARLA~\cite{rcarla2025} makes the dynamics model interchangeable
 while retaining CARLA's sensor simulation, and Sagmeister \emph{et
 al.}~\cite{simfidelity2026} quantify how far a vehicle model can be simplified
 before conclusions about a trajectory-following controller stop transferring,
 finding, relevantly here, that sensitivity is largest near the acceleration
-limits. CARLA has also hosted complete Formula Student Driverless
-stacks with ROS~2 interfaces \cite{carlaros2025}. The architecture of
-Section~\ref{sec:platform} sits in this line and is distinguished by exposing
-the simulator's own per-wheel slip, load and force telemetry on a
+limits. CARLA has also hosted complete Formula Student Driverless stacks with
+ROS~2 interfaces \cite{carlaros2025}. The architecture of
+Section~\ref{sec:platform} sits in this line, distinguished by exposing the
+simulator's own per-wheel slip, load and force telemetry on a
 simulation-time-stamped interface, so that an identification method can be
-scored against the forces the plant actually produced rather than against a
-secondary model. Scaled platforms, F1TENTH~\cite{f1tenth2020} and the ForzaETH
-Race Stack~\cite{forzaeth2024}, provide the software context of the baseline;
+scored against the forces the plant produced rather than a secondary model.
+Scaled platforms, F1TENTH~\cite{f1tenth2020} and the ForzaETH Race
+Stack~\cite{forzaeth2024}, provide the software context of the baseline;
 full-scale Formula Student Driverless systems~\cite{amz2020} the vehicle class
 targeted here.
 
@@ -132,16 +127,15 @@ built on \texttt{acados}~\cite{acados2022} with partial-condensing
 HPIPM~\cite{hpipm2020}, following standard practice in racing MPC
 \cite{liniger2015,kabzan2019lbmpc}, tracking a minimum-curvature raceline
 generated in the manner of Heilmeier \emph{et al.}~\cite{heilmeier2020}. We
-claim no contribution to the controller itself. It appears in this paper only
-as the consumer that defines what an admissible identification is
-(Section~\ref{sec:integration}).
+claim no contribution to the controller; it appears only as the consumer that
+defines what an admissible identification is (Section~\ref{sec:integration}).
 
 The gap, then. The baseline~\cite{ontrack2025} establishes that a residual
 network plus virtual steady-state data recovers a Pacejka model from a lap at
 1:10 scale, and concurrent work~\cite{visionsysid2026} improves its residual
-architecture and its initialisation. Neither addresses the condition under
-which the virtual data itself carries information about the tire's peak, which
-is the binding constraint at full scale, and neither treats the admissibility
-of the identified model for its downstream controller as an explicit,
-physically derived contract. This paper addresses both, on a platform
-where the answer can be checked against the plant's own forces.
+architecture and initialisation. Neither addresses the condition under which
+the virtual data itself carries information about the tire's peak, the binding
+constraint at full scale, and neither treats the admissibility of the
+identified model for its downstream controller as an explicit, physically
+derived contract. This paper addresses both, on a platform where the answer can
+be checked against the plant's own forces.

@@ -6,8 +6,8 @@
 \label{subsec:setup}
 
 All experiments run on the architecture of Section~\ref{sec:platform}: the
-Formula AI vehicle in CARLA~\cite{carla2017} driven through ROS~2 Humble, with
-the server in synchronous mode at a \SI{0.033}{\second} fixed physics step. The
+Formula AI vehicle in CARLA~\cite{carla2017} driven through ROS~2 Humble, the
+server in synchronous mode at a \SI{0.033}{\second} fixed physics step. The
 identifier collects \SI{30}{\second} of data at \SI{50}{\hertz} and
 re-identifies from the newest buffer, matching the baseline's data
 budget~\cite{ontrack2025}. Ground truth for forces, slip angles and normal
@@ -15,23 +15,15 @@ loads is the simulator's own per-wheel telemetry, which the identifier never
 reads.
 
 \subsubsection{Surface}
-Every run reported here uses a \emph{static} friction surface: the per-wheel
-coefficient is held at its configured value of \num{1.0} for the whole run, and
-the road-surface factor of \num{0.70} that PhysX applies on top of it makes the
-effective coefficient the identifier is scored against \num{0.70}, constant to
+Every run uses a \emph{static} surface: the per-wheel coefficient is held at
+its configured \num{1.0}, and the road-surface factor of \num{0.70} PhysX
+applies on top of it makes the effective coefficient \num{0.70}, constant to
 the last digit the simulator reports over all \num{10744} and \num{12025}
-force-validation samples of the two runs. Time-varying friction is out of scope
-here (Section~\ref{sec:conclusion}).
-
-This surface is deliberately \emph{not} the one the tire prior was measured on.
-The prior of Section~\ref{subsubsec:priorprovenance} was fitted on a
-$\mu=\num{1.05}$ surface and carries $D_{f}=\num{1.009}$,
-$D_{r}=\num{1.002}$, so it overstates this run's grip by \SI{44}{\percent},
-and it understates the axle cornering stiffness the plant realises here by
-\SI{24}{\percent} at the front and \SI{16}{\percent} at the rear. A pipeline that
-cannot move off its prior therefore has nowhere to hide here, which is the
-point of running on a surface the prior does not describe. It remains a
-\emph{single} surface, and the adaptivity claim that a friction sweep would
+force-validation samples of the two runs. It is deliberately \emph{not} the
+$\mu=\num{1.05}$ surface the tire prior was measured on
+(Section~\ref{subsubsec:priorprovenance}), so a pipeline that cannot move off
+its prior has nowhere to hide. It remains a \emph{single} surface: time-varying
+friction is out of scope, and the adaptivity claim a friction sweep would
 support is not made (Section~\ref{subsec:limits}).
 
 \subsubsection{Reference trajectory}
@@ -48,11 +40,10 @@ demand is $\max(v_{x}^{2}|\kappa|)=\SI{4.98}{\meter\per\second\squared}$
 (\SI{0.51}{\g}), which saturates the flat
 \SI{5.0}{\meter\per\second\squared} \texttt{ggv} envelope the optimiser was
 given and stays at roughly \SI{73}{\percent} of the \SI{0.70}{\g} this
-surface sustains. This
-trajectory replaces the earlier one, whose \SI{1.22}{\g} demand the
-admissibility gate of Section~\ref{sec:integration} rejected against the same
-plant. The regeneration, not a relaxed gate, is what unblocked the closed-loop
-runs below.
+surface sustains. It replaces the earlier trajectory, whose \SI{1.22}{\g}
+demand the admissibility gate of Section~\ref{sec:integration} rejected against
+the same plant; that regeneration, not a relaxed gate, unblocked the
+closed-loop runs.
 
 \begin{figure*}[t]
 \centering
@@ -76,24 +67,19 @@ profile saturates the envelope and no segment exceeds the plant's grip.}
 Two configurations of the same pipeline are run back to back on that
 trajectory, three timed laps each, with an untimed out-lap from the spawn point
 to the raceline's $s=0$. They differ in the five settings of
-Table~\ref{tab:scenarios} and in nothing else: the vehicle, the map, the
-trajectory, the controller, the data budget, the co-identification loop count
-and the Pacejka box constraints are shared. \texttt{Baseline-NN-MSE} is the
-inherited configuration (MLP residual, one-step MSE objective, local
-trust-region fit, no friction warm start, undamped coefficient update)
-evaluated at full scale on the
-corrected rollout, so the comparison isolates the five settings rather than
-reproducing the published pipeline in full (that comparison is
-Section~\ref{subsec:baselinecmp}). \texttt{Ours} is the shipped configuration.
-Because the five settings move together, the comparison below is a
-configuration comparison and not a per-factor ablation;
-Section~\ref{subsec:ablations} separates the settings that carry the result,
-offline. It is also not a test
-of this paper's central contribution, since the excitation-aware rollout of
-Section~\ref{subsec:excitation} is active in \emph{both} arms, so what
-Section~\ref{subsec:resultsclosedloop} measures is the five secondary settings
-on top of that correction. The correction itself is evidenced in
-Section~\ref{subsec:sweep}.
+Table~\ref{tab:scenarios} and in nothing else; vehicle, map, trajectory,
+controller, data budget, loop count and box constraints are shared.
+\texttt{Baseline-NN-MSE} is the inherited configuration (MLP residual, one-step
+MSE objective, local trust-region fit, no friction warm start, undamped update)
+evaluated at full scale on the corrected rollout, so the comparison isolates
+those five settings rather than reproducing the published pipeline in full
+(Section~\ref{subsec:baselinecmp}); \texttt{Ours} is the shipped configuration.
+Since the five settings move together, what follows is a configuration
+comparison, not a per-factor ablation, which Section~\ref{subsec:ablations}
+supplies offline. Nor is it a test of this paper's central contribution: the
+excitation-aware rollout is active in \emph{both} arms, so the closed-loop
+comparison measures the five secondary settings on top of it and the correction
+itself is evidenced in Section~\ref{subsec:sweep}.
 
 \begin{table}[t]
 \caption{The two configurations.}
@@ -116,8 +102,7 @@ Update relaxation $\beta$ & \num{1.00} (undamped) & \num{0.20}\\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}[flushleft]\scriptsize
-\item Everything not listed is identical between the two, including the
-excitation-aware rollout of Section~\ref{subsec:excitation}, which both use.
+\item Everything not listed is identical between the two,
 $\beta$ is the relaxation of \eqref{eq:relax}; \num{1.00} is the inherited
 undamped update.
 \end{tablenotes}
@@ -126,71 +111,58 @@ undamped update.
 
 \subsubsection{Provenance of the tire prior}
 \label{subsubsec:priorprovenance}
-The prior $\phip^{0}$ that both arms start from, and that the Tikhonov term of
-\eqref{eq:fitobj} pulls toward, is the measured tire of Table~\ref{tab:ref}. It
-was obtained by fitting \eqref{eq:mf} to CARLA's own per-wheel telemetry
-(\texttt{feedback/tire\_forces}: slip angle, lateral force, normal load) over a
+The prior $\phip^{0}$ both arms start from, and that the Tikhonov term of
+\eqref{eq:fitobj} pulls toward, is the measured tire of Table~\ref{tab:ref},
+obtained by fitting \eqref{eq:mf} to CARLA's own per-wheel telemetry over a
 dedicated limit-excitation run that reached $\alpha=\SI{0.37}{\radian}$, axle
 $\mu=\num{1.05}$ and \SI{1.50}{\g}, by differential evolution, at
 \SI{135}{\newton} front and \SI{85}{\newton} rear residual RMSE. Three
-consequences have to be stated plainly. First, that is the same channel the
-force and friction results below are scored against, so the prior is not
-independent of the validation data. Second, the manoeuvre that produced it is
-one the pipeline itself is not allowed to run. The raceline of
-Section~\ref{subsubsec:raceline} peaks at \SI{0.51}{\g} and never approaches
-the tire's peak, which is exactly the excitation deficit this paper is about.
-
-Third, and this is what makes the runs below informative rather than
-self-confirming, the prior was measured on a surface these runs do not use. It
-carries $D=\num{1.009}/\num{1.002}$ and an axle slope of
-\SI{13.2}{\kilo\newton\per\radian} front and
-\SI{13.9}{\kilo\newton\per\radian} rear, against the
-\num{0.70} and the \num{17.4} and \SI{16.6}{\kilo\newton\per\radian} this surface
-realises (Section~\ref{subsec:resultstire}). Returning the prior unchanged is
-therefore not a good outcome here: it is a \SI{44}{\percent} grip overstatement
-and a \SIrange{16}{24}{\percent} stiffness deficit, and it would be visible in
-every metric of Table~\ref{tab:comparison}. What the arm has to do to score
-well is \emph{move}, in the right direction, from a prior that is wrong.
+consequences follow. The prior is not independent of the validation data, since
+that is the same channel the force and friction results are scored against. The
+manoeuvre that produced it is one the pipeline is not allowed to run: the
+raceline peaks at \SI{0.51}{\g} and never approaches the tire's peak, the
+excitation deficit this paper is about. And, decisively, the prior was measured
+on a surface these runs do not use: it carries $D=\num{1.009}/\num{1.002}$ and
+axle slopes of \SI{13.2}{\kilo\newton\per\radian} front and
+\SI{13.9}{\kilo\newton\per\radian} rear against the \num{0.70} and the
+\num{17.4} and \SI{16.6}{\kilo\newton\per\radian} this surface realises
+(Section~\ref{subsec:resultstire}). Returning it unchanged is a
+\SI{44}{\percent} grip overstatement and a \SIrange{16}{24}{\percent} stiffness
+deficit, visible in every metric of Table~\ref{tab:comparison}; to score well
+an arm has to \emph{move}, in the right direction, from a prior that is wrong.
 
 \subsubsection{What is measured}
-Three families of quantity are recorded, each against the plant's own
-telemetry: the identified tire model (coefficients, axle force, peak friction),
-the one-step state prediction, and the closed-loop tracking of the MPC that
-consumes the model. Every figure in this section is exported together with the
-CSV holding the samples behind it, and the cross-run comparison reads those
-CSVs rather than re-deriving any metric, so a figure and the table cannot
-disagree.
+Three families of quantity are recorded against the plant's own telemetry: the
+identified tire model (coefficients, axle force, peak friction), the one-step
+state prediction, and closed-loop MPC tracking. Every figure is exported with
+the CSV holding its samples, and the cross-run comparison reads those CSVs
+rather than re-deriving any metric, so a figure and the table cannot disagree.
 
 \subsection{Identifiability of the peak factor against rollout excitation}
 \label{subsec:sweep}
 
-The identifiability claim of Section~\ref{subsec:excitation} is a claim about
-the rollout configuration alone, so it is tested where the answer is known
-exactly rather than in CARLA. A tire with a known peak factor $D$ is rolled out
-through the synthetic steering sweep of stage~2, the shipped rollout with the
-residual network set to zero, and fitted back with the shipped solver. The fit
-is run \emph{unregularised} and started from the true coefficients, so nothing
-it loses is lost to the prior, to the start point or to a local minimum.
-Everything it loses is lost to excitation. Table~\ref{tab:sweep} and
-Fig.~\ref{fig:sweep} report the grid.
+The claim of Section~\ref{subsec:excitation} concerns the rollout
+configuration alone, so it is tested where the answer is known exactly rather
+than in CARLA. A tire with a known peak factor $D$ is rolled out through the
+synthetic sweep of stage~2 (the shipped rollout, residual network set to zero)
+and fitted back with the shipped solver, \emph{unregularised} and started from
+the true coefficients, so nothing it loses is lost to the prior, the start
+point or a local minimum; everything it loses is lost to excitation.
 
 Three axes are swept, rollout speed $v$, sweep amplitude
-$\delta_{\mathrm{sweep}}$ and true $D$, and each cell is repeated over five
-noise realisations. The two configuration axes are swept one at a time,
-because $\mu_{\mathrm{reach}}$ is a function of both and a claim that it, and
-not the speed, governs the fit cannot be tested by moving the speed alone. The
-repetition is over noise rather than over the solver because the noise-free
-fit is exactly seed-invariant here: five multi-start seeds return the same
+$\delta_{\mathrm{sweep}}$ and true $D$, each cell repeated over five noise
+realisations. The configuration axes are swept one at a time, because
+$\mu_{\mathrm{reach}}$ is a function of both and a claim that it, and not the
+speed, governs the fit cannot be tested by moving the speed alone. The
+repetition is over noise rather than over the solver because the noise-free fit
+is exactly seed-invariant here: five multi-start seeds return the same
 coefficients to four decimal places, and so does a jitter width seven times
-wider. That is the direct measurement behind the statement that the degeneracy
-is not a solver problem. The injected noise
-is Gaussian on the rolled-out states at a one-step persistence RMSE measured on
-CARLA runs of this vehicle, $\sigma_{v_{y}}=\SI{0.009}{\meter\per\second}$ and
-$\sigma_{\omega}=\SI{0.005}{\radian\per\second}$, the same order as the
-persistence rows of Table~\ref{tab:comparison}, and is what the intervals in
-Table~\ref{tab:sweep} are computed over. Because the front and rear fits of one
-rollout share that rollout, the interval is taken over the five realisations
-and not over the ten fits.
+wider. The injected noise is Gaussian on the rolled-out states at a one-step
+persistence RMSE measured on CARLA runs of this vehicle,
+$\sigma_{v_{y}}=\SI{0.009}{\meter\per\second}$ and
+$\sigma_{\omega}=\SI{0.005}{\radian\per\second}$, and is what the intervals in
+Table~\ref{tab:sweep} are computed over; the front and rear fits share one
+rollout, so the interval is taken over the five realisations, not the ten fits.
 
 \begin{table*}[t]
 \caption{Peak factor $\hat D$ recovered from a known tire, along both arguments
@@ -232,100 +204,71 @@ value & & 0.70 & 1.05 & 1.40 & 1.80\\
 \end{threeparttable}
 \end{table*}
 
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{identifiability_sweep.pdf}
-\caption{The grid of Table~\ref{tab:sweep}, unregularised and started from the
-true coefficients. (a) and (b) sweep the two arguments of
-\eqref{eq:mureach} one at a time, one series per true $D$ (dotted lines), mean
-$\pm$ \SI{95}{\percent} interval over the five noise realisations. Neither
-axis is a speed effect: starving $\delta_{\mathrm{sweep}}$ at a fixed
-\SI{15}{\meter\per\second} destroys $D$ as thoroughly as starving $v$, and the
-\num{1.8} tire rails on its \num{2.0} bound while doing so. (c) reads both
-against the demand the rollout \emph{realises},
-$\max|v_{x}\omega|/g$, normalised by the tire's own $D$. Left of the dashed
-vertical the rollout never reaches the peak and $\hat D$ reports the
-excitation rather than the tire, low when the speed is the limiting factor
-(filled) and high when the sweep amplitude is (open), and the two branches
-close on
-$\hat D/D=1$ from opposite sides as the realised demand passes $D$. The
-box-edge counts are the parenthesised column of Table~\ref{tab:sweep}.}
-\label{fig:sweep}
-\end{figure*}
-
-The grid says three things. First, the inherited
-\SI{4}{\meter\per\second} rollout is uninformative about $D$ at \emph{every}
-grip level tested. A $0.70$, a $1.05$, a $1.40$ and a $1.80$ tire all come
-back as $\hat D$ between \num{0.50} and \num{0.59}, so the fit reports
-$\mu_{\mathrm{reach}}$ and not the tire, with two to seven of the eight
-coefficients on a bound. Second, the boundary is $\mu_{\mathrm{reach}}\gtrsim
-D$ and not a speed: at \SI{6}{\meter\per\second}, where
-$\mu_{\mathrm{reach}}=0.96$, the $0.70$ and $1.05$ tires are recovered to
-within \SI{3}{\percent} while the $1.40$ and $1.80$ tires are
-\SI{13}{\percent} and \SI{30}{\percent} short. That boundary is soft rather
-than sharp. The $1.05$ tire is recovered to \SI{1}{\percent} at
+The grid says three things. First, the inherited \SI{4}{\meter\per\second}
+rollout is uninformative about $D$ at \emph{every} grip level tested: the
+$0.70$, $1.05$, $1.40$ and $1.80$ tires all come back as $\hat D$ between
+\num{0.50} and \num{0.59}, with two to seven of the eight coefficients on a
+bound, so the fit reports $\mu_{\mathrm{reach}}$ and not the tire. Second, the
+boundary is $\mu_{\mathrm{reach}}\gtrsim D$ and not a speed: at
+\SI{6}{\meter\per\second}, where $\mu_{\mathrm{reach}}=0.96$, the $0.70$ and
+$1.05$ tires are recovered to within \SI{3}{\percent} while the $1.40$ and
+$1.80$ tires are \SI{13}{\percent} and \SI{30}{\percent} short. The boundary is
+soft: the $1.05$ tire is recovered to \SI{1}{\percent} at
 $\mu_{\mathrm{reach}}=0.96$, slightly \emph{below} its own $D$, because a
-rollout that stops just short of the peak still traverses the curvature
-separating $B$, $C$ and $D$. The bound predicts where the information runs
-out, not a step. Above $\mu_{\mathrm{reach}}=1.7$ every tire is recovered to
-within \SI{4}{\percent} with no systematic railing. Third, the failure is not
-the solver's. The noise-free fit is invariant to the multi-start seed and to
-the jitter width, so multi-start, a global solver or a better start point
-cannot recover a coefficient the data does not contain, which is why
-Section~\ref{subsec:fit} reports the extra starts and the global solver as
-secondary. The one caveat is at the top of the sweep, where a rollout far past
-the peak begins to over-report a low-grip tire ($\hat D=\num{0.92}$ for a
-$0.70$ tire at \SI{20}{\meter\per\second}), because the Magic Formula's
-falling branch is being fitted to data the plant's own curve does not produce.
-The extrapolation bound of Section~\ref{subsec:iterative} is what keeps the
-shipped configuration away from that regime.
+rollout stopping just short of the peak still traverses the curvature
+separating $B$, $C$ and $D$. The bound predicts where the information runs out,
+not a step. Above $\mu_{\mathrm{reach}}=1.7$ every tire is recovered to within
+\SI{4}{\percent} with no systematic railing. Third, the failure is not the
+solver's: by the seed invariance above, multi-start, a global solver or a
+better start point cannot recover a coefficient the data does not contain,
+which is why Section~\ref{subsec:fit} reports both as secondary. The one caveat
+is at the top of the sweep, where a rollout far past the peak over-reports a
+low-grip tire ($\hat D=\num{0.92}$ for a $0.70$ tire at
+\SI{20}{\meter\per\second}), the Magic Formula's falling branch being fitted to
+data the plant's own curve does not produce; the extrapolation bound of
+Section~\ref{subsec:iterative} keeps the shipped configuration out of that
+regime.
 
-Panel (b) of Table~\ref{tab:sweep} sweeps the other argument of
-\eqref{eq:mureach}: $\delta_{\mathrm{sweep}}$ from \SI{0.03}{\radian} to the
-shipped $\delta_{\max}=\SI{0.54}{\radian}$, at a fixed
-$v=\SI{15}{\meter\per\second}$. It confirms that speed is not the governing
-variable, since starving the sweep amplitude destroys $D$ just as starving the
-speed does, at the same fixed speed, and it corrects the shape of the claim in
-two ways. First, the failure is not a common bias. Where an under-speeded rollout
-returns \emph{too little} grip (every tire back at $\hat D\approx0.5$), an
-under-swept one returns too much: at $\delta_{\mathrm{sweep}}=\SI{0.06}{\radian}$
-the \num{1.05} tire comes back as \num{1.30} and the \num{1.80} tire rails on
-the \num{2.0} bound, with two of the eight coefficients on a box edge in every
-cell. What the two axes share is that $\hat D$ stops being a function of the
-tire, the direction in which it then errs being set by the rollout: the
-signature of an unidentified parameter rather than of a biased one.
+Panel (b) sweeps the other argument of \eqref{eq:mureach},
+$\delta_{\mathrm{sweep}}$ from \SI{0.03}{\radian} to the shipped
+$\delta_{\max}=\SI{0.54}{\radian}$ at fixed $v=\SI{15}{\meter\per\second}$.
+Starving the amplitude destroys $D$ just as starving the speed does, so speed
+is not the governing variable, and the claim is corrected in two ways. First,
+the failure is not a common bias: an under-speeded rollout returns \emph{too
+little} grip (every tire back at $\hat D\approx0.5$), an under-swept one too
+much, the \num{1.05} tire coming back as \num{1.30} and the \num{1.80} tire
+railing on the \num{2.0} bound at
+$\delta_{\mathrm{sweep}}=\SI{0.06}{\radian}$, with two of eight coefficients on
+a box edge in every cell. What the axes share is that $\hat D$ stops being a
+function of the tire, the direction of the error being set by the rollout: the
+signature of an unidentified parameter, not a biased one. Second, the axes do
+\emph{not} collapse onto a common $\mu_{\mathrm{reach}}$, for the upper-bound
+reason of Section~\ref{subsec:excitation}: \eqref{eq:mureach} uses the
+Ackermann curvature and so tracks the realised demand only while understeer is
+small, the realised $\max|v_{x}\omega|/g$ saturating near the tire's peak while
+$\mu_{\mathrm{reach}}$ grows to \num{10.64} against a realised
+\numrange{1.40}{2.18} at $v=\SI{20}{\meter\per\second}$. Read against the
+realised demand, both axes behave alike: recovery sets in where the rollout
+actually reaches the peak. Equation~\eqref{eq:mureach} should therefore be used
+as the pipeline uses it, a cheap screening bound conclusive when it falls below
+$D$, not a measure of excitation achieved.
 
-Second, the two axes do \emph{not} collapse onto a common
-$\mu_{\mathrm{reach}}$, and the reason is the upper-bound caveat of
-Section~\ref{subsec:excitation}. Equation~\eqref{eq:mureach} uses the Ackermann
-curvature, so it tracks the realised demand only while the vehicle's own
-understeer is small; the realised $\max|v_{x}\omega|/g$ saturates near the
-tire's peak while $\mu_{\mathrm{reach}}$ keeps growing, reaching \num{10.64}
-against a realised \numrange{1.40}{2.18} at $v=\SI{20}{\meter\per\second}$.
-Read against the realised demand (Fig.~\ref{fig:sweep}c) both axes do behave
-alike: recovery sets in where the rollout actually reaches the tire's peak.
-Equation~\eqref{eq:mureach} should therefore be used as the pipeline uses it,
-as a cheap screening bound that is conclusive when it falls below $D$, and not
-as a measure of the excitation achieved.
-
-One property of this experiment bounds how all of it should be read. The
-residual network is set to zero, so a Magic Formula is fitted to Magic-Formula
-data and the model structure is exactly matched. The recovery reported here is
-the best case, and the real pipeline's degradation at a given excitation is at
-least this bad.
+One property bounds how all of this should be read: the residual network is set
+to zero, so a Magic Formula is fitted to Magic-Formula data under exactly
+matched structure. The recovery is a best case, and the real pipeline's
+degradation at a given excitation is at least this bad.
 
 \subsection{Cross-run summary}
 \label{subsec:summary}
 
 Table~\ref{tab:comparison} is the complete comparison. \texttt{Ours} is better
-on every quantity the benchmark scores against the plant (peak friction,
-axle force on both axles, both one-step states, lateral tracking error in every
-phase, and both error tails) and is behind only on the RMS QP solve time, by
-\SI{5}{\percent} of a figure two orders of magnitude inside the control period.
-The margins are large: \numrange{9.0}{12.1}$\times$ on peak friction and axle
-force, \num{1.5}$\times$ on MPC tracking error. The rest of this section reads
-those rows against the figures, and
-Section~\ref{subsec:ablations} attributes them.
+on every quantity scored against the plant (peak friction, axle force on both
+axles, both one-step states, lateral tracking error in every phase, and both
+error tails) and behind only on RMS QP solve time, by \SI{5}{\percent} of a
+figure two orders of magnitude inside the control period. The margins are
+\numrange{9.0}{12.1}$\times$ on peak friction and axle force and
+\num{1.5}$\times$ on MPC tracking error. The rest of this section reads those
+rows against the figures; Section~\ref{subsec:ablations} attributes them.
 
 \begin{table}[t]
 \caption{Cross-run comparison of the two configurations.}
@@ -344,9 +287,7 @@ Run duration [\si{\second}] & 580.4 & 554.6\\
 Best lap [\si{\second}], wall clock & 142.84 & 135.82\\
 Mean lap [\si{\second}], wall clock & 154.47 & 145.39\\
 RMS $e_{y}$, overall [\si{\meter}] & \textbf{0.256} & 0.319\\
-RMS $e_{y}$, pure pursuit [\si{\meter}] & \textbf{0.387} & 0.443\\
 RMS $e_{y}$, MPC [\si{\meter}] & \textbf{0.151} & 0.224\\
-Max $|e_{y}|$ [\si{\meter}] & 2.628 & 2.628\\
 Max $|e_{y}|$, MPC [\si{\meter}] & \textbf{0.683} & 0.776\\
 ITAE $e_{y}$ [\si{\meter\second\squared}] & \textbf{16041} & 25502\\
 IAE $e_{y}$ [\si{\meter\second}] & \textbf{60.2} & 87.2\\
@@ -380,15 +321,6 @@ Skill vs.\ persistence, $v_{y}$ & $\mathbf{-0.27}$ & $-8.18$\\
 Skill vs.\ persistence, $\omega$ & $\mathbf{-8.8}$ & $-13.9$\\
 \bottomrule
 \end{tabular}
-\begin{tablenotes}[flushleft]\scriptsize
-\item Bold is the better of the two where the metric has a direction.
-\item Lap times are on the ROS wall clock; the two runs did not hold the same real-time factor, so they are reported as recorded and not bolded.
-\item Max $|e_{y}|$ is the same pure-pursuit out-lap transient in both runs, before either identified model is in the loop, and agrees to \SI{0.03}{\milli\meter}; the MPC-phase maximum beneath it is the one the identified model influences. ITAE is not scale-free and the runs differ in length, hence $\mathrm{IAE}/T$ and $\mathrm{ITAE}/(T^{2}/2)$ beside it.
-\item The persistence rows are the reference baseline, next state equals last
-measured state, and not a result.
-\item ``After first release'' is the \SI{440}{\second} of each run following the first cycle on which the friction gate released a measured $\mu$; before it, \texttt{Ours} publishes the $\mu=\num{1.05}$ prior (Section~\ref{subsec:resultsmu}). The two axles carry the same $D$ by construction (Section~\ref{subsec:friction}), so their post-release errors coincide.
-\item \textbf{Every value is a single run per configuration: no row carries a confidence interval, and the directional rows are one paired observation, not an estimate of a mean difference (Section~\ref{subsec:limits}).}
-\end{tablenotes}
 \end{threeparttable}
 \end{table}
 
@@ -398,84 +330,71 @@ measured state, and not a result.
 Figure~\ref{fig:pacejka} puts both identified curves against the plant's own
 curve~\eqref{eq:physx} and lists the coefficients. Three things are visible.
 
-First, no coefficient of \texttt{Ours} rests on a box constraint, in any of its
-six accepted identifications. Its last accepted set is
+First, no coefficient of \texttt{Ours} rests on a box constraint in any of its
+six accepted identifications; its last accepted set is
 $B=\num{12.890}/\num{13.746}$ inside $[4,20]$,
 $C=\num{1.240}/\num{1.248}$ inside $[1.2,2.2]$, $D=\num{0.768}$ on both axles
 inside $[0.4,2.0]$ and $E=\num{-2.517}/\num{-1.836}$ inside $[-3,1]$.
 \texttt{Baseline-NN-MSE} puts $D$ on its upper bound of \num{2.000} on both
-axles in \emph{every} accepted identification, and $E_{f}$ on its lower bound
-of \num{-3.0} likewise; its first identification additionally rails $B$ on the
+axles in \emph{every} accepted identification and $E_{f}$ on its lower bound of
+\num{-3.0} likewise, its first identification additionally railing $B$ on the
 lower bound of \num{4.0} on both axles. A peak factor of \num{2.000} against a
-plant that realises \num{0.70} is less a \SI{186}{\percent} error in a tire
-parameter than the box-edge signature of
-Section~\ref{subsec:identifiability}: the coefficient is not identified, and
-nothing in a per-coefficient bounds check distinguishes that from a fit. The
-one coefficient of \texttt{Ours} worth reading with care is $C$, which settles
-\num{0.04} above its lower bound: inside the box, but close enough to it
-that it should be reported as shaped by the constraint rather than as
-identified, consistent with $C$'s role in the $BCD$ product of
-Section~\ref{subsec:bcd}. $E$ should not be read as identified in either
-configuration: it shapes only the region around and past the peak, which
-neither the lap nor the bounded rollout reaches, and it is exactly the
-coefficient the frozen Tikhonov target of \eqref{eq:fitobj} exists to hold near
-its nominal value. It does so here, \texttt{Ours} ending at \num{-2.52}
+plant realising \num{0.70} is less a \SI{186}{\percent} parameter error than
+the box-edge signature of Section~\ref{subsec:identifiability}: the coefficient
+is not identified, and no per-coefficient bounds check distinguishes that from
+a fit. Two coefficients of \texttt{Ours} need care. $C$ settles \num{0.04}
+above its lower bound, inside the box but close enough to report as shaped by
+the constraint, consistent with its role in the $BCD$ product of
+Section~\ref{subsec:bcd}. $E$ is not identified in either configuration: it
+shapes only the region around and past the peak, which neither the lap nor the
+bounded rollout reaches, and it is exactly what the frozen Tikhonov target of
+\eqref{eq:fitobj} holds near nominal --- \texttt{Ours} ends at \num{-2.52}
 against a \num{-2.00} prior, where the unregularised arm ends on the bound.
 
-Second, and this is the change from the earlier configuration, the linear range
-is now identified rather than inherited. Every slope here is
-\eqref{eq:stiffness} for an identified set, and for the plant it is the slope
+Second, the linear range is identified rather than inherited. Every slope here
+is \eqref{eq:stiffness} for an identified set; for the plant it is the slope
 fitted to the simulator's own per-wheel forces over
-$|\alpha|\in[\num{0.005},\num{0.02}]\,\si{\radian}$, all at the same static
-axle loads $F_{z,f}=\SI{1373}{\newton}$, $F_{z,r}=\SI{1274}{\newton}$, so the
-three are comparable. The plant realises
-\SI{17.4}{\kilo\newton\per\radian} front and
+$|\alpha|\in[\num{0.005},\num{0.02}]\,\si{\radian}$, all at the static axle
+loads $F_{z,f}=\SI{1373}{\newton}$, $F_{z,r}=\SI{1274}{\newton}$, so the three
+are comparable. The plant realises \SI{17.4}{\kilo\newton\per\radian} front and
 \SI{16.6}{\kilo\newton\per\radian} rear over this run's load range, below the
 $\bar F_{z}=1$ closed-form values of Table~\ref{tab:ref} for the reason its
-footnote gives; the comparison here is against the realised slope, not against
-the tabulated one. The configured prior
-carries \num{13.2} and \num{13.9}, \SI{24}{\percent} and \SI{16}{\percent} low.
-\texttt{Ours} returns \num{16.9} and \num{16.8}, i.e.\ \SI{3.2}{\percent} low
-at the front and \SI{1.4}{\percent} high at the rear, so the identification
-removes \SI{87}{\percent} of the prior's front stiffness error and
-\SI{91}{\percent} of its rear one. The product
-$BCDF_{z}$ that Section~\ref{subsec:bcd} identifies as the only quantity the
-rollout fit determines is what moves and then holds: the first cycle takes the
-front value from the prior's \SI{13.2}{\kilo\newton\per\radian} to
-\num{14.6}, and the five cycles after the friction gate releases sit within
+footnote gives. The prior carries \num{13.2} and \num{13.9},
+\SI{24}{\percent} and \SI{16}{\percent} low; \texttt{Ours} returns \num{16.9}
+and \num{16.8}, \SI{3.2}{\percent} low front and \SI{1.4}{\percent} high rear,
+removing \SI{87}{\percent} and \SI{91}{\percent} of the prior's error. The
+product $BCDF_{z}$, the only quantity the rollout fit determines
+(Section~\ref{subsec:bcd}), is what moves and then holds: the first cycle takes
+the front value from \SI{13.2}{\kilo\newton\per\radian} to \num{14.6}, and the
+five cycles after the friction gate releases sit within
 \SIrange{16.0}{16.9}{\kilo\newton\per\radian}, a spread of \SI{5}{\percent}
 about a plant at \num{17.4}. \texttt{Baseline-NN-MSE} returns \num{37.9} and
 \num{38.4}, \SI{118}{\percent} and \SI{132}{\percent} high, which is
 $D=\num{2.0}$ multiplying a $B$ the fit chose against it.
 
-Third, both sets keep the understeer sign ($l_{r}C_{r}>l_{f}C_{f}$) and so
-pass the stability gate of Section~\ref{subsec:gates}, at margins of
+Third, both sets keep the understeer sign ($l_{r}C_{r}>l_{f}C_{f}$) and pass
+the stability gate of Section~\ref{subsec:gates}, at margins of
 \SI{7.3}{\percent} for \texttt{Ours} ($l_{f}C_{f}=\num{12.45}$ against
 $l_{r}C_{r}=\SI{13.36}{\kilo\newton\meter\per\radian}$) and \SI{9.1}{\percent}
 for \texttt{Baseline-NN-MSE} (\num{27.98} against \num{30.52}), against
-\SI{2.5}{\percent} for the plant itself. The gate that does separate them is
-the grip ceiling: \eqref{eq:gripceiling} gives \SI{2.00}{\g} for
-\texttt{Baseline-NN-MSE} against \SI{0.77}{\g} for \texttt{Ours}, a plant
-that sustains \SI{0.71}{\g}, and a trajectory that demands \SI{0.51}{\g}. The
-baseline's ceiling is a claim the plant cannot honour by a factor of
-\num{2.8}; the prior's \SI{1.01}{\g} is one it cannot honour by \num{1.4}; only
-the identified set is admissible on the quantity the controller actually
-consumes.
+\SI{2.5}{\percent} for the plant. What separates them is the grip ceiling:
+\eqref{eq:gripceiling} gives \SI{2.00}{\g} for \texttt{Baseline-NN-MSE}
+against \SI{0.77}{\g} for \texttt{Ours}, a plant sustaining \SI{0.71}{\g} and a
+trajectory demanding \SI{0.51}{\g}. The baseline's ceiling is a claim the plant
+cannot honour by a factor of \num{2.8} and the prior's \SI{1.01}{\g} one it
+cannot honour by \num{1.4}; only the identified set is admissible on the
+quantity the controller consumes.
 
-What makes all three readable on this run is that the lap does now traverse
-part of the curvature. Over the force-validation samples,
-$P_{99}(|\alpha|)=\SI{0.047}{\radian}$ (\SI{2.7}{\degree}) and
-$\max|\alpha|=\SI{0.102}{\radian}$ (\SI{5.8}{\degree}) against the
-\SI{8.0}{\degree} at which the plant's curve first reaches its peak at
-$\mu=\num{0.70}$, and the axle utilisation $\max|F_{y}|/F_{z}$ reaches
-\num{0.71} front and \num{0.72} rear. The same trajectory on the
-$\mu=\num{1.05}$ surface of the earlier runs reached only \num{0.49}. The
-excitation is still not a limit manoeuvre (the rollout of
-Section~\ref{subsec:excitation} is what reaches up the curve, and the warm
-start of Section~\ref{subsec:friction} is what carries independent information
-about $\mu$), but it is enough for the friction gate of
-Section~\ref{subsec:friction} to release, which on the $\mu=\num{1.05}$ runs
-it did not.
+All three are readable because the lap now traverses part of the curvature:
+over the force-validation samples $P_{99}(|\alpha|)=\SI{0.047}{\radian}$
+(\SI{2.7}{\degree}) and $\max|\alpha|=\SI{0.102}{\radian}$ (\SI{5.8}{\degree})
+against the \SI{8.0}{\degree} at which the plant's curve peaks at
+$\mu=\num{0.70}$, and axle utilisation $\max|F_{y}|/F_{z}$ reaches \num{0.71}
+front and \num{0.72} rear, against \num{0.49} for the same trajectory on the
+$\mu=\num{1.05}$ surface of the earlier runs. This is still not a limit
+manoeuvre --- the rollout reaches up the curve and the warm start carries the
+independent information about $\mu$ --- but it suffices for the friction gate
+to release, which on the $\mu=\num{1.05}$ runs it did not.
 
 \begin{figure}[t]
 \centering
@@ -499,38 +418,34 @@ every force metric in Table~\ref{tab:comparison} are axle sums.}
 
 Table~\ref{tab:comparison} reports the error of the identified peak factor
 against the effective friction the plant reports per wheel, and
-Fig.~\ref{fig:mutimeseries} shows how it evolves over the run. This is the one
-place where the pinned-$D$ design of Section~\ref{subsec:friction} is directly
-observable, because the arm starts \SI{44}{\percent} away from the answer.
+Fig.~\ref{fig:mutimeseries} its evolution over the run. This is where the
+pinned-$D$ design of Section~\ref{subsec:friction} is directly observable,
+because the arm starts \SI{44}{\percent} away from the answer.
 
 \texttt{Ours} publishes six accepted identifications. The first carries
 $D_{f}=\num{1.009}$, $D_{r}=\num{1.002}$: the friction gate rejected that
-buffer, so the axles held the prior they came in with, which is the
-hold-rather-than-fit rule of Section~\ref{subsec:frictionfloor} and not a
-fitted value. From $t=\SI{140.6}{\second}$ the gate releases on every
-subsequent cycle and the published peak factor drops to
-\num{0.779}, \num{0.821}, \num{0.749}, \num{0.756} and \num{0.768}, front and rear alike. The plant is at
-\num{0.700}. The five released values therefore sit \SI{10.7}{\percent} high on
-average with a spread of \num{0.072}, against a prior that was
-\SI{44}{\percent} high. Over the whole run the $\mu$ RMSE is \num{0.145} front
-and \num{0.142} rear, the first \SI{140}{\second} at the prior dominating it;
-over the \SI{440}{\second} after the first release it is \num{0.078} on both
-axles.
-
-\texttt{Baseline-NN-MSE} returns $D=\num{2.000}$ on both axles in every
-accepted identification and never leaves the bound, giving a constant
-$\mu$ error of \num{1.300} on both axles. \texttt{Ours} is
-\num{9.0}$\times$ better on the whole-run figure and \num{16.7}$\times$ better
-once its warm start has released, and the difference is worth \SI{1.23}{\g} of
-claimed grip against a plant that sustains \num{0.71}.
+buffer, so the axles held the prior they came in with, the hold-rather-than-fit
+rule of Section~\ref{subsec:frictionfloor} and not a fitted value. From
+$t=\SI{140.6}{\second}$ the gate releases on every subsequent cycle and the
+published peak factor drops to \num{0.779}, \num{0.821}, \num{0.749},
+\num{0.756} and \num{0.768}, front and rear alike, against a plant at
+\num{0.700}: \SI{10.7}{\percent} high on average with a spread of \num{0.072},
+from a prior that was \SI{44}{\percent} high. The whole-run $\mu$ RMSE of
+Table~\ref{tab:comparison} is dominated by the first \SI{140}{\second} at the
+prior; over the \SI{440}{\second} after the first release it is \num{0.078} on
+both axles. \texttt{Baseline-NN-MSE} returns $D=\num{2.000}$ on both axles in
+every accepted identification and never leaves the bound, a constant $\mu$
+error of \num{1.300}, so \texttt{Ours} is \num{9.0}$\times$ better on the
+whole-run figure and \num{16.7}$\times$ better once its warm start has released
+--- a difference worth \SI{1.23}{\g} of claimed grip against a plant that
+sustains \num{0.71}.
 
 Two qualifications belong on the \texttt{Ours} column. The peak factor is
-\emph{measured}, by the brush estimator of Section~\ref{subsec:friction} on the
-recorded trace, and then held; it is not recovered by the Pacejka fit, which
-Section~\ref{subsec:bcd} shows cannot recover it. And the residual
-\SI{10.7}{\percent} bias is one-signed, consistent with the brush model's known
-tendency to over-read $\mu$ where the curve is not fully traversed, which at
-$\max|F_{y}|/F_{z}=\num{0.71}$ it is not.
+\emph{measured}, by the brush estimator on the recorded trace, then held, not
+recovered by the Pacejka fit, which Section~\ref{subsec:bcd} shows cannot
+recover it. And the residual \SI{10.7}{\percent} bias is one-signed, consistent
+with the brush model's known tendency to over-read $\mu$ where the curve is not
+fully traversed, which at $\max|F_{y}|/F_{z}=\num{0.71}$ it is not.
 
 \begin{figure*}[t]
 \centering
@@ -550,106 +465,112 @@ $D\le\num{2.0}$ box constraint for the whole run.}
 \label{subsec:resultsforce}
 
 The identified curve is scored at the measured $(\alpha,F_{z})$ against the
-plant's own lateral force, summed per axle. Table~\ref{tab:comparison} carries
-the summary, and the bar charts, error histograms and time series behind it are
-in the supplementary material. \texttt{Ours} leads on both axles and by an
-order of magnitude: \SI{27.2}{\newton} against \SI{329.6}{\newton} RMSE at the
-front and \SI{33.2}{\newton} against \SI{348.4}{\newton} at the rear, with
-$R^{2}$ \num{0.993} and \num{0.987} against \num{-0.160} and \num{-0.461}. A
-negative $R^{2}$ means the baseline's identified curve predicts the plant's
-axle force worse than the mean of that force does, which is the force-metric
-reading of a set whose initial slope is more than twice the plant's. The error
-tails order the same way, maximum absolute error \SI{264}{\newton} and
-\SI{135}{\newton} against \SI{1295}{\newton} and \SI{1316}{\newton}.
+plant's own lateral force, summed per axle (Table~\ref{tab:comparison};
+Fig.~\ref{fig:forcehist} for the error distribution, bar charts and time series
+in the supplementary material). \texttt{Ours} leads on both axles by an order
+of magnitude in RMSE and in the error tails. The baseline's negative $R^{2}$
+means its curve predicts the plant's axle force worse than the mean of that
+force does, the force-metric reading of a set whose initial slope is more than
+twice the plant's.
 
 This is the linear-range result of Section~\ref{subsec:resultstire} seen as
-force. At $P_{99}(|\alpha|)=\SI{2.7}{\degree}$ the force metric is dominated by
-cornering stiffness and says comparatively little about the peak, so the two
-models separate here almost entirely on the slope, and
-\texttt{Baseline-NN-MSE}'s slope carries its railed $D=\num{2.0}$. The peak
-factor still has consequences here: because $D$ multiplies the slope
-in \eqref{eq:stiffness}, a $D$ on its bound is the direct cause of the force
-error rather than an overstatement of grip the linear range hides, which is the
-opposite of what the earlier $\mu=\num{1.05}$ runs suggested.
+force. At $P_{99}(|\alpha|)=\SI{2.7}{\degree}$ the metric is dominated by
+cornering stiffness and says little about the peak, so the models separate
+almost entirely on slope --- but because $D$ multiplies that slope in
+\eqref{eq:stiffness}, \texttt{Baseline-NN-MSE}'s railed $D$ is the direct cause
+of its force error rather than an overstatement of grip the linear range hides,
+the opposite of what the earlier $\mu=\num{1.05}$ runs suggested.
 
-The comparison is also the reason the relaxed update of \eqref{eq:relax}
-belongs in the method rather than in a configuration file. Pinning $D$ alone
-does not produce the numbers above; with $\beta=1$ the same arm degrades
-monotonically with iteration count, and the offline sweep of
-Section~\ref{subsec:ablations} separates the two.
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{tire_force_error_hist_by_scenario}
+\caption{Distribution of the axle lateral-force error (truth minus estimate),
+shared bin edges over the pooled central \SI{99}{\percent} and normalised to
+the sample count of each run. Both are centred, and
+\texttt{Baseline-NN-MSE}'s distribution is roughly an order of magnitude wider
+at every quantile (maximum absolute error \SI{1295}{\newton} against
+\SI{264}{\newton} front, \SI{1316}{\newton} against \SI{135}{\newton} rear).}
+\label{fig:forcehist}
+\end{figure*}
+
+The comparison is also why the relaxed update of \eqref{eq:relax} belongs in
+the method rather than a configuration file: pinning $D$ alone does not produce
+these numbers, since with $\beta=1$ the same arm degrades monotonically with
+iteration count (Section~\ref{subsec:ablations}).
 
 \subsection{One-step state prediction}
 \label{subsec:resultsstate}
 
-Level~1 of the validation protocol (Section~\ref{subsec:validation}) is
-reported in Table~\ref{tab:comparison} against a persistence baseline, next
-state equals last measured state, written by the same benchmark node.
-\texttt{Ours} leads on both signals, lateral velocity at
-\SI{0.014}{\meter\per\second} RMSE against \SI{0.156}{\meter\per\second}
-($R^{2}$ \num{0.998} against \num{0.709}) and yaw rate at
-\SI{0.049}{\radian\per\second} against \SI{0.104}{\radian\per\second}
-($R^{2}$ \num{0.894} against \num{0.514}).
+Level~1 of the validation protocol is reported in Table~\ref{tab:comparison}
+against a persistence baseline (next state equals last measured state) written
+by the same benchmark node. \texttt{Ours} leads on both signals, by an order of
+magnitude on lateral velocity ($R^{2}$ \num{0.998} against \num{0.709}) and by
+a factor of two on yaw rate ($R^{2}$ \num{0.894} against \num{0.514}). In
+Fig.~\ref{fig:statehist} the separation on $v_{y}$ is in the centre of the
+distribution, while on $\omega$ the two share a centre and differ in tail mass.
 
-Neither model beats persistence at the \SI{0.035}{\second} model step. The
+Neither model beats persistence at the \SI{0.035}{\second} model step: the
 skill scores $1-\mathrm{RMSE}/\mathrm{RMSE}_{\mathrm{pers}}$ are negative for
-both configurations and both signals, worst at \num{-13.9}
-(\texttt{Baseline-NN-MSE}, $\omega$) and best at \num{-0.27}
-(\texttt{Ours}, $v_{y}$). We report this rather than the $R^{2}$
-alone because $R^{2}$ against a slowly varying signal is close to
-uninformative. A one-step metric on a smooth trajectory rewards not moving,
-and over one \SI{0.035}{\second} step the plant's own states barely move
-($\mathrm{RMSE}_{\mathrm{pers}}$ is \SI{0.011}{\meter\per\second} and
-\SI{0.005}{\radian\per\second}). One-step accuracy is consequently weak
-evidence for either tire model, and the gap here is large enough to be read
+both configurations and both signals. We report them rather than $R^{2}$ alone
+because a one-step metric on a smooth trajectory rewards not moving --- over
+one \SI{0.035}{\second} step the plant's own states barely move. One-step
+accuracy is therefore weak evidence for either tire model, and the gap is read
 only as confirming the direction the axle-force and closed-loop comparisons
-establish, not as an independent result.
-The two state traces against their own ground truth over the whole run are in
-the supplementary material.
+establish. The state traces against ground truth are in the supplementary
+material.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.49\textwidth]{state_error_hist_v_y}\hfill
+\includegraphics[width=0.49\textwidth]{state_error_hist_omega}
+\caption{One-step prediction error (truth minus estimate). Left: lateral
+velocity, where \texttt{Ours} is an order of magnitude tighter
+(\SI{0.014}{\meter\per\second} against \SI{0.156}{\meter\per\second} RMSE).
+Right: yaw rate, where the difference between the configurations is tail mass
+rather than centre. Neither model beats its own persistence baseline at the
+\SI{0.035}{\second} model step.}
+\label{fig:statehist}
+\end{figure*}
 
 \subsection{Closed-loop tracking}
 \label{subsec:resultsclosedloop}
 
-Level~3 of the validation protocol completes on the regenerated trajectory.
 Both runs finish three timed laps with zero emergency halts and the same
 finite-state sequence (bootstrap pure pursuit, running pure pursuit, handover,
-running MPC), with one transition of each kind and no fallback to pure pursuit
-after handover. The sequence is read off each run's exported state timeline,
-which records the handover at $t=\SI{79.1}{\second}$ for \texttt{Ours} and
-$t=\SI{64.0}{\second}$ for \texttt{Baseline-NN-MSE} and no state change
-thereafter. The aggregated \texttt{transitions} column of the cross-run
-summary is not populated and is omitted from Table~\ref{tab:comparison}. Under MPC, which is where the identified model enters the
-loop, \texttt{Ours} tracks at \SI{0.151}{\meter} RMS lateral error against
-\SI{0.224}{\meter}, a \SI{32}{\percent} reduction, with maximum
-\SI{0.683}{\meter} against \SI{0.776}{\meter}
-(Fig.~\ref{fig:trackingbox}). Overall ITAE is \num{16041} against \num{25502}.
-ITAE is $\int t|e_{y}|\,\mathrm{d}t$ and is neither
-scale-free nor comparable across runs of different length, and these two runs
-are \SI{580.4}{\second} and \SI{554.6}{\second} long, so it is reported here
-beside two normalised forms computed from the same samples: mean absolute
-error $\mathrm{IAE}/T$, \SI{0.104}{\meter} against \SI{0.157}{\meter}, and
-$\mathrm{ITAE}/(T^{2}/2)$, \SI{0.095}{\meter} against \SI{0.166}{\meter}. All
-three order the runs the same way and at the same magnitude, so the
-normalisation does not carry the result. The ITAE split confirms that the
-whole difference sits in the MPC phase: the pure-pursuit phases, which do not
-use the identified model, give \num{110} and \num{107} respectively, within
+running MPC), one transition of each kind and no fallback after handover, read
+off each run's exported state timeline, which records the handover at
+$t=\SI{79.1}{\second}$ for \texttt{Ours} and $t=\SI{64.0}{\second}$ for
+\texttt{Baseline-NN-MSE} and no state change thereafter. (The aggregated
+\texttt{transitions} column of the cross-run summary is not populated and is
+omitted from Table~\ref{tab:comparison}.) Under MPC, where the identified model
+enters the loop, \texttt{Ours} tracks at \SI{0.151}{\meter} RMS lateral error
+against \SI{0.224}{\meter}, a \SI{32}{\percent} reduction, with maximum
+\SI{0.683}{\meter} against \SI{0.776}{\meter} (Fig.~\ref{fig:trackingbox}).
+ITAE is $\int t|e_{y}|\,\mathrm{d}t$, neither scale-free nor comparable across
+runs of different length, and these runs are \SI{580.4}{\second} and
+\SI{554.6}{\second} long, so Table~\ref{tab:comparison} reports it beside two
+normalised forms from the same samples, $\mathrm{IAE}/T$ and
+$\mathrm{ITAE}/(T^{2}/2)$. All three order the runs alike and at the same
+magnitude, so the normalisation does not carry the result. The ITAE split
+confirms that
+the whole difference sits in the MPC phase: the pure-pursuit phases, which do
+not use the identified model, give \num{110} and \num{107}, within
 \SI{3}{\percent} of each other and two orders of magnitude smaller. The signed
 error distribution (supplementary material) shows the mechanism as a narrower
-distribution about a comparable centre, at sample standard deviation
+distribution about a comparable centre, sample standard deviation
 \SI{0.256}{\meter} against \SI{0.318}{\meter} and mean \SI{0.021}{\meter}
 against \SI{0.024}{\meter}.
 
-The QP cost is unchanged. RMS solve time is \SI{0.399}{\milli\second} against
-\SI{0.380}{\milli\second} and worst case \SI{2.60}{\milli\second} against
-\SI{2.57}{\milli\second}, both two orders of magnitude below the
-\SI{50}{\milli\second} control period, and both slightly in the baseline's
-favour at a margin of \SI{5}{\percent} and \SI{1}{\percent}. The identified
+The QP cost is unchanged: RMS and worst-case solve times are two orders of
+magnitude below the \SI{50}{\milli\second} control period and both slightly in
+the baseline's favour, by \SI{5}{\percent} and \SI{1}{\percent}. The identified
 coefficients change the model the QP carries, not its size.
 
-Lap time is not read as a result. Timing runs on the ROS wall clock while the
-simulator advances its fixed step faster than real time, and the ratio between
-the two differed between the runs, so the recorded lap times in
-Table~\ref{tab:comparison} are not simulated lap times and their
-\SIrange{5}{6}{\percent} spread is not a vehicle-performance difference.
+Lap time is not read as a result: timing runs on the ROS wall clock while the
+simulator advances its fixed step faster than real time, at a ratio that
+differed between the runs, so the lap times in Table~\ref{tab:comparison} are
+not simulated lap times and their \SIrange{5}{6}{\percent} spread is not a
+vehicle-performance difference.
 
 \begin{figure}[t]
 \centering
@@ -665,30 +586,27 @@ and do not use the identified model. The MPC boxes do.}
 
 The supplementary material tabulates the pipeline as
 published~\cite{ontrack2025} against the pipeline as it stands here, on every
-axis that differs. In summary, the residual model, the data budget, the
-four stages and the steady-state force recovery are inherited unchanged.
-What differs is the configuration of the virtual-data step, the relaxation on
-the loop closing it, the regularisation
-topology, the measurement chain, and the contract at the output.
-Table~\ref{tab:scenarios}'s comparison is a subset of those axes: the rollout
-correction of Section~\ref{subsec:excitation} is active in both runs of
-Section~\ref{subsec:summary}, so that section measures the remaining five
-settings and not the rollout.
+axis that differs. The residual model, the data budget, the four stages and the
+steady-state force recovery are inherited unchanged; what differs is the
+configuration of the virtual-data step, the relaxation on the loop closing it,
+the regularisation topology, the measurement chain and the contract at the
+output. Table~\ref{tab:scenarios} covers a subset of those axes, since the
+rollout correction is active in both runs.
 
 \subsection{Peak-friction warm start on a synthetic plant}
 \label{subsec:mu}
 
-The friction warm start of Section~\ref{subsec:friction} is evaluated on a
-synthetic single-track plant with brush tires rather than in CARLA, because
-only a synthetic plant supplies a $\mu$ that is known exactly and an excitation
-level that can be swept independently of it. The plant is driven by a
-swept-sine steering input for \SI{40}{\second} at \SI{50}{\hertz} with true
-$\mu=1.05$ and $C_{\alpha}=12.1F_{z}$, and the steering amplitude sets how far
-up the tire curve the manoeuvre reaches. Table~\ref{tab:mu} reports what each
-estimator returns.
+The friction warm start is evaluated on a synthetic single-track plant with
+brush tires rather than in CARLA, because only a synthetic plant supplies a
+$\mu$ that is known exactly and an excitation level that can be swept
+independently of it. The plant is driven by a swept-sine steering input for
+\SI{40}{\second} at \SI{50}{\hertz} with true $\mu=0.70$, the same effective
+peak as the CARLA surface, and $C_{\alpha}=12.1F_{z}$; the steering amplitude
+sets how far up the tire curve the manoeuvre reaches
+(Table~\ref{tab:mu}).
 
 \begin{table}[t]
-\caption{Peak friction recovered from a synthetic brush-tire plant (true $\mu=1.05$), against excitation.}
+\caption{Peak friction recovered from a synthetic brush-tire plant (true $\mu=0.70$), against excitation.}
 \label{tab:mu}
 \centering
 \begin{threeparttable}
@@ -698,55 +616,60 @@ estimator returns.
 $\delta$ amplitude & Grip utilisation & Utilisation & Brush fit
 \eqref{eq:brush}\\
 \midrule
-\SI{0.05}{\radian} & \SI{45}{\percent}  & 0.473 & \textbf{1.048}\\
-\SI{0.07}{\radian} & \SI{63}{\percent}  & 0.658 & \textbf{1.048}\\
-\SI{0.09}{\radian} & \SI{80}{\percent}  & 0.834 & \textbf{1.048}\\
-\SI{0.13}{\radian} & \SI{100}{\percent} & 1.045 & \textbf{1.048}\\
+\SI{0.033}{\radian} & \SI{45}{\percent}  & 0.312 & gated off\\
+\SI{0.047}{\radian} & \SI{63}{\percent}  & 0.442 & \textbf{0.699}\\
+\SI{0.060}{\radian} & \SI{80}{\percent}  & 0.557 & \textbf{0.699}\\
+\SI{0.090}{\radian} & \SI{100}{\percent} & 0.700 & \textbf{0.697}\\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}[flushleft]\scriptsize
 \item The utilisation estimator tracks the grip the manoeuvre \emph{used},
 while the brush fit of \eqref{eq:brush} recovers the peak from the curvature
 of $F_{y}(\alpha)$ and is therefore flat in excitation.
-\item Below \SI{40}{\percent} utilisation the brush fit is gated off and the utilisation bound is reported instead.
+\item The first row is refused by the absolute gate
+$\max|F_{y}|/F_{z}\ge\num{0.40}$ of Section~\ref{subsec:friction}: at
+$\mu=0.70$, \SI{45}{\percent} utilisation is only \num{0.31} of $F_{z}$. The
+utilisation bound is reported instead.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}
 
-At \SI{45}{\percent} utilisation, a level an ordinary lap reaches, the
-utilisation bound is \SI{55}{\percent} low while the brush fit is within
-\SI{0.2}{\percent}. Across true $\mu\in\{0.7,1.05,1.4\}$ the fit stays within
-\SI{5}{\percent} and $C_{\alpha}$ within \SI{10}{\percent}, and with odometry
-and IMU noise injected $\mu$ stays within \SI{12}{\percent}. Below the
-\SI{40}{\percent} floor the gate suppresses the fit and reports the bound, so
-the estimator's failure is visible rather than silent. On the CARLA run of
-Section~\ref{subsec:resultsmu} the gate behaves the same way at both ends: it
-rejects the first buffer, and on the five it accepts it returns $\mu$ within
+At \SI{63}{\percent} utilisation, a level an ordinary lap reaches, the
+utilisation bound is \SI{37}{\percent} low while the brush fit is within
+\SI{0.2}{\percent}; across true $\mu\in\{0.7,1.05,1.4\}$ at matched utilisation
+it stays within \SI{0.2}{\percent}, and $C_{\alpha}$ within \SI{0.1}{\percent},
+on noise-free data. With odometry and IMU noise injected the error is
+grip-dependent, the noise being absolute while the available force is not: at
+$\mu=0.70$ it is \SI{20}{\percent} at \SI{63}{\percent} utilisation,
+\SI{6}{\percent} at \SI{80}{\percent} and \SI{0.4}{\percent} at the peak. Below
+the absolute \num{0.40} floor on $|F_{y}|/F_{z}$ the gate suppresses the fit
+and reports the bound, so the failure is visible rather than silent --- on a
+\num{0.70} surface that floor is reached at \SI{57}{\percent} utilisation, not
+\SI{40}{\percent}, which is why the first row of Table~\ref{tab:mu} is refused.
+The gate behaves the same way at both ends on the CARLA run: it rejects the
+first buffer, and on the five it accepts returns $\mu$ within
 \SI{11}{\percent} of the plant at an absolute axle utilisation of
-\numrange{0.54}{0.68}. The \SI{11}{\percent} residual bias against the
+\numrange{0.54}{0.68}. That \SI{11}{\percent} bias against the
 \SI{0.2}{\percent} of the synthetic plant is the cost of a real rollout, a
-reconstructed $I_{z}\dot\omega$ term and a curve the manoeuvre traverses only
-to \num{0.71} of $F_{z}$, and it is the dominant term in the identified peak
-factor's error.
+reconstructed $I_{z}\dot\omega$ term and a curve traversed only to \num{0.71}
+of $F_{z}$, and it dominates the identified peak factor's error.
 
 \subsection{What carries the result}
 \label{subsec:ablations}
 
-The two arms of Section~\ref{subsec:summary} differ in five settings at once,
-so that comparison establishes an ordering and attributes nothing. This
-subsection attributes it, at the cost of leaving the loop: every number below
-is an \emph{offline replay} of the identification stage on recorded buffers,
-not a closed-loop run.
+The two arms differ in five settings at once, so that comparison establishes an
+ordering and attributes nothing. This subsection attributes it, at the cost of
+leaving the loop: every number below is an \emph{offline replay} of the
+identification stage on recorded buffers.
 
 \subsubsection{Protocol}
 \texttt{nn\_train} is replayed on the five \SI{30}{\second} identification
-buffers each arm collected during its own run of
-Section~\ref{subsec:summary}, and each configuration is scored with the
-quantity the closed-loop tire-force benchmark itself reports: the identified
-Magic Formula evaluated at the plant's own measured slip angles, against the
-plant's own measured lateral forces, summed per axle. No synthetic plant and no
-re-derived metric are involved, so the numbers here and in
-Table~\ref{tab:comparison} are on the same scale. One caveat applies to anyone
+buffers each arm collected during its own run, and each configuration is scored
+with the quantity the closed-loop tire-force benchmark itself reports: the
+identified Magic Formula evaluated at the plant's own measured slip angles,
+against its own measured lateral forces, summed per axle. No synthetic plant
+and no re-derived metric are involved, so these numbers and
+Table~\ref{tab:comparison}'s are on the same scale. One caveat for anyone
 reproducing this from the exported curve-validation files: the lateral force
 they carry is \emph{per wheel} while the vertical load beside it is the
 \emph{axle} static load, and fitting them as written returns every cornering
@@ -754,20 +677,19 @@ stiffness a factor of two low.
 
 \subsubsection{Damping the co-identification loop}
 Table~\ref{tab:beta} sweeps $\beta$ of \eqref{eq:relax} at six iterations
-throughout. Two columns are the argument. At $\beta=\num{1.00}$, the inherited
-undamped update, axle force RMSE is \num{70.4} and \SI{62.3}{\newton}, and it is
-reached by degrading monotonically from \num{38.9} and \SI{26.3}{\newton} at a single
+throughout; two columns are the argument. At $\beta=\num{1.00}$, the inherited
+undamped update, axle force RMSE is \num{70.4} and \SI{62.3}{\newton}, reached
+by degrading monotonically from \num{38.9} and \SI{26.3}{\newton} at a single
 iteration: the loop is not refining the estimate, it is amplifying its own
 extrapolation. At $\beta=\num{0.00}$ the coefficients never move from the
-pinned prior, which is the pipeline performing no identification at all, and
-that is the \emph{worst} column of the sweep at
-\num{92.5} and \SI{71.8}{\newton}. Between the two, the minimum sits at
+pinned prior --- no identification at all --- and that is the \emph{worst}
+column, \num{92.5} and \SI{71.8}{\newton}. The minimum sits between them at
 $\beta=\num{0.20}$ (\SI{23.5}{\newton} $\pm$ \SI{1.5}{\newton} over seeds
-\num{0}, \num{3} and \num{7}), and
-the identified $BCD$ rises monotonically with $\beta$ across the whole sweep,
-so the damping is trading how much of each fit is accepted against how much
-extrapolation error comes with it, rather than simply interpolating toward the
-prior. Six iterations are therefore defensible on evidence, but only damped.
+\num{0}, \num{3} and \num{7}), and the identified $BCD$ rises monotonically
+with $\beta$ across the sweep, so the damping trades how much of each fit is
+accepted against how much extrapolation error comes with it rather than simply
+interpolating toward the prior. Six iterations are therefore defensible on
+evidence, but only damped.
 
 \begin{table}[t]
 \caption{Relaxation sweep. Five recorded buffers, six iterations, offline replay.}
@@ -797,7 +719,7 @@ gives a mean $|D-\mu|$ of \num{0.585} and a maximum of \num{0.950}, with the
 identified front stiffness spread over \SI{32.9}{\kilo\newton\per\radian}
 across the five. Pinning only the axles whose brush fit was released reduces
 those to \num{0.191}, \num{0.378} and \num{32.3}; additionally holding the
-axles with no released measurement, which is the shipped rule, reduces them to
+axles with no released measurement, the shipped rule, reduces them to
 \num{0.084}, \num{0.213} and \SI{18.5}{\kilo\newton\per\radian}. The middle row
 is the informative one: releasing an axle helps only where the gate fires, and
 what removes most of the remaining error is refusing to let an unmeasured $D$
@@ -806,42 +728,39 @@ measurement quoted in Section~\ref{subsec:bcd}.
 
 \subsubsection{Normalising the physics-informed objective}
 The unnormalised form of \eqref{eq:pinnloss} puts \SI{99.9996}{\percent} of the
-objective on the dynamics-residual term at initialisation, against
+objective on the dynamics-residual term at initialisation against
 \SI{0.0004}{\percent} on the data; with the $T_{s}/m$ and $T_{s}/I_{z}$ scaling
 of \eqref{eq:physnorm} the shares become \SI{1.47}{\percent} and
-\SI{98.53}{\percent}. The correction is necessary but not sufficient on its
-own: applied without the damping it makes the force metric slightly
-\emph{worse} (\num{77.1} and \SI{76.2}{\newton} against
-\num{70.4} and \SI{62.3}{\newton}), because an objective that now fits the data also
-supplies a sharper trajectory for the undamped loop to amplify. With the
-damping in place, the two arrive at
+\SI{98.53}{\percent}. The correction is necessary but not sufficient alone:
+applied without the damping it makes the force metric slightly \emph{worse}
+(\num{77.1} and \SI{76.2}{\newton} against \num{70.4} and \SI{62.3}{\newton}),
+because an objective that now fits the data also supplies a sharper trajectory
+for the undamped loop to amplify. With the damping in place the two arrive at
 \num{28.0} and \SI{19.4}{\newton} and $R^{2}=\num{0.986}$ at the front, against
 \num{92.5} and \SI{71.8}{\newton} and \num{0.870} for the unidentified prior.
 
 \subsubsection{Two settings that do less than claimed}
 Two of the five settings of Table~\ref{tab:scenarios} deserve a weaker
 statement than the closed-loop comparison alone would support. The S4D residual
-of Section~\ref{subsec:s4} is worth \SI{21}{\percent} on the force metric at
-matched settings and a single iteration, \SI{35.3}{\newton} against the
-baseline MLP's \SI{44.7}{\newton} as a mean over the two axles. That is the
-ablation the earlier version of this work listed as unrun, and its sign is
-positive, but it is an offline replay on recorded buffers and not a
-closed-loop result. The residual \emph{objective} is a wash: with the
-normalisation and the damping both in place, \texttt{physics\_informed} and
-plain \texttt{mse} are indistinguishable at \SI{23.7}{\newton} each. We keep
-the physics-informed objective because it costs nothing and is the paper's
-stated formulation, and we do not claim it buys accuracy on this manoeuvre,
-because it measurably does not.
+is worth \SI{21}{\percent} on the force metric at matched settings and a single
+iteration, \SI{35.3}{\newton} against the baseline MLP's \SI{44.7}{\newton} as
+a mean over the two axles --- the ablation the earlier version of this work
+listed as unrun, positive in sign, but an offline replay and not a closed-loop
+result. The residual \emph{objective} is a wash: with the normalisation and the
+damping both in place, \texttt{physics\_informed} and plain \texttt{mse} are
+indistinguishable at \SI{23.7}{\newton} each. We keep the physics-informed
+objective because it costs nothing and is the paper's stated formulation, and
+do not claim it buys accuracy on this manoeuvre, because it measurably does
+not.
 
 \subsection{Identification cost}
 \label{subsec:runtime}
 
 One S4D identification, six co-identification iterations on a \SI{30}{\second}
 lap, takes \SI{20.9}{\second} end to end, inside the \SI{30}{\second}
-re-identification period the node runs at. The reduction from the
-\SI{181.4}{\second} it originally took is exact: no epoch count, iteration
-count, early-stopping rule or loss weight was changed, and the identified
-coefficients agree to four decimal places. The per-phase breakdown,
-the device split, and the caveat that the stage micro-benchmarks and the
-end-to-end totals are separate measurements rather than a decomposition of each
-other, are in the supplementary material.
+re-identification period. The reduction from the \SI{181.4}{\second} it
+originally took is exact: no epoch count, iteration count, early-stopping rule
+or loss weight changed, and the identified coefficients agree to four decimal
+places. The per-phase breakdown, the device split, and the caveat that the
+stage micro-benchmarks and the end-to-end totals are separate measurements
+rather than a decomposition of each other, are in the supplementary material.

@@ -4,29 +4,30 @@
 \IEEEPARstart{M}{odel-based} controllers for autonomous racing derive their
 performance from the fidelity of the vehicle model they carry
 \cite{liniger2015,kabzan2019lbmpc,forzaeth2024}. In the lateral channel that
-fidelity is dominated by the tire, which is simultaneously the physical bound
-on manoeuvrability and the least accessible component to measure: its
-behaviour depends on surface, temperature, wear and load in ways that change
-between sessions \cite{pacejka2012book,amz2020}.
+fidelity is dominated by the tire, simultaneously the physical bound on
+manoeuvrability and the least accessible component to measure: its behaviour
+depends on surface, temperature, wear and load in ways that change between
+sessions \cite{pacejka2012book,amz2020}.
 
 Classical characterisation resolves this by taking the vehicle off the track.
 Steady-state circular or ramp-steer manoeuvres in a large open space yield
 clean data, at a logistical cost a race weekend rarely affords
 \cite{ontrack2025}. Identifying on track removes the logistics and brings back
-transients, noise and, more awkwardly, a racing line that is a poor excitation
-signal for a nonlinear model. Nonlinear least squares applied directly to lap
-data is known to be brittle in exactly this regime \cite{ontrack2025}.
+transients, noise and a racing line that is a poor excitation signal for a
+nonlinear model; nonlinear least squares applied directly to lap data is
+brittle in exactly this regime \cite{ontrack2025}.
 
 Dikici \emph{et al.}~\cite{ontrack2025} propose the hybrid remedy that is the
-starting point of this paper. A small residual network is trained on \SI{30}{\second} of ordinary lap data
-to predict the one-step error of a nominal single-track model. The corrected
-model is then rolled out through a \emph{synthetic}, quasi-steady steering
-sweep, and Pacejka coefficients are fitted to that synthetic sweep. Because
-the sweep is generated rather than driven it can be made steady and
-noise-free, and because the residual network only has to interpolate within
-its training distribution, its generalisation weakness stays contained. The procedure iterates, each fit becoming the next
-nominal model. On a 1:10 platform it reports a \num{3.3}$\times$ lower one-step
-RMSE than nonlinear least squares under noise, from \SI{30}{\second} of driving
+starting point of this paper. A small residual network is trained on
+\SI{30}{\second} of ordinary lap data to predict the one-step error of a
+nominal single-track model. The corrected model is rolled out through a
+\emph{synthetic}, quasi-steady steering sweep, and Pacejka coefficients are
+fitted to that sweep. Because the sweep is generated rather than driven it can
+be made steady and noise-free, and because the residual network only has to
+interpolate within its training distribution, its generalisation weakness stays
+contained. The procedure iterates, each fit becoming the next nominal model. On
+a 1:10 platform it reports a \num{3.3}$\times$ lower one-step RMSE than
+nonlinear least squares under noise, from \SI{30}{\second} of driving
 \cite{ontrack2025}.
 
 \subsection{Problem statement}
@@ -41,10 +42,10 @@ question is identifiability, not parameter transfer, and two scale-dependent
 mechanisms, both latent at 1:10, break the estimate:
 
 \begin{enumerate}
-\item \textbf{Excitation collapses inside the virtual-data step.} The Pacejka fit never sees the recorded lap. It sees the synthetic rollout,
-whose reachable friction
-$\mu_{\mathrm{reach}}\!\approx\!v^{2}\delta_{\mathrm{sweep}}/(gL)$ is a
-property of the rollout configuration and not of the tire. A rollout speed
+\item \textbf{Excitation collapses inside the virtual-data step.} The Pacejka
+fit never sees the recorded lap. It sees the synthetic rollout, whose reachable
+friction $\mu_{\mathrm{reach}}\!\approx\!v^{2}\delta_{\mathrm{sweep}}/(gL)$ is a
+property of the rollout configuration and not of the tire, and a rollout speed
 inherited from the scaled platform caps it at $0.43$ here. Below the tire's
 peak the Magic Formula degenerates to $F_{y}\approx F_{z}(BCD)\alpha$, only
 the product $BCD$ is identifiable, and the bounded optimiser resolves the
@@ -57,68 +58,61 @@ coefficient of \num{0.40} tracked at \SI{0.16}{\meter} of cross-track error at
 \SI{11.1}{\meter\per\second}, \SI{0.43}{\meter} at
 \SI{15}{\meter\per\second} and \SI{41.89}{\meter} at
 \SI{27}{\meter\per\second}. The scaled platform never reaches the speed at
-which the error becomes observable. The figures are from an offline
-closed-loop harness rather than from a controlled simulator run and are
-reported as such throughout (Section~\ref{subsec:gates}).
+which the error becomes observable. These figures come from an offline
+closed-loop harness rather than a controlled simulator run and are reported as
+such throughout (Section~\ref{subsec:gates}).
 \end{enumerate}
 
-One difference works in our favour. Because the study is conducted in the
-CARLA simulator \cite{carla2017} through a purpose-built ROS~2 interface, the
-simulator's own per-wheel telemetry (slip angle, normal load and lateral
-force, per wheel) is available as ground truth, so an on-track identifier can
-be scored against the forces the plant actually generated.
+One difference works in our favour. Because the study runs in the CARLA
+simulator \cite{carla2017} through a purpose-built ROS~2 interface, the
+simulator's own per-wheel telemetry (slip angle, normal load and lateral force)
+is available as ground truth, so an on-track identifier can be scored against
+the forces the plant actually generated.
 
 \subsection{Contributions}
-
-The contributions are an identifiability result, two structural properties of
-the co-identification loop, the corrections all three imply,
-the gate that keeps an unidentified model out of the controller, and the
-architecture that makes them measurable against the plant's own forces.
 
 \begin{enumerate}
 \item \textbf{An identifiability analysis of the virtual-data step}
 (Section~\ref{subsec:excitation}), giving the closed-form reachable-friction
 bound above and an \emph{excitation-aware rollout} that selects the rollout
 speed from the measured lap and warns whenever the configuration cannot reach
-the prior's peak. The bound is verified directly in
-Section~\ref{subsec:sweep}, on a grid over rollout speed, sweep amplitude and
-true peak factor with a known tire: below the tire's own peak the fit returns
-the excitation rather than the tire, at every grip level tested and
-independently of the solver. This corrects the baseline
-method~\cite{ontrack2025} at any scale. It stays latent at 1:10 because a
+the prior's peak. A grid over rollout speed, sweep amplitude and true peak
+factor on a known tire verifies it (Section~\ref{subsec:sweep}): below the
+tire's own peak the fit returns the excitation rather than the tire, at every
+grip level tested and independently of the solver. This corrects the baseline
+method~\cite{ontrack2025} at any scale, and stays latent at 1:10 because a
 \SIrange{2}{4}{\meter\per\second} rollout is representative there and is not
 here.
 
 \item \textbf{Two structural properties of the loop, and the corrections they
-imply} (Section~\ref{subsec:contraction}). First, the fit's residual depends on
-$B$, $C$ and $D$ only through their product, because stage~3 reconstructs its
-forces from the rollout's own quasi-steady yaw balance and therefore observes
-nothing but the lateral acceleration the previous coefficient set produced. The
-peak factor is consequently not recoverable from the rollout \emph{at any
-excitation}, which is a stronger statement than the low-slip degeneracy, and it
-must instead be measured on the recorded trace and held. Second, because each
-fit is handed the trajectory its own previous answer generated, the loop is a
-positive feedback path rather than a contraction, and iterating it undamped
-degrades the estimate monotonically. Stage~4 becomes a relaxed fixed-point
-iteration at $\beta=\num{0.20}$; the $\beta=0$ control, which performs no
-identification at all, is the worst setting of the sweep, so the iterations do
-carry the information.
+imply} (Section~\ref{subsec:contraction}). Because stage~3 reconstructs its
+forces from the rollout's own quasi-steady yaw balance, it observes nothing but
+the lateral acceleration the previous coefficient set produced, so its residual
+depends on $B$, $C$ and $D$ only through their product: the peak factor is not
+recoverable from the rollout \emph{at any excitation}, a stronger statement
+than the low-slip degeneracy, and must instead be measured on the recorded
+trace and held. And because each fit is handed the trajectory its own previous
+answer generated, the loop is a positive feedback path rather than a
+contraction, and iterating it undamped degrades the estimate monotonically.
+Stage~4 becomes a relaxed fixed-point iteration at $\beta=\num{0.20}$; the
+$\beta=0$ control, which performs no identification at all, is the worst
+setting of the sweep, so the iterations do carry information.
 
 \item \textbf{The corrections the bound implies}, on both sides of the fit.
-On the rollout side (Section~\ref{subsec:iterative}), the synthetic sweep is
-bounded at $1.5\times$ the 99th percentile of the observed steering, so the
-fit cannot read the residual network's extrapolation as grip, and the Tikhonov
-target is frozen at the configured prior while the optimiser's start point
-tracks the iterations. Together those remove a drift that took $D$ from the
+On the rollout side (Section~\ref{subsec:iterative}), the sweep is bounded at
+$1.5\times$ the 99th percentile of the observed steering, so the fit cannot
+read the residual network's extrapolation as grip, and the Tikhonov target is
+frozen at the configured prior while the optimiser's start point tracks the
+iterations; together those remove a drift that took $D$ from the
 \num{1.009}/\num{1.002} front/rear prior to \num{1.5402} and \num{1.8721} over
 six iterations. On the measurement side (Section~\ref{subsec:measurement}),
 slip angles are built from the \emph{achieved} road-wheel angle rather than
-the command, mass and wheelbase come from measured static wheel loads rather
-than from a configuration file, a friction warm start is read from the
-\emph{curvature} of the axle force curve rather than as
-a median over a low-slip mask, and the dynamics residuals of the
-physics-informed objective are normalised to the state-increment units of the
-data term, which the published form leaves a factor \num{2.3e5} apart.
+the command, mass and wheelbase from measured static wheel loads rather than
+from a configuration file, the friction warm start from the \emph{curvature} of
+the axle force curve rather than a median over a low-slip mask, and the
+dynamics residuals of the physics-informed objective are normalised to the
+state-increment units of the data term, which the published form leaves a
+factor \num{2.3e5} apart.
 
 \item \textbf{Admissibility gates on derived physical quantities}
 (Section~\ref{sec:integration}) at the model-to-controller boundary: axle
@@ -131,29 +125,18 @@ set.
 closed-loop evaluation on it} (Sections~\ref{subsec:platform}--\ref{subsec:data}
 and \ref{sec:results}). \bridge{} exposes the plant's own per-wheel forces,
 slip angles and loads as ROS~2 topics alongside a conventional autonomy
-interface, so an on-track identifier can be scored against the forces the plant
-generated. The evaluation runs on a static \num{0.70} friction surface, which
-is deliberately not the \num{1.05} surface the configured tire prior was
-measured on: the prior overstates this run's grip by \SI{44}{\percent} and
-understates its axle cornering stiffness by \SIrange{16}{24}{\percent}, so a
-pipeline that cannot move off its prior has nowhere to hide
-(Section~\ref{subsubsec:priorprovenance}). Over three timed
-laps the corrected pipeline identifies axle cornering stiffness to
-\SI{3.2}{\percent} front and \SI{1.4}{\percent} rear and tracks the peak factor
-to \SI{11}{\percent}, against an inherited configuration that rails $D$ on its
-\num{2.0} bound in every cycle and overstates stiffness by
-\SIrange{118}{132}{\percent}. Axle force RMSE against the plant's telemetry is
-\num{12.1}$\times$ and \num{10.5}$\times$ lower, and MPC lateral tracking error
-\SI{32}{\percent} lower, at unchanged solver cost.
+interface. The evaluation runs on a static \num{0.70} friction surface,
+deliberately not the \num{1.05} the configured tire prior was measured on, so
+that a pipeline unable to move off its prior has nowhere to hide
+(Section~\ref{subsubsec:priorprovenance}). Over three timed laps the corrected
+pipeline identifies axle cornering stiffness to \SI{3.2}{\percent} front and
+\SI{1.4}{\percent} rear and tracks the peak factor to \SI{11}{\percent},
+against an inherited configuration that rails $D$ on its \num{2.0} bound in
+every cycle and overstates stiffness by \SIrange{118}{132}{\percent}. Axle
+force RMSE against the plant's telemetry is \num{12.1}$\times$ and
+\num{10.5}$\times$ lower, and MPC lateral tracking error \SI{32}{\percent}
+lower, at unchanged solver cost.
 \end{enumerate}
 
-The paper follows that order. Section~\ref{sec:related} places the work
-against the state of the art, Section~\ref{sec:problem} states the
-identification problem and its practical-identifiability properties, and
-Section~\ref{sec:platform} describes the simulation architecture and data
-pipeline. Section~\ref{sec:method} covers the identification methodology,
-Section~\ref{sec:results} the results, Section~\ref{sec:integration} how the
-identified model is handed to the controller, and
-Sections~\ref{sec:disc}--\ref{sec:conclusion} the limitations and outlook. All
-results are obtained in simulation, and Section~\ref{sec:disc} states which
+All results are obtained in simulation, and Section~\ref{sec:disc} states which
 conclusions are expected to transfer to hardware.
