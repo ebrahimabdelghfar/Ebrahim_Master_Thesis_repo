@@ -74,8 +74,10 @@ def _group(rows, key_column, value_column):
 class ScenarioData:
     """Everything one scenario contributes, loaded once."""
 
-    def __init__(self, name, graphs_root):
-        self.name = name
+    def __init__(self, name, graphs_root, label=None):
+        # `name` keys the on-disk directories the sweep wrote; `label` is what the
+        # figures say, so a legend can be renamed without re-running the sweep.
+        self.name = label or name
         self.ident_dir = graphs_root / 'identification' / name
         self.control_dir = graphs_root / 'control' / name
 
@@ -697,11 +699,13 @@ def main():
 
     scenarios = []
     for entry in config['scenarios']:
-        data = ScenarioData(entry['name'], graphs_root)
+        data = ScenarioData(entry['name'], graphs_root, entry.get('label'))
         if data.exists():
             scenarios.append(data)
         else:
-            print(f'skipping {entry["name"]}: no benchmark CSVs under {graphs_root}')
+            print(f'skipping {entry["name"]}: no benchmark CSVs under '
+                  f'{graphs_root}/identification/{entry["name"]} - the sweep wrote a '
+                  f'different directory name, or the scenario has not been run')
     if not scenarios:
         print('nothing to compare - run `make run_benchmark_scenarios` first')
         return 1

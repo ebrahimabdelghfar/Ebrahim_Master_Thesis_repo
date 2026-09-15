@@ -60,9 +60,9 @@ Two configurations of the same pipeline are run back to back on that
 trajectory, three timed laps each, with an untimed out-lap. They differ in the
 five settings of Table~\ref{tab:scenarios} and in nothing else; vehicle, map,
 trajectory, controller, data budget, loop count and box constraints are shared.
-\texttt{Baseline-NN-MSE} is the inherited configuration evaluated at full scale
+\basearm{} is the inherited configuration evaluated at full scale
 on the corrected rollout, so the comparison isolates those five settings rather
-than reproducing the published pipeline in full; \texttt{Ours} is the shipped
+than reproducing the published pipeline in full; \oursarm{} is the shipped
 configuration. Since the five settings move together, what follows is a
 configuration comparison, not a per-factor ablation, which
 Section~\ref{subsec:ablations} supplies offline. Nor is it a test of this
@@ -79,7 +79,7 @@ Section~\ref{subsec:sweep}.
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lll@{}}
 \toprule
-Setting & \texttt{Baseline-NN-MSE} & \texttt{Ours}\\
+Setting & \basearm{} & \oursarm{}\\
 \midrule
 Residual architecture & MLP (\texttt{baseline}) & S4D (\texttt{s4})\\
 Residual objective & One-step MSE & Physics-informed,
@@ -202,7 +202,7 @@ recovery is a best case.
 \subsection{Cross-run summary}
 \label{subsec:summary}
 
-Table~\ref{tab:comparison} is the complete comparison. \texttt{Ours} is better
+Table~\ref{tab:comparison} is the complete comparison. \oursarm{} is better
 on every quantity scored against the plant (peak friction, axle force on both
 axles, both one-step states, lateral tracking error in every phase, and both
 error tails) and behind only on RMS QP solve time, by \SI{5}{\percent} of a
@@ -217,10 +217,10 @@ rows against the figures; Section~\ref{subsec:ablations} attributes them.
 \centering
 \begin{threeparttable}
 \scriptsize
-\setlength{\tabcolsep}{4pt}
+\setlength{\tabcolsep}{2pt}
 \begin{tabular}{@{}lrr@{}}
 \toprule
-Metric & \texttt{Ours} & \texttt{Baseline-NN-MSE}\\
+Metric & \oursarm{} & \basearm{}\\
 \midrule
 \multicolumn{3}{@{}l}{\emph{Closed-loop tracking (3 timed laps)}}\\
 Run duration [\si{\second}] & 580.4 & 554.6\\
@@ -252,11 +252,11 @@ Skill vs.\ persistence, $v_{y}$ / $\omega$ & $\mathbf{-0.27}$ / $\mathbf{-8.8}$ 
 Figure~\ref{fig:pacejka} puts both identified curves against the plant's own
 curve~\eqref{eq:physx} and lists the coefficients. Three things are visible.
 
-First, no coefficient of \texttt{Ours} rests on a box constraint in any of its
+First, no coefficient of \oursarm{} rests on a box constraint in any of its
 six accepted identifications; its last accepted set is
 $B=\num{12.890}/\num{13.746}$ inside $[4,20]$, $C=\num{1.240}/\num{1.248}$
 inside $[1.2,2.2]$, $D=\num{0.768}$ on both axles inside $[0.4,2.0]$ and
-$E=\num{-2.517}/\num{-1.836}$ inside $[-3,1]$. \texttt{Baseline-NN-MSE} puts $D$
+$E=\num{-2.517}/\num{-1.836}$ inside $[-3,1]$. \basearm{} puts $D$
 on its upper bound of \num{2.000} on both axles in \emph{every} accepted
 identification and $E_{f}$ on its lower bound of \num{-3.0} likewise. A peak
 factor of \num{2.000} against a plant realising \num{0.70} is less a
@@ -270,21 +270,21 @@ to the simulator's own per-wheel forces at the static axle loads
 $F_{z,f}=\SI{1373}{\newton}$, $F_{z,r}=\SI{1274}{\newton}$, which realises
 \SI{17.4}{\kilo\newton\per\radian} front and \SI{16.6}{\kilo\newton\per\radian}
 rear. The prior carries \num{13.2} and \num{13.9}, \SI{24}{\percent} and
-\SI{16}{\percent} low; \texttt{Ours} returns \num{16.9} and \num{16.8},
+\SI{16}{\percent} low; \oursarm{} returns \num{16.9} and \num{16.8},
 \SI{3.2}{\percent} low front and \SI{1.4}{\percent} high rear, removing
 \SI{87}{\percent} and \SI{91}{\percent} of the prior's error. The product
 $BCDF_{z}$, the only quantity the rollout fit determines
 (Section~\ref{subsec:bcd}), is what moves and then holds: the five cycles after
 the friction gate releases sit within
 \SIrange{16.0}{16.9}{\kilo\newton\per\radian}, a \SI{5}{\percent} spread about a
-plant at \num{17.4}. \texttt{Baseline-NN-MSE} returns \num{37.9} and \num{38.4},
+plant at \num{17.4}. \basearm{} returns \num{37.9} and \num{38.4},
 \SI{118}{\percent} and \SI{132}{\percent} high, which is $D=\num{2.0}$
 multiplying a $B$ the fit chose against it.
 
 Third, both sets keep the understeer sign and pass the stability gate of
 Section~\ref{subsec:gates}; what separates them is the grip ceiling, which
-\eqref{eq:gripceiling} puts at \SI{2.00}{\g} for \texttt{Baseline-NN-MSE}
-against \SI{0.77}{\g} for \texttt{Ours}, a plant sustaining \SI{0.71}{\g} and a
+\eqref{eq:gripceiling} puts at \SI{2.00}{\g} for \basearm{}
+against \SI{0.77}{\g} for \oursarm{}, a plant sustaining \SI{0.71}{\g} and a
 trajectory demanding \SI{0.51}{\g}. The baseline's ceiling is a claim the plant
 cannot honour by a factor of \num{2.8}; only the identified set is admissible on
 the quantity the controller consumes. All three readings are possible because
@@ -301,10 +301,10 @@ $\mu=\num{1.05}$ runs it did not.
 \caption{Identified tire models against the plant. Top and middle: the plant's
 own curve~\eqref{eq:physx} at the measured static load of each axle (black)
 against each run's last accepted identification. Bottom: the identified Magic
-Formula coefficients. \texttt{Baseline-NN-MSE}'s accepted peak factor sits on
+Formula coefficients. \basearm{}'s accepted peak factor sits on
 its box constraint $D=\num{2.0}$ on both axles in every cycle, so its curve
 carries roughly \num{2.8} times the plant's force at the edge of the plotted
-range, while \texttt{Ours} tracks both the plant's initial slope and its peak.
+range, while \oursarm{} tracks both the plant's initial slope and its peak.
 All force metrics are axle sums.}
 \label{fig:pacejka}
 \end{figure}
@@ -317,7 +317,7 @@ against the effective friction the plant reports per wheel, and
 Fig.~\ref{fig:mutimeseries} its evolution over the run. This is where the
 pinned-$D$ design of Section~\ref{subsec:friction} is directly observable,
 because the arm starts \SI{44}{\percent} away from the answer.
-\texttt{Ours} publishes six accepted identifications. The first carries
+\oursarm{} publishes six accepted identifications. The first carries
 $D_{f}=\num{1.009}$, $D_{r}=\num{1.002}$: the friction gate rejected that
 buffer, so the axles held the prior they came in with, the hold-rather-than-fit
 rule of Section~\ref{subsec:frictionfloor} and not a fitted value. From
@@ -327,9 +327,9 @@ published peak factor drops to \num{0.779}, \num{0.821}, \num{0.749},
 \num{0.700}: \SI{10.7}{\percent} high on average, from a prior that was
 \SI{44}{\percent} high. The whole-run $\mu$ RMSE is dominated by the first
 \SI{140}{\second} at the prior; over the \SI{440}{\second} after the first
-release it is \num{0.078} on both axles. \texttt{Baseline-NN-MSE} returns
+release it is \num{0.078} on both axles. \basearm{} returns
 $D=\num{2.000}$ on both axles in every accepted identification and never leaves
-the bound, a constant $\mu$ error of \num{1.300}, so \texttt{Ours} is
+the bound, a constant $\mu$ error of \num{1.300}, so \oursarm{} is
 \num{9.0}$\times$ better on the whole-run figure and \num{16.7}$\times$ better
 once its warm start has released --- a difference worth \SI{1.23}{\g} of claimed
 grip against a plant that sustains \num{0.71}. Two qualifications belong on that
@@ -345,10 +345,10 @@ tendency to over-read $\mu$ where the curve is not fully traversed.
 \caption{Peak friction over the run, one row per configuration: the plant's
 effective $\mu$ (black) against the identified peak factor $D$ published at
 each accepted identification. The surface is static, so every
-departure from the black line is estimator error. \texttt{Ours} publishes the
+departure from the black line is estimator error. \oursarm{} publishes the
 $\mu=\num{1.05}$ prior while the friction gate is closed, then steps down onto
 the plant within \SI{11}{\percent} at the first release and holds there for the
-remaining five cycles, while \texttt{Baseline-NN-MSE} sits on the
+remaining five cycles, while \basearm{} sits on the
 $D\le\num{2.0}$ box constraint for the whole run.}
 \label{fig:mutimeseries}
 \end{figure}
@@ -358,13 +358,13 @@ $D\le\num{2.0}$ box constraint for the whole run.}
 
 The identified curve is scored at the measured $(\alpha,F_{z})$ against the
 plant's own lateral force, summed per axle (Table~\ref{tab:comparison};
-Fig.~\ref{fig:errhist}(a)). \texttt{Ours} leads on both axles by an order of
+Fig.~\ref{fig:errhist}(a)). \oursarm{} leads on both axles by an order of
 magnitude in RMSE and in the error tails; the baseline's negative $R^{2}$ means
 its curve predicts the plant's axle force worse than the mean of that force
 does. This is the linear-range result seen as force: at
 $P_{99}(|\alpha|)=\SI{2.7}{\degree}$ the metric is dominated by cornering
 stiffness, so the models separate almost entirely on slope --- but because $D$
-multiplies that slope in \eqref{eq:stiffness}, \texttt{Baseline-NN-MSE}'s railed
+multiplies that slope in \eqref{eq:stiffness}, \basearm{}'s railed
 $D$ is the direct cause of its force error. The comparison is also why the
 relaxed update of \eqref{eq:relax} belongs in the method rather than a
 configuration file: pinning $D$ alone does not produce these numbers, since with
@@ -373,7 +373,7 @@ $\beta=1$ the same arm degrades monotonically with iteration count
 
 Level~1 of the validation protocol is reported against a persistence baseline
 (next state equals last measured state) written by the same benchmark node.
-\texttt{Ours} leads on both signals, by an order of magnitude on lateral
+\oursarm{} leads on both signals, by an order of magnitude on lateral
 velocity ($R^{2}$ \num{0.998} against \num{0.709}) and by a factor of two on yaw
 rate ($R^{2}$ \num{0.894} against \num{0.514}); in
 Fig.~\ref{fig:errhist}(b)--(c) the separation on $v_{y}$ is in the centre of the
@@ -391,11 +391,11 @@ confirming the direction the axle-force and closed-loop comparisons establish.
 \includegraphics[width=0.245\textwidth]{state_error_hist_omega}
 \caption{Error distributions, truth minus estimate. (a) Axle lateral force,
 shared bin edges over the pooled central \SI{99}{\percent} and normalised to
-each run's sample count; both are centred, and \texttt{Baseline-NN-MSE}'s
+each run's sample count; both are centred, and \basearm{}'s
 distribution is roughly an order of magnitude wider at every quantile (maximum
 absolute error \SI{1295}{\newton} against \SI{264}{\newton} front,
 \SI{1316}{\newton} against \SI{135}{\newton} rear). (b) One-step lateral
-velocity, where \texttt{Ours} is an order of magnitude tighter
+velocity, where \oursarm{} is an order of magnitude tighter
 (\SI{0.014}{\meter\per\second} against \SI{0.156}{\meter\per\second} RMSE).
 (c) One-step yaw rate, where the configurations differ in tail mass rather than
 centre. Neither model beats its own persistence baseline at the
@@ -408,9 +408,9 @@ centre. Neither model beats its own persistence baseline at the
 
 Both runs finish three timed laps with zero emergency halts and the same
 finite-state sequence, with the handover at $t=\SI{79.1}{\second}$ for
-\texttt{Ours} (Fig.~\ref{fig:speedcost}) and $t=\SI{64.0}{\second}$ for
-\texttt{Baseline-NN-MSE}. Under MPC, where the identified model enters the loop,
-\texttt{Ours} tracks at \SI{0.151}{\meter} RMS lateral error against
+\oursarm{} (Fig.~\ref{fig:speedcost}) and $t=\SI{64.0}{\second}$ for
+\basearm{}. Under MPC, where the identified model enters the loop,
+\oursarm{} tracks at \SI{0.151}{\meter} RMS lateral error against
 \SI{0.224}{\meter}, a \SI{32}{\percent} reduction, with maximum
 \SI{0.683}{\meter} against \SI{0.776}{\meter} (Fig.~\ref{fig:trackingbox}). ITAE
 is $\int t|e_{y}|\,\mathrm{d}t$, neither scale-free nor comparable across runs
@@ -433,13 +433,13 @@ vehicle-performance difference.
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{speed_and_compute_cost.png}
-\caption{Speed and solver cost along the \texttt{Ours} run: longitudinal speed
+\caption{Speed and solver cost along the \oursarm{} run: longitudinal speed
 $v_{x}$ (left axis) against MPC QP solve time (right axis) over the full
 \SI{580.4}{\second}, shaded by the active controller state. The handover from
 pure pursuit to MPC falls at $t=\SI{79.1}{\second}$; after it the vehicle cycles
 the raceline's \SIrange{9.6}{25.8}{\meter\per\second} reference profile while
 the solve time stays two orders of magnitude below the \SI{50}{\milli\second}
-control period. \texttt{Ours} only; not a comparison between arms.}
+control period. \oursarm{} only; not a comparison between arms.}
 \label{fig:speedcost}
 \end{figure}
 

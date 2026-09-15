@@ -1,8 +1,8 @@
 scenario,category,value
-ours,v_y,0.014
-ours,v_y_persistence,0.011
-ours,omega,0.049
-ours,omega_persistence,0.005
+Excitation-S4D-Pinn,v_y,0.014
+Excitation-S4D-Pinn,v_y_persistence,0.011
+Excitation-S4D-Pinn,omega,0.049
+Excitation-S4D-Pinn,omega_persistence,0.005
 Baseline-NN-MSE,v_y,0.156
 Baseline-NN-MSE,v_y_persistence,0.017
 Baseline-NN-MSE,omega,0.104

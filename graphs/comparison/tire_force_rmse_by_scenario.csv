@@ -1,5 +1,5 @@
 scenario,category,value
-ours,front_sum_fy,27.15
-ours,rear_sum_fy,33.227
+Excitation-S4D-Pinn,front_sum_fy,27.15
+Excitation-S4D-Pinn,rear_sum_fy,33.227
 Baseline-NN-MSE,front_sum_fy,329.645
 Baseline-NN-MSE,rear_sum_fy,348.409
