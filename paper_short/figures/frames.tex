@@ -1,0 +1,107 @@
+% =============================================================================
+% Fig. -- Frame and sign conventions across the CARLA/ROS 2 boundary.
+%
+% Vector TikZ, drawn at the paper's own font sizes. Included by
+% sections/platform.tex inside a figure* (full text width).
+%
+% Three panels, left to right:
+%   (a) the two world frames and the map between them (CARLA/Unreal is
+%       left-handed with Y south and yaw clockwise; ROS is ENU/REP-103).
+%   (b) the vehicle body frame in which every identification quantity is
+%       defined: FLU, positive steer to the left, positive lateral force to
+%       the left, slip angles as in (2).
+%   (c) the per-channel conversion the bridge applies, which is where a sign
+%       error would enter the identification silently.
+%
+% Layout note: every panel's bounding box is fitted to two explicit corner
+% coordinates rather than to its content, so the three panels keep the same
+% height and nothing collides once the whole picture is resized to \textwidth.
+% =============================================================================
+
+\begin{tikzpicture}[
+  font=\scriptsize,
+  >={Stealth[length=1.7mm,width=1.5mm]},
+  ax/.style      = {->, line width=0.5pt, black!75},
+  car/.style     = {line width=0.7pt, black!75},
+  wheel/.style   = {line width=1.5pt, black!80, line cap=round},
+  frc/.style     = {->, line width=0.7pt, green!45!black},
+  vel/.style     = {->, line width=0.6pt, blue!55!black},
+  rot/.style     = {->, line width=0.5pt, black!60},
+  lbl/.style     = {font=\tiny, inner sep=1.0pt},
+  note/.style    = {font=\tiny, align=left, inner sep=1.6pt},
+  hdr/.style     = {font=\scriptsize\bfseries, align=center},
+  conv/.style    = {->, line width=0.6pt, black!65, dashed}
+]
+
+% ================== (a) vehicle body frame and sign rules ==================
+% Single-track sketch: x forward (right), y left (up), omega CCW positive.
+\begin{scope}[shift={(93mm,2mm)}]
+  \coordinate (cg)  at (0,0);
+  \coordinate (fr)  at (15mm,0);
+  \coordinate (rr)  at (-13mm,0);
+
+  \draw[car] (rr) -- (fr);
+  \draw[wheel] ($(rr)+(-3mm,0)$) -- ($(rr)+(3mm,0)$);
+  \draw[wheel, rotate around={17:(fr)}] ($(fr)+(-3mm,0)$) -- ($(fr)+(3mm,0)$);
+  \fill (cg) circle (0.6mm);
+
+  % body axes at the centre of gravity
+  \draw[ax] (cg) -- ++(8mm,0) node[lbl,below] {$x$ fwd};
+  \draw[ax] (cg) -- ++(0,7mm) node[lbl,left]  {$y$ left};
+  \draw[rot] (-2.8mm,-2.8mm) arc (225:135:4.0mm);
+  \node[lbl, anchor=north east] at (-3.2mm,-2.4mm) {$\omega>0$};
+
+  % steer angle at the front wheel
+  \draw[black!45, line width=0.35pt] (fr) -- ++(6mm,0);
+  \draw[rot] ($(fr)+(5mm,0)$) arc (0:17:5mm);
+  \node[lbl, anchor=west] at ($(fr)+(5.4mm,2.2mm)$) {$\delta>0$};
+
+  % velocity and sideslip at the CG
+  \draw[vel] (cg) -- ++(10mm,4.5mm) node[lbl,above] {$v$};
+  \draw[rot] (5.5mm,0) arc (0:24.2:5.5mm);
+  \node[lbl, anchor=west] at (6.0mm,1.2mm) {$\beta$};
+
+  % axle lateral forces, positive to the left
+  \draw[frc] (fr) -- ++(0,7mm) node[lbl,above] {$F_{y,f}>0$};
+  \draw[frc] (rr) -- ++(0,7mm) node[lbl,above] {$F_{y,r}>0$};
+\end{scope}
+
+\node[note, anchor=north west, text width=62mm] at (63mm,-11mm)
+  {$\alpha_{f}=\delta-\arctan\dfrac{v_{y}+l_{f}\omega}{v_{x}}$,\qquad
+   $\alpha_{r}=-\arctan\dfrac{v_{y}-l_{r}\omega}{v_{x}}$\\[2pt]
+   Positive $\alpha$ produces positive (leftward) $F_{y}$. Wheel order in
+   every per-wheel array: [FL, FR, RL, RR].};
+
+\coordinate (pb1) at (61mm,-27mm);
+\coordinate (pb2) at (127mm,15mm);
+\begin{scope}[on background layer]
+  \node[draw, dashed, rounded corners=2pt, inner sep=0pt, fill=black!2,
+        fit=(pb1)(pb2)] (panelb) {};
+\end{scope}
+\node[hdr, above=1.0mm of panelb.north] {(a) Vehicle body frame (FLU)};
+
+% ====================== (b) per-channel conversions =========================
+\node[note, anchor=north west] at (133mm,13mm)
+  {\renewcommand{\arraystretch}{1.2}%
+   \begin{tabular}{@{}p{17mm}p{40mm}@{}}
+   \textbf{Channel} & \textbf{Bridge conversion}\\
+   \hline\\[-6pt]
+   \texttt{/odom} pose & $y\mapsto-y$; $\psi,\theta\mapsto-\psi,-\theta$\\
+   \texttt{/odom} twist & world $\to$ body by $q^{-1}$; $v_{y}$,
+   $\omega_{y}$, $\omega_{z}$ negated\\
+   \texttt{feedback/imu} & $a_{y}\mapsto-a_{y}$\\
+   \texttt{tire\_forces} $\alpha$ & $\deg\to\mathrm{rad}$ only: the frame flip
+   and CARLA's own sign convention cancel\\
+   \texttt{tire\_forces} $F_{y}$ & $F_{y}\mapsto-F_{y}$, into $+y$ left\\
+   \texttt{/drive} $\delta$ & negated on the way out to CARLA\\
+   \end{tabular}};
+
+\coordinate (pc1) at (131mm,-27mm);
+\coordinate (pc2) at (196mm,15mm);
+\begin{scope}[on background layer]
+  \node[draw, dashed, rounded corners=2pt, inner sep=0pt, fill=black!2,
+        fit=(pc1)(pc2)] (panelc) {};
+\end{scope}
+\node[hdr, above=1.0mm of panelc.north] {(b) Conversions applied by \bridge{}};
+
+\end{tikzpicture}

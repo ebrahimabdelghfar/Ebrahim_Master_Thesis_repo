@@ -1,0 +1,139 @@
+% === APPENDIX ================================================================
+\section{Assumptions and Reproducibility Notes}
+\label{subsec:assumptions}
+
+The following are assumptions or design choices rather than measured facts,
+listed so a reader can judge how far each result depends on them.
+
+\emph{A1. Yaw inertia.} $I_{z}=\SI{51.1}{\kilo\gram\meter\squared}$ is carried
+in the model file and is \emph{not} measured. It enters \eqref{eq:omdot}
+directly, so it scales the yaw-rate residual the network is trained on. It can
+be discharged by applying a known yaw moment and fitting $I_{z}$ from the
+measured $\dot\omega$, or by reading the actor's inertia tensor.
+
+\emph{A2. Centre-of-gravity split.} $l_{f}=\SI{0.738142}{\meter}$,
+$l_{r}=\SI{0.795362}{\meter}$ are taken from the controller configuration. The
+measured static load split (51.2/48.8) implies a marginally different split than
+the geometry does (51.9/48.1), a \SI{1.4}{\percent} disagreement, below the
+level at which any conclusion here would change.
+
+\emph{A3--A4. CG height and steering sign.} $h_{\mathrm{cg}}=\SI{0.3}{\meter}$
+is carried but unused: the single-track model neglects load transfer, following
+the baseline, and normal loads are static. \texttt{feedback/\allowbreak
+steering\_angle} is published in degrees and treated as the front road-wheel
+angle, positive left, verified against the front-left wheel joint state to
+within \SI{0.5}{\percent}; left and right road wheels are not distinguished.
+
+\emph{A5. Steady-state force recovery.} Equation~\eqref{eq:ssforces} is not a
+force measurement; being fully determined by $v_{x}\omega$ it misattributes
+transients, and it is applied only to the \emph{synthetic}, quasi-steady
+rollout. Its adequacy was checked on measured data against the simulator's own
+axle force (correlation \num{0.993}, slope \num{0.94}).
+
+\emph{A6. The residual network is not the plant.} The corrected model is queried
+by the rollout at inputs the network has only partially seen. The extrapolation
+bound of Section~\ref{subsec:iterative} limits but does not eliminate this: the
+sweep still reaches $1.5\times$ the observed 99th percentile of $|\delta|$, a
+choice that is empirical rather than derived.
+
+\emph{A7. Simulator determinism and timing.} CARLA runs in synchronous mode with
+a \SI{0.033}{\second} physics step; sim time advances faster than wall time
+($\approx1.9\times$ on our hardware), and all identification data is stamped
+from the simulation clock.
+
+\emph{A8. Software configuration of record.} ROS~2 Humble, Python 3.10, PyTorch
+with CUDA on an RTX~2080-class GPU; the bridge is a separate overlay; CARLA
+server 0.9.16 / Unreal Engine 4.26; acados 0.5.5 with partial-condensing HPIPM.
+The identifier's acquisition timer runs at \SI{50}{\hertz} (\SI{20}{\hertz} is
+the controller's period) with a \SI{30}{\second} buffer, six co-identification
+iterations, 200 training epochs, full-batch Adam at $5\times10^{-4}$, and
+$T_{s}=\SI{0.035}{\second}$. \texttt{nn\_train} seeds PyTorch and NumPy at
+\num{42}; \texttt{pacejka\_solver.seed} is \texttt{null} in both shipped
+parameter sets, so the reported identifications are reproducible in distribution
+but not bit for bit, while the sweep of Table~\ref{tab:sweep} is seeded
+explicitly and is bit-reproducible.
+
+\section{Simulator--ROS~2 Interface}
+\label{sec:iface}
+
+\subsection*{Feedback path}
+Table~\ref{tab:topics} lists the interface consumed by the identifier and its
+validation.
+
+\begin{table}[t]
+\caption{ROS~2 interface used by the identification and validation pipeline.
+Namespace is \texttt{/sim} unless marked absolute.}
+\label{tab:topics}
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}p{2.4cm}p{2.75cm}p{2.5cm}@{}}
+\toprule
+Topic & Type & Role\\
+\midrule
+\texttt{/odom} & \texttt{nav\_msgs/Odometry} & State $v_{x},v_{y},\omega$; twist is body-frame\\
+\texttt{feedback/\allowbreak steering\_angle} & \texttt{std\_msgs/Float32} (deg) & Achieved road-wheel angle $\delta$\\
+\texttt{feedback/imu} & \texttt{sensor\_msgs/Imu} & $a_{x},a_{y}$ for the friction warm-start\\
+\texttt{feedback/\allowbreak tire\_forces} & \texttt{sim\_manager\_\allowbreak msgs/\allowbreak TireForces} & Per-wheel $\alpha$, $F_{z}$, $F_{y}$, $\mu$, $\omega_{w}$, $\kappa$: \textbf{ground truth}\\
+\texttt{feedback/\allowbreak vehicle\_physics} & \texttt{std\_msgs/String} (JSON) & Live wheel parameters of \eqref{eq:physx}\\
+\texttt{feedback/speed} & \texttt{std\_msgs/Float32} & Forward speed echo\\
+\texttt{feedback/motors} & \texttt{std\_msgs/String} (JSON) & Per-wheel speed/torque/brake\\
+\texttt{/drive} & \texttt{ackermann\_msgs/\allowbreak Ackermann\allowbreak Drive\allowbreak Stamped} & Control command in\\
+\texttt{control/\allowbreak tire\_friction} & \texttt{std\_msgs/Float32} & Runtime grip override\\
+\texttt{/clock} \emph{(abs.)} & \texttt{rosgraph\_msgs/\allowbreak Clock} & Simulation time base\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Per-wheel ground truth}
+\texttt{feedback/\allowbreak tire\_forces} carries CARLA's own
+\texttt{Wheel\-TelemetryData} in wheel order [FL, FR, RL, RR]. No analytic tire
+model exists inside the bridge, so nothing on this topic can disagree with the
+physics the vehicle is driven by. Four measured properties bound what may be
+read off it. (i)~Only \texttt{lateral\_force} is force ground truth; it is the
+channel every validation in this paper uses.
+(ii)~\texttt{longitudinal\_force} is a friction-capacity report rather than a
+measurement, tracking $\mu F_{z}$ and correlating with $ma_{x}$ at \num{0.04},
+and \texttt{wheel\_torque} is an exact identity of it. (iii)~Below
+\SI{0.5}{\meter\per\second} the publisher zeroes slip angle and both forces
+while the normal load stays live, so the identifier gates on the all-zero
+pattern as well. (iv)~The slip angle needs no sign change across the boundary,
+verified rather than assumed.
+
+Figure~\ref{fig:frames} states the conventions the rest of the paper assumes.
+CARLA inherits Unreal's left-handed world while every ROS~2 topic follows
+REP-103~\cite{rep103} and the identification equations are written in the body
+frame with $\alpha$ and $F_{y}$ positive to the left, the SAE-style axis
+convention~\cite{saej670,pacejka2012book}. The bridge is a per-channel
+conversion rather than a single transform, and the trap is that the tire
+telemetry's slip angle needs \emph{no} sign change, because the frame flip and
+CARLA's own convention cancel: an error there is invisible in the states and
+inverts the identified curve, so it was checked against a slip angle rebuilt
+from the chassis state in a steady \SI{4}{\meter\per\second} turn, equal in
+magnitude to within \SI{2}{\percent} front and \SI{15}{\percent} rear.
+
+\begin{figure*}[t]
+\centering
+\resizebox{0.80\textwidth}{!}{\input{figures/frames}}
+\caption{Frame and sign conventions across the simulator--ROS~2 boundary.
+(a) All identification quantities are defined in the body frame:
+$x$ forward, $y$ left, $\omega$ and $\delta$ positive counter-clockwise, and
+slip angle and lateral force positive to the left, so that a positive $\alpha$
+produces a positive $F_{y}$~\cite{saej670}. (b) The conversion applied per
+channel. The slip angle of the tire telemetry is the one exception that needs
+no sign change, because the frame flip and CARLA's own convention cancel.}
+\label{fig:frames}
+\end{figure*}
+
+\section{Reference Implementation}
+\label{sec:refimpl}
+
+The identification package, the ROS~2 bridge and the controller stack used in
+this paper are available as \texttt{On-Track-SysID}, extended
+from~\cite{ontrack2025} (upstream:
+\url{https://github.com/ForzaETH/On-Track-SysID}), \bridge{}
+(\url{https://github.com/ebrahimabdelghfar/Carla_ASU_Bridge})%
+~\cite{carlaasubridge}, and the accompanying MPC and benchmarking packages,
+released together with the scenario definitions, the exported result CSVs and
+the figure and sweep generators at
+\url{https://github.com/ebrahimabdelghfar/Ebrahim_Master_Thesis_repo/tree/feat-follow-premade-racing-track}.

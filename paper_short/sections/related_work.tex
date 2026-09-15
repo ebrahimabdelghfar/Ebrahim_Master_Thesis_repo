@@ -1,0 +1,99 @@
+% === II. RELATED WORK ========================================================
+\section{Related Work and Position}
+\label{sec:related}
+
+\subsection{On-track and data-driven identification}
+
+The Magic Formula~\cite{pacejka1987sae,pacejka2012book} is the model identified
+here. Classical characterisation obtains its coefficients from steady-state
+manoeuvres in a controlled space \cite{ontrack2025,amz2020}: clean data at high
+logistical cost. Direct fitting to measured contact-patch forces needs a
+force-measuring hub or a simulator's own wheel telemetry; here it is used only
+as a \emph{reference} against which the on-track identifier is scored, never
+inside the identification loop.
+
+On-track methods trade excitation quality for operational simplicity. Nonlinear
+least squares on lap data is the classical baseline and is brittle under noise
+\cite{ontrack2025}. The recursive alternative is a dual or joint filter carrying
+states and parameters together \cite{wenzel2006dekf,sierra2006cornering}, and it
+is subject to the same excitation condition this paper is about: a filter run on
+a smooth racing line has as little information about the tire's peak as a batch
+fit of the same data, and merely expresses that as a parameter covariance that
+never shrinks rather than as a coefficient on a bound. Dedicated friction
+estimators make the excitation dependence explicit
+\cite{rajamani2012wheelfriction,ahn2013friction,acosta2017friction,khaleghian2017survey},
+and Hsu \emph{et al.}~\cite{hsu2010trail} is the closest prior art to the warm
+start of Section~\ref{subsec:friction}: they recover the friction limit below
+the peak from the \emph{curvature} of the force response, read through the
+pneumatic trail in steering torque. Our estimator uses the same observation on
+the axle force curve reconstructed from the IMU and odometry, with no
+steering-torque sensor; it is then gated, applied to both axles from the axle
+the manoeuvre identifies, and pinned for the co-identification loop --- a
+property of what that loop can identify (Section~\ref{subsec:bcd}) rather than
+of the estimator. Gaussian-process approaches learn the mismatch of a nominal
+model \cite{hewing2018cautious,hewing2020cautious,kabzan2019lbmpc} at a
+continuing computational cost; neural residuals replace the Gaussian process
+with a cheaper regressor at the cost of generalisation guarantees.
+
+Deep Dynamics~\cite{deepdynamics2024} is the closest work on the
+physics-constraint axis: it estimates Pacejka coefficients inside a neural
+network and adds a \emph{Physics Guard} layer clamping them into nominal ranges.
+Our admissibility gates share the motivation but differ in placement. We report
+as a substantive finding that per-coefficient box constraints are
+\emph{insufficient}: the degenerate fit that motivated this work satisfied every
+box constraint while five of eight coefficients sat exactly on a bound, and a
+later fit satisfied every box constraint while being pairwise oversteering and
+open-loop unstable above \SI{14.5}{\meter\per\second}. We therefore gate on
+derived quantities at the model-to-controller interface and treat a coefficient
+resting on a bound as a diagnostic of non-identifiability rather than a
+successful clamp. The hybrid residual-plus-virtual-data structure
+of~\cite{ontrack2025} is the pipeline we extend; its key idea, to query the
+learned model only where it interpolates and extract physically parameterised
+coefficients from it, is retained unchanged, and what we correct is the
+mechanism deciding \emph{where} the learned model is queried.
+
+\subsection{Overlap with concurrent work}
+
+Wu \emph{et al.}~\cite{visionsysid2026} extend the same baseline concurrently
+and independently, introducing a vision-based friction prior, an S4 structured
+state-space residual in place of the MLP, and Nelder--Mead for the iterative
+Pacejka extraction. The pipeline described here independently contains an S4D
+temporal residual~\cite{gu2022s4d,gu2022s4}, a friction warm-start, and
+Nelder--Mead and differential-evolution solver options, so we claim none of the
+three as contributions. Three differences are technical rather than
+chronological. Our friction prior is proprioceptive, so it needs no camera and
+no textured-surface assumption. It is read from the \emph{curvature} of the
+axle force curve by a gated brush-model
+fit~\cite{fiala1954,acosta2017friction} rather than from utilised friction,
+which on a gentle lap measures \num{0.044} median on this vehicle and is only a
+lower bound (Section~\ref{subsec:frictionfloor}). And it is \emph{pinned}
+rather than used as an initialisation, because Section~\ref{subsec:bcd} shows
+the rollout fit cannot separate the peak factor from the cornering stiffness at
+any excitation, so a prior on $D$ the fit is free to move is overwritten within
+one cycle. Neither prior work is the fix: the degeneracy is located in the
+rollout excitation, not the initialisation, and to our knowledge the
+reachable-friction bound of Section~\ref{subsec:excitation} and its consequence
+for the virtual-data step have not been stated before.
+
+\subsection{Simulation platform and downstream consumer}
+
+CARLA~\cite{carla2017} supplies the sensor and scenario infrastructure used
+here. Its native dynamics come from the underlying PhysX wheeled-vehicle
+model~\cite{physxvehicle}, a saturating friction-and-stiffness tire law
+(Section~\ref{subsec:planttire}) rather than an empirical Magic Formula fit,
+which is why this study treats the simulator as a well-instrumented \emph{plant}
+to be identified and not as a source of ground-truth Pacejka coefficients.
+R-CARLA~\cite{rcarla2025} makes the dynamics model interchangeable, and
+Sagmeister \emph{et al.}~\cite{simfidelity2026} find that a controller's
+sensitivity to model fidelity is largest near the acceleration limits, where
+this study operates; CARLA has also hosted complete Formula Student Driverless
+stacks with ROS~2 interfaces \cite{carlaros2025}. Scaled
+platforms, F1TENTH~\cite{f1tenth2020} and the ForzaETH Race
+Stack~\cite{forzaeth2024}, provide the software context of the baseline;
+full-scale Formula Student Driverless systems~\cite{amz2020} the vehicle class
+targeted here. The identified model is consumed by a nonlinear MPC path-tracking
+controller built on \texttt{acados}~\cite{acados2022} with partial-condensing
+HPIPM~\cite{hpipm2020} \cite{liniger2015,kabzan2019lbmpc}, tracking a
+minimum-curvature raceline~\cite{heilmeier2020}. We claim no contribution to the
+controller; it appears only as the consumer that defines what an admissible
+identification is (Section~\ref{sec:integration}).

@@ -1,0 +1,109 @@
+% === I. INTRODUCTION =========================================================
+\section{Introduction}
+
+\IEEEPARstart{M}{odel-based} controllers for autonomous racing derive their
+performance from the fidelity of the vehicle model they carry
+\cite{liniger2015,kabzan2019lbmpc,forzaeth2024}. In the lateral channel that
+fidelity is dominated by the tire, simultaneously the physical bound on
+manoeuvrability and the least accessible component to measure
+\cite{pacejka2012book,amz2020}. Classical characterisation takes the vehicle
+off the track for steady-state circular or ramp-steer manoeuvres, at a
+logistical cost a race weekend rarely affords; identifying on track removes the
+logistics but brings back transients, noise and a racing line that is a poor
+excitation signal, and nonlinear least squares applied directly to lap data is
+brittle in exactly this regime \cite{ontrack2025}.
+
+Dikici \emph{et al.}~\cite{ontrack2025} propose the hybrid remedy that is the
+starting point of this paper: a small residual network trained on
+\SI{30}{\second} of ordinary lap data predicts the one-step error of a nominal
+single-track model; the corrected model is rolled out through a \emph{synthetic}
+quasi-steady steering sweep; Pacejka coefficients are fitted to that sweep; and
+each fit becomes the next nominal model. Because the sweep is generated rather
+than driven it can be made steady and noise-free, and the residual network only
+has to interpolate within its training distribution. On a 1:10 platform the
+procedure reports a \num{3.3}$\times$ lower one-step RMSE than nonlinear least
+squares under noise \cite{ontrack2025}.
+
+\subsection{Problem statement}
+
+This paper asks what the pipeline identifies when it is moved from a
+\SI{3.7}{\kilo\gram}, \SI{0.32}{\meter}-wheelbase platform to a full-scale
+Formula Student vehicle: \SI{269.6}{\kilo\gram}, \SI{1.53}{\meter} wheelbase,
+\SI{16}{\degree} of road-wheel lock, following a reference speed profile of
+\SIrange{9.6}{25.8}{\meter\per\second}. The question is identifiability, not
+parameter transfer, and two scale-dependent mechanisms, both latent at 1:10,
+break the estimate. First, \textbf{excitation collapses inside the virtual-data
+step}: the Pacejka fit never sees the recorded lap, only the synthetic rollout,
+whose reachable friction
+$\mu_{\mathrm{reach}}\!\approx\!v^{2}\delta_{\mathrm{sweep}}/(gL)$ is a property
+of the rollout configuration and not of the tire, and a rollout speed inherited
+from the scaled platform caps it at $0.43$ here. Below the tire's peak the Magic
+Formula degenerates to $F_{y}\approx F_{z}(BCD)\alpha$, only the product $BCD$
+is identifiable, and the bounded optimiser resolves the remaining freedom on a
+box edge \cite{ljung1999sysid,pacejka2012book}. Second, \textbf{lateral demand
+scales as $v^{2}$}, so a bad grip estimate is silent until it is catastrophic:
+one identified set with a peak friction coefficient of \num{0.40} tracked at
+\SI{0.16}{\meter} of cross-track error at \SI{11.1}{\meter\per\second} and
+\SI{41.89}{\meter} at \SI{27}{\meter\per\second} through the same controller
+(Section~\ref{subsec:gates}), and the scaled platform never reaches the speed at
+which that error becomes observable.
+
+One difference works in our favour. Because the study runs in the CARLA
+simulator \cite{carla2017} through a purpose-built ROS~2 interface, the
+simulator's own per-wheel telemetry (slip angle, normal load and lateral force)
+is available as ground truth, so an on-track identifier can be scored against
+the forces the plant actually generated.
+
+\subsection{Contributions}
+
+\begin{enumerate}
+\item \textbf{An identifiability analysis of the virtual-data step}
+(Section~\ref{subsec:excitation}): the closed-form reachable-friction bound
+above, and an \emph{excitation-aware rollout} that selects the rollout speed
+from the measured lap and warns when the configuration cannot reach the prior's
+peak. A grid over rollout speed, sweep amplitude and true peak factor on a known
+tire verifies it (Section~\ref{subsec:sweep}). This corrects the baseline
+method~\cite{ontrack2025} at any scale, and stays latent at 1:10 because a
+\SIrange{2}{4}{\meter\per\second} rollout is representative there and is not
+here.
+
+\item \textbf{Two structural properties of the loop, and the corrections they
+imply} (Section~\ref{subsec:contraction}): stage~3's residual depends on $B$,
+$C$ and $D$ only through their product, so the peak factor is not recoverable
+from the rollout \emph{at any excitation} and must be measured on the recorded
+trace and held; and the loop is a positive feedback path rather than a
+contraction, so stage~4 becomes a relaxed fixed-point iteration at
+$\beta=\num{0.20}$.
+
+\item \textbf{The corrections the bound implies}, on both sides of the fit
+(Sections~\ref{subsec:iterative} and~\ref{subsec:measurement}): a sweep bounded
+at $1.5\times$ the 99th percentile of the observed steering, a Tikhonov target
+frozen at the configured prior, slip angles built from the \emph{achieved}
+road-wheel angle, mass and wheelbase from measured static wheel loads, a
+friction warm start from the \emph{curvature} of the axle force curve, and
+physics-informed dynamics residuals normalised to the state-increment units of
+the data term, which the published form leaves a factor \num{2.3e5} apart.
+
+\item \textbf{Admissibility gates on derived physical quantities}
+(Section~\ref{sec:integration}) at the model-to-controller boundary --- axle
+cornering stiffness, understeer sign and critical speed, and grip ceiling
+against the trajectory's lateral demand --- rather than per-coefficient box
+checks, which cannot detect a degenerate fit or a pairwise-oversteering axle
+set.
+
+\item \textbf{A simulation architecture that supplies the ground truth, and a
+closed-loop evaluation on it} (Sections~\ref{subsec:platform}--\ref{subsec:data}
+and~\ref{sec:results}). The evaluation runs on a static \num{0.70} friction
+surface, deliberately not the \num{1.05} the configured tire prior was measured
+on, so a pipeline unable to move off its prior has nowhere to hide. Over three
+timed laps the corrected pipeline identifies axle cornering stiffness to
+\SI{3.2}{\percent} front and \SI{1.4}{\percent} rear and tracks the peak factor
+to \SI{11}{\percent}, against an inherited configuration that rails $D$ on its
+\num{2.0} bound in every cycle and overstates stiffness by
+\SIrange{118}{132}{\percent}. Axle force RMSE is \num{12.1}$\times$ and
+\num{10.5}$\times$ lower, and MPC lateral tracking error \SI{32}{\percent}
+lower, at unchanged solver cost.
+\end{enumerate}
+
+All results are obtained in simulation, and Section~\ref{sec:disc} states which
+conclusions are expected to transfer to hardware.

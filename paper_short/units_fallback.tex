@@ -1,0 +1,69 @@
+% =============================================================================
+% Minimal siunitx replacement.
+%
+% Loaded by main.tex ONLY when siunitx.sty is unavailable (on Debian/Ubuntu
+% siunitx ships in texlive-science, not texlive-latex-extra). It implements
+% exactly the macros this paper uses: \SI, \si, \num, \SIrange, \numrange and
+% the unit names \meter \second \gram \newton \radian \hertz \percent \degree
+% \g \kilo \milli \per \squared.
+%
+% All macros are declared robust: table captions are moving arguments
+% (written to the .lot file), and an expandable conditional breaks there.
+% Output matches siunitx closely; the one visible difference is that
+% \SIrange/\numrange print an en-dash here where siunitx prints " to ".
+% Install texlive-science to get the real package.
+% =============================================================================
+
+\makeatletter
+
+% Separator state. Armed (true) once a base unit has been emitted; disarmed
+% after a prefix and after \per, so "kilo newton per radian" sets no space
+% between k and N, nor around the solidus.
+\newif\ifsiu@prev
+\DeclareRobustCommand{\siu@sep}{\ifsiu@prev\,\fi}
+% \text{} (amsmath) so a unit typesets upright in BOTH text and math mode --
+% these macros are routinely used inside $...$, where a bare `m` would come out
+% as an italic math variable and `--` as two minus signs.
+\DeclareRobustCommand{\siu@unit}[1]{\siu@sep\text{#1}\siu@prevtrue}  % base unit
+\DeclareRobustCommand{\siu@pre}[1]{\siu@sep\text{#1}\siu@prevfalse}  % SI prefix
+\DeclareRobustCommand{\siu@div}[1]{\text{#1}\siu@prevfalse}          % solidus
+
+% Default (outside \si) meanings, so the unit names are always defined and
+% \renewcommand below always has a target.
+\DeclareRobustCommand{\meter}{m}
+\DeclareRobustCommand{\second}{s}
+\DeclareRobustCommand{\gram}{g}
+\DeclareRobustCommand{\newton}{N}
+\DeclareRobustCommand{\radian}{rad}
+\DeclareRobustCommand{\hertz}{Hz}
+\DeclareRobustCommand{\percent}{\%}
+\DeclareRobustCommand{\g}{\textit{g}}
+\DeclareRobustCommand{\kilo}{k}
+\DeclareRobustCommand{\milli}{m}
+\DeclareRobustCommand{\per}{/}
+\DeclareRobustCommand{\squared}{\ensuremath{^{2}}}
+\providecommand{\degree}{\ensuremath{^{\circ}}}
+
+\DeclareRobustCommand{\si}[1]{\begingroup
+  \siu@prevfalse
+  \renewcommand{\meter}{\siu@unit{m}}%
+  \renewcommand{\second}{\siu@unit{s}}%
+  \renewcommand{\gram}{\siu@unit{g}}%
+  \renewcommand{\newton}{\siu@unit{N}}%
+  \renewcommand{\radian}{\siu@unit{rad}}%
+  \renewcommand{\hertz}{\siu@unit{Hz}}%
+  \renewcommand{\percent}{\siu@unit{\%}}%
+  \renewcommand{\degree}{\siu@unit{\ensuremath{^{\circ}}}}%
+  \renewcommand{\g}{\siu@unit{\textit{g}}}%
+  \renewcommand{\kilo}{\siu@pre{k}}%
+  \renewcommand{\milli}{\siu@pre{m}}%
+  \renewcommand{\per}{\siu@div{/}}%
+  \renewcommand{\squared}{\ensuremath{^{2}}}%
+  #1\endgroup}
+
+\DeclareRobustCommand{\num}[1]{#1}
+\DeclareRobustCommand{\numrange}[2]{#1\text{--}#2}
+\DeclareRobustCommand{\SI}[2]{#1\,\si{#2}}
+\DeclareRobustCommand{\SIrange}[3]{#1\text{--}#2\,\si{#3}}
+
+\makeatother

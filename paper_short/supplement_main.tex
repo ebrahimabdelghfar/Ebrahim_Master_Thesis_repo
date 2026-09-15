@@ -1,0 +1,93 @@
+%==============================================================================
+% On-Track-SysID for a full-scale Formula Student vehicle in CARLA
+%
+% Template: IEEEtran (journal), same class/bst as paper/My_master_thesis/.
+% Build:  pdflatex main && bibtex main && pdflatex main && pdflatex main
+%==============================================================================
+
+\documentclass[journal]{IEEEtran}
+
+\usepackage{xcolor}
+
+\usepackage[pdftex]{graphicx}
+\graphicspath{{figures/}{pdf/}{photo/}{../graphs/comparison/}}
+\DeclareGraphicsExtensions{.pdf,.jpeg,.jpg,.png}
+
+\usepackage[cmex10]{amsmath}
+\usepackage{amssymb}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{rotating}
+\usepackage{eqparbox}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{threeparttable}
+\usepackage{url}
+% --- lightweight algorithm float ---------------------------------------------
+% float.sty ships with texlive-latex-recommended; the algorithm/algorithmicx
+% families do not, so the body below is plain LaTeX rather than a new
+% dependency.
+\usepackage{float}
+\newfloat{algorithm}{tbp}{loa}
+\floatname{algorithm}{Algorithm}
+\newcommand{\algline}[2]{\makebox[1.8em][r]{\scriptsize#1:}\ \ #2\par}
+\newcommand{\algin}[1]{\hspace*{#1em}}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
+% --- units -------------------------------------------------------------------
+% Prefer siunitx (Debian/Ubuntu: it ships in texlive-science, NOT in
+% texlive-latex-extra). If it is absent, fall back to units_fallback.tex, which
+% implements exactly the macros used here. The branches must not be arguments
+% to \IfFileExists -- a '#' inside such an argument is illegal -- hence the flag.
+\newif\ifhavesiunitx
+\IfFileExists{siunitx.sty}{\havesiunitxtrue}{\havesiunitxfalse}
+\ifhavesiunitx
+  \usepackage{siunitx}
+  \sisetup{detect-all, per-mode=symbol}
+  \DeclareSIUnit{\g}{\textit{g}}% g-force is not a predefined siunitx unit
+\else
+  \input{units_fallback}
+\fi
+
+% --- hyperlinks ---------------------------------------------------------------
+% Loaded after every other package, as hyperref requires. All URLs, citations,
+% and cross-references become clickable; hidelinks keeps the printed page free
+% of coloured boxes.
+\usepackage[hidelinks,breaklinks=true]{hyperref}
+
+\hyphenation{op-tical net-works semi-conduc-tor Pa-cej-ka iden-ti-fi-ca-tion}
+
+% --- convenience macros -------------------------------------------------------
+\newcommand{\vecx}{\mathbf{x}}
+\newcommand{\vecu}{\mathbf{u}}
+\newcommand{\vecz}{\mathbf{z}}
+\newcommand{\phip}{\Phi_{p}}
+\newcommand{\Fyf}{F_{y,f}}
+\newcommand{\Fyr}{F_{y,r}}
+\newcommand{\bridge}{\textsc{Carla\_ASU\_Bridge}}
+\newcommand{\sysid}{\textsc{On-Track-SysID}}
+
+%==============================================================================
+\begin{document}
+
+\title{Supplementary Material for\\
+Excitation-Aware On-Track System Identification\\
+at Full Scale: A Simulation Study}
+\author{}
+\maketitle
+\thispagestyle{plain}\pagestyle{plain}
+
+\noindent This document holds material moved out of the main paper: the
+residual model's physics-augmented inputs and objective, the temporal residual
+and the exact reduction of its cost, the per-phase identification timing, the
+axis-by-axis comparison with the baseline pipeline as published, and the
+supporting result figures. Nothing in the main paper's argument depends on it.
+Section, equation and table numbers of the form \emph{Section~V-D} refer to the
+main paper.
+
+\input{sections/supplement}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

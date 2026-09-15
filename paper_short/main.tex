@@ -1,0 +1,140 @@
+%==============================================================================
+% On-Track-SysID for a full-scale Formula Student vehicle in CARLA
+%
+% Template: IEEEtran (journal), same class/bst as paper/My_master_thesis/.
+% Build:  pdflatex main && bibtex main && pdflatex main && pdflatex main
+%==============================================================================
+
+\documentclass[journal]{IEEEtran}
+
+\usepackage{xcolor}
+
+\usepackage[pdftex]{graphicx}
+\graphicspath{{figures/}{pdf/}{photo/}{../graphs/comparison/}{../graphs/control/ours/}}
+\DeclareGraphicsExtensions{.pdf,.jpeg,.jpg,.png}
+
+\usepackage[cmex10]{amsmath}
+\usepackage{amssymb}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{rotating}
+\usepackage{eqparbox}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{threeparttable}
+\usepackage{url}
+% --- lightweight algorithm float ---------------------------------------------
+% float.sty ships with texlive-latex-recommended; the algorithm/algorithmicx
+% families do not, so the body below is plain LaTeX rather than a new
+% dependency.
+\usepackage{float}
+\newfloat{algorithm}{tbp}{loa}
+\floatname{algorithm}{Algorithm}
+\newcommand{\algline}[2]{\makebox[1.8em][r]{\scriptsize#1:}\ \ #2\par}
+\newcommand{\algin}[1]{\hspace*{#1em}}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
+% --- units -------------------------------------------------------------------
+% Prefer siunitx (Debian/Ubuntu: it ships in texlive-science, NOT in
+% texlive-latex-extra). If it is absent, fall back to units_fallback.tex, which
+% implements exactly the macros used here. The branches must not be arguments
+% to \IfFileExists -- a '#' inside such an argument is illegal -- hence the flag.
+\newif\ifhavesiunitx
+\IfFileExists{siunitx.sty}{\havesiunitxtrue}{\havesiunitxfalse}
+\ifhavesiunitx
+  \usepackage{siunitx}
+  \sisetup{detect-all, per-mode=symbol}
+  \DeclareSIUnit{\g}{\textit{g}}% g-force is not a predefined siunitx unit
+\else
+  \input{units_fallback}
+\fi
+
+% --- hyperlinks ---------------------------------------------------------------
+% Loaded after every other package, as hyperref requires. All URLs, citations,
+% and cross-references become clickable; hidelinks keeps the printed page free
+% of coloured boxes.
+\usepackage[hidelinks,breaklinks=true]{hyperref}
+
+\hyphenation{op-tical net-works semi-conduc-tor Pa-cej-ka iden-ti-fi-ca-tion}
+
+% --- convenience macros -------------------------------------------------------
+\newcommand{\vecx}{\mathbf{x}}
+\newcommand{\vecu}{\mathbf{u}}
+\newcommand{\vecz}{\mathbf{z}}
+\newcommand{\phip}{\Phi_{p}}
+\newcommand{\Fyf}{F_{y,f}}
+\newcommand{\Fyr}{F_{y,r}}
+\newcommand{\bridge}{\textsc{Carla\_ASU\_Bridge}}
+\newcommand{\sysid}{\textsc{On-Track-SysID}}
+
+%==============================================================================
+\begin{document}
+
+\title{Excitation-Aware On-Track System Identification\\
+at Full Scale: A Simulation Study}
+
+\author{Ebrahim~Abdelghfar~Ebrahim$^{1}$,
+        Hazem~Abuelanin$^{2}$,
+        Mohamed~Abdelaziz$^{1}$,
+        Mohamed~Omar~Mohamed~Elsayed$^{1}$,
+        Sherif~Said$^{1}$
+\thanks{$^{1}$The authors are with the Faculty of Engineering, Ain Shams
+University, Cairo, Egypt, and the Autotronics Research Lab (ARL), Cairo, Egypt.}
+\thanks{Corresponding author: Ebrahim Abdelghfar Ebrahim (e-mail: ebrahimabdelghfar550@gmail.com).}}
+
+\markboth{IEEE Transactions on Intelligent Vehicles}%
+{Abdelghfar \MakeLowercase{\textit{et al.}}: Excitation-Aware On-Track System Identification at Full Scale}
+
+\maketitle
+
+\input{sections/abstract}
+
+\input{sections/intro}
+\input{sections/related_work}
+\input{sections/problem}
+\input{sections/platform}
+\input{sections/method}
+\input{sections/experiments}
+\input{sections/integration}
+\input{sections/discussion}
+\input{sections/conclusion}
+
+\appendices
+\input{sections/appendix}
+
+\section*{Acknowledgment}
+The \sysid{} pipeline studied here originates from the ForzaETH Race Stack and
+the work of Dikici \emph{et al.}~\cite{ontrack2025}, released under an
+open-source licence; this paper reports a port, a correction, and an extension
+of that work rather than a reimplementation from scratch.
+
+\section*{Funding}
+This work received no specific grant from any funding agency in the public,
+commercial, or not-for-profit sectors.
+
+\section*{Conflict of Interest}
+The authors declare no conflict of interest.
+
+\section*{Ethics}
+All results in this paper are obtained in simulation. No experiment involved
+human subjects, personal data, or the operation of a physical vehicle, so no
+human-subjects approval and no vehicle-safety protocol were required.
+
+\section*{Data and Code Availability}
+The identification package, the ROS~2 bridge, the MPC and the benchmarking
+packages, the scenario definitions, the exported result CSVs behind every
+figure and table of Section~\ref{sec:results}, and the sweep generator behind
+Table~\ref{tab:sweep} are in the repositories listed in
+Appendix~\ref{sec:refimpl}; the top-level project repository is
+\url{https://github.com/ebrahimabdelghfar/Ebrahim_Master_Thesis_repo/tree/feat-follow-premade-racing-track}. \sysid{} is an extension of the ForzaETH release
+of~\cite{ontrack2025} and is distributed under the MIT licence it declares in
+its package manifest; \bridge{} is GPL-3.0. The two
+are used as separate ROS~2 overlays communicating only over ROS~2 topics and
+services, and neither links against the other, so no combined-work obligation
+arises between them; the identification and control packages in this work are
+released under the MIT terms the \sysid{} upstream requires.
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
