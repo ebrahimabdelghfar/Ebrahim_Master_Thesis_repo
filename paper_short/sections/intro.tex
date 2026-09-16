@@ -63,7 +63,8 @@ the forces the plant actually generated.
 above, and an \emph{excitation-aware rollout} that selects the rollout speed
 from the measured lap and warns when the configuration cannot reach the prior's
 peak. A grid over rollout speed, sweep amplitude and true peak factor on a known
-tire verifies it (Section~\ref{subsec:sweep}). This corrects the baseline
+tire both verifies the bound and selects the rollout speed floor and sweep-amplitude
+ceiling the pipeline ships (Section~\ref{subsec:sweep}). This corrects the baseline
 method~\cite{ontrack2025} at any scale, and stays latent at 1:10 because a
 \SIrange{2}{4}{\meter\per\second} rollout is representative there and is not
 here.

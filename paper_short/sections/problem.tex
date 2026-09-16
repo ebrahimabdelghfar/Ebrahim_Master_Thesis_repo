@@ -29,9 +29,10 @@ $\phip=[B_{f},C_{f},D_{f},E_{f},B_{r},C_{r},D_{r},E_{r}]$. The identification
 state and input are $\vecx=[v_{y},\omega]$ and $\vecu=[v_{x},\delta]$, and the
 nominal one-step map is $\hat\vecx_{k+1}=f(\vecx_{k},\vecu_{k},\phip)$. The
 baseline discretises \eqref{eq:vydot}--\eqref{eq:omdot} by explicit Euler at
-$T_{s}$; we keep Euler as the default and expose Runge--Kutta as an option,
+$T_{s}$; the integrator is selectable and the shipped configuration uses RK4,
 because the full-scale vehicle's lateral mode is stiffer relative to $T_{s}$
-than the scaled platform's.
+than the scaled platform's. The inherited arm of Section~\ref{sec:results}
+keeps Euler.
 
 \subsection{Objective and derived quantities}
 
@@ -59,11 +60,11 @@ $v_{\mathrm{crit}}=L\sqrt{C_{f}C_{r}/\big(m(l_{f}C_{f}-l_{r}C_{r})\big)}$
 \subsection{Practical identifiability under limited excitation}
 \label{subsec:identifiability}
 
-Two properties of \eqref{eq:mf} are used throughout. First, its slope at zero
+Two properties of \eqref{eq:mf} are used throughout. Its slope at zero
 slip is $F_{z}BCD$, so the cornering stiffness depends on the coefficients only
-through that product, and $E$ drops out. Second, if the data
+through that product, and $E$ drops out. And if the data
 never approaches the peak, \eqref{eq:mf} linearises to $F_{y}\approx
-F_{z}(BCD)\alpha$ and $B$, $C$, $D$ become mutually unidentifiable. Given data
+F_{z}(BCD)\alpha$, leaving $B$, $C$ and $D$ mutually unidentifiable. Given data
 that does reach the peak, \eqref{eq:mf} is \emph{structurally}
 identifiable~\cite{bellman1970structural}; what fails here is \emph{practical}
 identifiability~\cite{raue2009practical}, the standard persistent-excitation

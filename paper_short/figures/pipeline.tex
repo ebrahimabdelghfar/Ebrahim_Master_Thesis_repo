@@ -106,7 +106,7 @@
   {\textbf{Admissibility gate}\\[1pt]
    grip ceiling vs.\ demand, understeer sign, stiffness};
 \node[blk=26mm, below=6mm of gate, fill=black!3] (mpc)
-  {\textbf{NMPC}\\[1pt] \texttt{acados}, $N=100$};
+  {\textbf{NMPC}\\[1pt] \texttt{acados}, $N=20$};
 
 \draw[gateflow] (s4.south) -- (gate.north);
 \draw[gateflow] (gate) -- node[elbl]{\texttt{sysid/update\_params}} (mpc);

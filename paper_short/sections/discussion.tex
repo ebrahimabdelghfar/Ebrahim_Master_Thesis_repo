@@ -73,17 +73,20 @@ front-axle $\mu$ is applied to both (Section~\ref{subsec:frictionfloor}). The
 quasi-steady argument making $\mu_{f}=\mu_{r}$ holds on a homogeneous surface
 and would not survive a split-$\mu$ one, which this sensor set cannot detect in
 the first place.
-\item \textbf{The two configurations differ in five settings at once}
+\item \textbf{The two configurations differ in eight settings at once}
 (Table~\ref{tab:scenarios}), so Section~\ref{subsec:summary} attributes nothing
-to the residual architecture, the loss, the solver, the warm start or the
-relaxation individually. Section~\ref{subsec:ablations} does attribute them, but
-by offline replay on recorded buffers, so its ordering is not a closed-loop
-ordering. The S4D figure there (\SI{21}{\percent} on force RMSE at matched
+to the residual architecture, the objective, the integrator, the sweep bound,
+the solver, the regularisation, the warm start or the relaxation individually.
+Section~\ref{subsec:ablations} does attribute four of the eight, but by offline
+replay on recorded buffers, so its ordering is not a closed-loop ordering, and
+the integrator, the sweep bound and the regularisation are not separated at
+all. The S4D figure there (\SI{21}{\percent} on force RMSE at matched
 settings) has the same status: we report it as a measured ablation and not as a
 reproduction of the closed-loop S4 improvement of~\cite{visionsysid2026}. The excitation-aware rollout, this paper's central
 contribution, is active in \emph{both} arms, so the closed-loop comparison is
-not evidence for the identifiability correction; the evidence for that is the
-sweep of Section~\ref{subsec:sweep}.
+not evidence for the identifiability correction; the evidence for that, and the
+search that fixes its operating point, is the sweep of
+Section~\ref{subsec:sweep}.
 \item \textbf{The physics-informed objective buys nothing measurable here.}
 Once its units are reconciled with the data term and the loop is damped, it is
 indistinguishable from a plain one-step MSE on this manoeuvre. It is retained

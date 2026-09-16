@@ -310,9 +310,9 @@ are inherited unchanged; what differs is the configuration of the virtual-data
 step, the relaxation on the loop closing it, the regularisation topology, the
 measurement chain, and the contract at
 the output. Table~III of the main paper's comparison is a subset of these axes:
-the rollout correction of Section~V-B of the main paper is active in both
-runs of Section~VI-C of the main paper, so that section measures the remaining
-five settings and not the rollout.
+the rollout \emph{speed} of Section~V-B of the main paper is taken from the
+measured lap in both runs of Section~VI-C of the main paper, so that section
+measures the remaining eight settings and not the rollout speed.
 
 \begin{table}[t]
 \caption{The baseline pipeline~\cite{ontrack2025} against this work, on the
@@ -336,7 +336,9 @@ Sweep amplitude & Fixed \SI{0.4}{\radian} &
 $1.5P_{99}(|\delta_{\mathrm{obs}}|)$, clipped to
 $[\delta_{\min},\delta_{\max}]$\\
 Regularisation & None; each fit is the next start point &
-Tikhonov to a \emph{frozen} prior; start point still tracks\\
+Tikhonov to a \emph{frozen} prior, $\lambda=\num{0.05}$; start point still
+tracks\\
+Integrator & Explicit Euler at $T_{s}$ & RK4 shipped, Euler selectable\\
 Steering signal & Command & Achieved road-wheel angle\\
 Mass, geometry & Configuration file & Measured static wheel loads\\
 Friction prior & --- & Per-axle brush fit of $(C_{\alpha},\mu)$ from IMU and
@@ -463,7 +465,7 @@ between the configurations is tail mass, not centre.}
 \centering
 \includegraphics[width=\textwidth]{state_timeseries_by_scenario}
 \caption{Estimated states against truth over the run, one row per
-configuration, \SI{580}{\second} and \SI{555}{\second} of driving. At
+configuration, \SI{905}{\second} and \SI{919}{\second} of simulated driving. At
 this compression the traces overlie their ground truth almost everywhere:
 a one-step metric on a smooth racing line is close to
 uninformative, and the visible departures are the yaw-rate excursions that

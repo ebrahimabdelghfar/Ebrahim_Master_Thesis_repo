@@ -18,8 +18,11 @@ the geometry does (51.9/48.1), a \SI{1.4}{\percent} disagreement, below the
 level at which any conclusion here would change.
 
 \emph{A3--A4. CG height and steering sign.} $h_{\mathrm{cg}}=\SI{0.3}{\meter}$
-is carried but unused: the single-track model neglects load transfer, following
-the baseline, and normal loads are static. \texttt{feedback/\allowbreak
+is carried but not measured. The single-track identification model neglects
+load transfer, following the baseline, and its normal loads are static; the
+only consumer of $h_{\mathrm{cg}}$ is the longitudinal transfer term of the
+friction warm start (Section~\ref{subsec:friction}), where it moves the axle
+loads by up to \SI{14}{\percent} at the \SI{0.35}{\g} the fit admits. \texttt{feedback/\allowbreak
 steering\_angle} is published in degrees and treated as the front road-wheel
 angle, positive left, verified against the front-left wheel joint state to
 within \SI{0.5}{\percent}; left and right road wheels are not distinguished.
@@ -37,15 +40,19 @@ sweep still reaches $1.5\times$ the observed 99th percentile of $|\delta|$, a
 choice that is empirical rather than derived.
 
 \emph{A7. Simulator determinism and timing.} CARLA runs in synchronous mode with
-a \SI{0.033}{\second} physics step; sim time advances faster than wall time
-($\approx1.9\times$ on our hardware), and all identification data is stamped
-from the simulation clock.
+a \SI{0.033}{\second} physics step; sim time advances faster than wall time, at
+a ratio set by the host load and therefore not identical across runs
+(\num{1.56} and \num{1.66} on the two runs of Section~\ref{sec:results}). All
+identification and force-validation data is stamped from the simulation clock,
+while the controller node stamps its own metrics on the wall clock; the two are
+never mixed inside one metric (Section~\ref{subsec:setup}).
 
 \emph{A8. Software configuration of record.} ROS~2 Humble, Python 3.10, PyTorch
 with CUDA on an RTX~2080-class GPU; the bridge is a separate overlay; CARLA
 server 0.9.16 / Unreal Engine 4.26; acados 0.5.5 with partial-condensing HPIPM.
-The identifier's acquisition timer runs at \SI{50}{\hertz} (\SI{20}{\hertz} is
-the controller's period) with a \SI{30}{\second} buffer, six co-identification
+The identifier's acquisition timer runs at \SI{50}{\hertz} (the controller runs
+at \SI{20}{\hertz}, a \SI{50}{\milli\second} period) with a \SI{30}{\second}
+buffer, six co-identification
 iterations, 200 training epochs, full-batch Adam at $5\times10^{-4}$, and
 $T_{s}=\SI{0.035}{\second}$. \texttt{nn\_train} seeds PyTorch and NumPy at
 \num{42}; \texttt{pacejka\_solver.seed} is \texttt{null} in both shipped

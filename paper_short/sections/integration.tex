@@ -4,7 +4,7 @@
 
 The identified model leaves the pipeline through one interface. A nonlinear MPC
 path-tracking controller (acados~\cite{acados2022}, partial-condensing
-HPIPM~\cite{hpipm2020}, horizon $N=20$ at a \SI{20}{\hertz} control period)
+HPIPM~\cite{hpipm2020}, horizon $N=20$, run at \SI{20}{\hertz})
 carries the same single-track model as the identifier and consumes $\phip$
 directly through \eqref{eq:mf}, pushed over a ROS~2 service at the end of each
 identification cycle. We claim no contribution to the controller design; it

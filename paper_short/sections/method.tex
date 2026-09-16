@@ -71,10 +71,12 @@ reduction in its training cost, an exact algebraic rewrite that changes no
 identified coefficient; both are in the supplementary material, and the
 identifiability result below holds for either architecture.
 
-The input space is augmented with the axle slip angles of \eqref{eq:slip}:
-since the tire law \eqref{eq:mf} is a function of $(\alpha,F_{z})$ and of
-nothing else, supplying $\alpha_{f},\alpha_{r}$ directly spares the network a
-relation the model already states. The optional physics-informed objective
+The input space of the \texttt{s4} arm is augmented with the axle slip angles
+of \eqref{eq:slip}: since the tire law \eqref{eq:mf} is a function of
+$(\alpha,F_{z})$ and of nothing else, supplying $\alpha_{f},\alpha_{r}$
+directly spares the network a relation the model already states. The
+augmentation is also available on the MLP, at 16 extra weights
+($58\rightarrow74$ parameters), and is off in the \texttt{baseline} arm. The optional physics-informed objective
 \begin{equation}
 \mathcal{L}=\mathcal{L}_{\mathrm{data}}
 +\lambda_{s}\mathcal{L}_{\mathrm{steady}}
@@ -206,8 +208,10 @@ produced through its slope $F_{z}BCD$. The fit's residual therefore
 depends on $(B,C,D)$ only through their product, and $D$ is the free coordinate
 of the hyperbola $BCD=\mathrm{const}$. Replayed on five identification buffers
 of a live $\mu=\num{1.05}$ run, the product is recovered tightly, $BCDF_{z,f}$
-over \SIrange{18.9}{21.1}{\kilo\newton\per\radian} against a plant measured at
-\SI{20.4}{\kilo\newton\per\radian}, while the $D$ reaching that same product
+over \SIrange{18.9}{21.1}{\kilo\newton\per\radian} against the
+\SI{20.4}{\kilo\newton\per\radian} the plant carries at $\bar F_{z}=1$
+(Table~\ref{tab:ref}; that run stays below the peak, so the fitted and
+closed-form slopes agree there), while the $D$ reaching that same product
 ranges over \numrange{0.69}{2.00}. $D$ must therefore not be asked of this fit
 at all. It is measured on the \emph{recorded} trace by the brush estimator of
 Section~\ref{subsec:friction}, which fits $F_{y}(\alpha)$ directly and is not
@@ -289,7 +293,10 @@ F_{y}=\mu F_{z}\big(1-(1-\xi)^{3}\big)\mathrm{sgn}\,\alpha,\quad
 \label{eq:brush}
 \end{equation}
 by bounded nonlinear least squares with a soft-$\ell_{1}$
-loss~\cite{virtanen2020scipy,branch1999trust}. The brush model replaces
+loss~\cite{virtanen2020scipy,branch1999trust}, over samples with
+$|a_{x}|\le\SI{0.35}{\g}$, the fit being pure-lateral while combined slip
+shrinks the lateral capacity~\cite{acosta2017friction}. The brush model
+replaces
 \eqref{eq:mf} here because it has two parameters, both of which the manoeuvre
 can support, against the four of the model whose non-identifiability at low slip
 this paper is about. What beats the utilisation bound is that $\mu$ enters
@@ -309,8 +316,9 @@ estimate is released only when four conditions hold: absolute grip demand
 $\max|F_{y}|/F_{z}\ge\num{0.40}$, peak friction utilisation
 $\max|F_{y}|/(\hat\mu F_{z})\ge\num{0.40}$, relative precision
 $\sigma_{\hat\mu}/\hat\mu\le\num{0.15}$ from the Gauss--Newton covariance, and
-$\hat\mu$ not resting on its own search bound; otherwise the module logs which
-condition failed and falls back to the utilisation bound. The first two are the
+$\hat\mu$ not resting on its own search bound, $[\num{0.2},\num{2.0}]$;
+otherwise the module logs which condition failed and falls back to the
+utilisation bound. The first two are the
 same quantity with and without the fit in the denominator, and both are needed:
 the utilisation test divides by the \emph{fitted} $\hat\mu$ of the same
 least-squares call, so an axle whose $\mu$ comes out too low clears the gate on
