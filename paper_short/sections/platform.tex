@@ -39,7 +39,7 @@ Quantity  & Value & Unit\\
 Body mass (configured) & 240.0 & \si{\kilo\gram}\\
 Static wheel load (total)      & 2644.5 & \si{\newton}\\
 Total (kerb) mass $m$\textsuperscript{a} & 269.6 & \si{\kilo\gram}\\
-Front/rear static split        & 51.2 / 48.8 & \si{\percent}\\
+Front/rear static split\textsuperscript{b}        & 51.2 / 48.8 & \si{\percent}\\
 Wheelbase $L$                  & 1.5334 & \si{\meter}\\
 $l_{f}$ / $l_{r}$              & 0.7381 / 0.7953 & \si{\meter}\\
 Yaw inertia $I_{z}$\textsuperscript{c} & 51.1 & \si{\kilo\gram\meter\squared}\\
@@ -54,7 +54,13 @@ Realised peak axle friction    & 0.71 & ---\\
 \vspace{2pt}
 {\raggedright\footnotesize \textsuperscript{a}Total static wheel load divided
 by $g$; this is the mass every equation in this paper uses, not the configured
-body mass. 
+body mass.
+\textsuperscript{b}The per-axle loads used elsewhere in this paper
+(Table~\ref{tab:ref}, Section~\ref{sec:results}), $F_{z,f}=\SI{1373}{\newton}$
+and $F_{z,r}=\SI{1274}{\newton}$, follow $m,l_{f},l_{r}$ through the static
+load-transfer split ($51.9/48.1\,\si{\percent}$) rather than this directly
+measured one; Appendix~\ref{subsec:assumptions} (A2) reports the
+\SI{1.4}{\percent} disagreement between the two splits.
 \textsuperscript{c}Assumed; see Section~\ref{subsec:assumptions}.
 \textsuperscript{d}A scenario parameter, not a vehicle property.
 \textsuperscript{e}Configured wheel friction multiplied by the road surface's

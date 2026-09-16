@@ -28,7 +28,7 @@ two runs last \SI{906.6}{\second} and \SI{920.7}{\second}.
 Every run uses a \emph{static} surface: the per-wheel coefficient is held at its
 configured \num{1.0}, and the road-surface factor of \num{0.70} PhysX applies on
 top of it makes the effective coefficient \num{0.70}, constant to the last digit
-the simulator reports over all \num{10744} and \num{12025} force-validation
+the simulator reports over all \num{10744} and \num{12026} force-validation
 samples of the two runs. It is deliberately \emph{not} the $\mu=\num{1.05}$
 surface the tire prior was measured on
 (Section~\ref{subsubsec:priorprovenance}), so an arm that cannot move off
@@ -284,7 +284,7 @@ MPC solve, RMS / max [\si{\milli\second}] & 0.399 / 2.604 & \textbf{0.380 / 2.56
 \multicolumn{3}{@{}l}{\emph{Axle lateral force against per-wheel telemetry}}\\
 Front / rear RMSE [\si{\newton}] & \textbf{27.2 / 33.2} & 329.6 / 348.4\\
 Front / rear $R^{2}$ & \textbf{0.993 / 0.987} & $-0.160$ / $-0.461$\\
-Front / rear max abs.\ error [\si{\newton}] & \textbf{264 / 135} & 1295 / 1316\\
+Front / rear max abs.\ error [\si{\newton}] & \textbf{130 / 134} & 1249 / 1219\\
 \addlinespace
 \multicolumn{3}{@{}l}{\emph{Peak friction against the plant's $\mu=0.70$}}\\
 Front / rear $\mu$ RMSE, whole run & \textbf{0.145 / 0.142} & 1.300 / 1.300\\
@@ -444,7 +444,7 @@ Level~1 of the validation protocol is reported against a persistence baseline
 (next state equals last measured state) written by the same benchmark node.
 \oursarm{} leads on both signals, by an order of magnitude on lateral
 velocity ($R^{2}$ \num{0.998} against \num{0.709}) and by a factor of two on yaw
-rate ($R^{2}$ \num{0.894} against \num{0.514}); in
+rate ($R^{2}$ \num{0.892} against \num{0.527}); in
 Fig.~\ref{fig:errhist}(b)--(c) the separation on $v_{y}$ is in the centre of the
 distribution, while on $\omega$ the two share a centre and differ in tail mass.
 Neither model beats persistence at the \SI{0.035}{\second} model step, the skill
@@ -462,8 +462,8 @@ confirming the direction the axle-force and closed-loop comparisons establish.
 shared bin edges over the pooled central \SI{99}{\percent} and normalised to
 each run's sample count; both are centred, and \basearm{}'s
 distribution is roughly an order of magnitude wider at every quantile (maximum
-absolute error \SI{1295}{\newton} against \SI{264}{\newton} front,
-\SI{1316}{\newton} against \SI{135}{\newton} rear). (b) One-step lateral
+absolute error \SI{1249}{\newton} against \SI{130}{\newton} front,
+\SI{1219}{\newton} against \SI{134}{\newton} rear). (b) One-step lateral
 velocity, where \oursarm{} is an order of magnitude tighter
 (\SI{0.014}{\meter\per\second} against \SI{0.156}{\meter\per\second} RMSE).
 (c) One-step yaw rate, where the configurations differ in tail mass rather than

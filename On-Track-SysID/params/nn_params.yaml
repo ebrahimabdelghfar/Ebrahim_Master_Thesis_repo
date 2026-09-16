@@ -1,15 +1,10 @@
 data_collection_duration: 30
 num_of_iterations: 6   # NN-train <-> Pacejka-refit co-identification loop count (README-documented, was previously hardcoded and ignored)
 sample_dt: 0.035         # Nominal integration step for generate_predictions.py, simulated_data_gen
-                        # and the physics-informed loss. EMPIRICAL: it is neither 1/rate
-                        # (0.020 s, the acquisition timer in on_track_sys_id.py) nor the
-                        # CARLA physics step (0.033 s). Kept because identification at
-                        # 0.020 and 0.035 returns the same accepted coefficients.
 nn_architecture: "s4"   # options: baseline | wide | physics_inputs | ensemble | s4
-
 ode_solver: "rk4" # options: euler | rk2 | rk4
-
 loss_mode: physics_informed # options: mse | physics_informed
+
 physics_loss:
   lambda_steady: 0.1
   lambda_symmetry: 0.05
