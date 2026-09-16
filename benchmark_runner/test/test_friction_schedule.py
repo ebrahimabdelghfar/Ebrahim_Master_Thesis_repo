@@ -1,7 +1,7 @@
 """The three LLA-MPC friction schedules, and where their steps land.
 
 `_mu_at` is pure arithmetic over a clock and the lap monitor, so it is tested
-without a ROS graph: the node is built with its publisher and timer stubbed.
+without a ROS graph: the node is built with its service client and timer stubbed.
 """
 import sys
 from pathlib import Path
@@ -42,21 +42,25 @@ class _FakeTimer:
 
 
 def _build(schedule, tmp_path, lap_monitor=None):
-    original_pub = Node.create_publisher
+    original_client = Node.create_client
     original_timer = Node.create_timer
-    Node.create_publisher = lambda self, msg_type, topic, qos: _FakePublisher()
+    Node.create_client = lambda self, srv_type, srv_name: _FakeClient()
     Node.create_timer = lambda self, period, cb: _FakeTimer()
     try:
         return FrictionSchedule(
             schedule, NOMINAL, tmp_path / 'mu_commanded.csv', lap_monitor=lap_monitor)
     finally:
-        Node.create_publisher = original_pub
+        Node.create_client = original_client
         Node.create_timer = original_timer
 
 
-class _FakePublisher:
-    def publish(self, msg):
-        pass
+class _FakeClient:
+    def __init__(self):
+        self.calls = []
+
+    def call_async(self, request):
+        self.calls.append(request.friction)
+        return None
 
 
 @pytest.fixture(autouse=True)
@@ -120,6 +124,15 @@ def test_step_mid_lap_1_does_not_fire_during_the_out_lap(tmp_path):
     monitor = _FakeLapMonitor(completed=0, wraparounds=0, fraction=0.80)
     node = _build('step40_mid_lap1', tmp_path, monitor)
     assert node._mu_at(2.0) == pytest.approx(NOMINAL)
+    node.close()
+
+
+def test_the_service_is_called_only_when_the_command_moves(tmp_path):
+    node = _build('constant', tmp_path)
+    node._send(NOMINAL)
+    node._send(NOMINAL)
+    node._send(0.6 * NOMINAL)
+    assert node._client.calls == [NOMINAL, 0.6 * NOMINAL]
     node.close()
 
 

@@ -1,9 +1,10 @@
 """Drives the plant's tire friction over a run, and records what it commanded.
 
-The bridge exposes `/sim/control/tire_friction` (`std_msgs/Float32`), applied via
-`ApplyPhysicsControl` with the rigid-body velocity sampled and written straight
-back, so grip can change while the car is driving. That is the mechanism
-paper/sections/experiments.tex SVI-I specifies; nothing published to it before.
+The bridge exposes `/sim/control/set_tire_friction`
+(`sim_manager_msgs/SetTireFriction`), applied via `ApplyPhysicsControl` with the
+rigid-body velocity sampled and written straight back, so grip can change while
+the car is driving. That is the mechanism paper/sections/experiments.tex SVI-I
+specifies; nothing called it before.
 
 Schedules follow LLA-MPC, as the paper does:
 
@@ -28,13 +29,13 @@ import threading
 import time
 
 from rclpy.node import Node
-from std_msgs.msg import Float32
+from sim_manager_msgs.srv import SetTireFriction
 
 SCHEDULES = ('constant', 'decay_2pct_s', 'step40_end_lap1', 'step40_mid_lap1')
 
 DECAY_PER_S = 0.02
 STEP_FACTOR = 0.6
-MU_FLOOR = 0.05          # PhysX needs a positive coefficient; a decaying run is
+MU_FLOOR = 0.5          # PhysX needs a positive coefficient; a decaying run is
                          # meaningless long before this, but it must not reach 0.
 PUBLISH_HZ = 30.0        # the sim's own step: fixed_delta_seconds 0.033
 
@@ -42,14 +43,15 @@ PUBLISH_HZ = 30.0        # the sim's own step: fixed_delta_seconds 0.033
 class FrictionSchedule(Node):
 
     def __init__(self, schedule, nominal_mu, csv_path, lap_monitor=None,
-                 topic='/sim/control/tire_friction'):
+                 service='/sim/control/set_tire_friction'):
         super().__init__('benchmark_friction_schedule')
         if schedule not in SCHEDULES:
             raise ValueError(f'unknown friction_schedule {schedule!r}, expected one of {SCHEDULES}')
         self.schedule = schedule
         self.nominal_mu = float(nominal_mu)
         self.lap_monitor = lap_monitor
-        self._pub = self.create_publisher(Float32, topic, 10)
+        self._client = self.create_client(SetTireFriction, service)
+        self._sent_mu = None
         self._t0 = None
         self._stepped = False
         self._lock = threading.Lock()
@@ -67,8 +69,17 @@ class FrictionSchedule(Node):
                 self._t0 = now
             t = now - self._t0
         mu = self._mu_at(t)
-        self._pub.publish(Float32(data=float(mu)))
+        self._send(mu)
         self._csv.writerow([f'{t:.3f}', f'{mu:.6f}', self.schedule])
+
+    def _send(self, mu):
+        """Call the service only when the command moved - a set is idempotent,
+        and each call rebuilds the wheel physics on the plant side."""
+        mu = float(mu)
+        if self._sent_mu is not None and abs(mu - self._sent_mu) < 1e-6:
+            return None
+        self._sent_mu = mu
+        return self._client.call_async(SetTireFriction.Request(friction=mu))
 
     def _mu_at(self, t):
         if self.schedule == 'constant':
@@ -97,10 +108,11 @@ class FrictionSchedule(Node):
     def restore_nominal(self):
         """Put the surface back before the next scenario configures the bridge."""
         self._timer.cancel()
-        msg = Float32(data=float(self.nominal_mu))
-        for _ in range(5):
-            self._pub.publish(msg)
-            time.sleep(0.05)
+        self._sent_mu = None            # force the call even if mu never moved
+        future = self._send(self.nominal_mu)
+        deadline = time.monotonic() + 2.0
+        while not future.done() and time.monotonic() < deadline:
+            time.sleep(0.02)            # the executor spins in the runner's thread
         self._csv.writerow([f'{math.nan}', f'{self.nominal_mu:.6f}', 'restore'])
 
     def close(self):

@@ -75,7 +75,7 @@ class Aborted(ScenarioFailed):
 
 
 # Ctrl-C must NOT tear the ROS context down under us: the teardown itself needs a
-# live context (it publishes the nominal friction back and calls the bridge's
+# live context (it commands the nominal friction back and calls the bridge's
 # lifecycle services), and it must reach the launches so their benchmark nodes
 # get their graceful SIGINT and export. So rclpy's own signal handlers are
 # disabled (see main) and this flag is what stops the lap wait instead.
@@ -269,7 +269,7 @@ class BenchmarkRunner:
                 log_dir / 'adaptive_stack.log')
             launches['adaptive_stack'].start()
 
-            # The same mu the config was patched with: this publishes at 30 Hz
+            # The same mu the config was patched with: this commands the plant
             # and would otherwise overwrite the wheels with the sweep default
             # one tick after the bridge came up.
             friction = FrictionSchedule(

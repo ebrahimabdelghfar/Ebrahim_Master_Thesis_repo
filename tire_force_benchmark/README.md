@@ -133,7 +133,7 @@ Signals benchmarked: FL/FR/RL/RR Fy, front/rear axle Fy sum, total vehicle Fy su
 
 ### Peak friction ($\mu$) benchmarking
 
-`Fy = Fz · D · sin(...)`, so the identified Pacejka `D` coefficient *is* the axle peak friction, and is scored directly against the `tire_friction` the tire telemetry reports (`front_mu` = `C_Pf[2]` vs. the FL/FR mean, `rear_mu` = `C_Pr[2]` vs. the RL/RR mean). Ground truth here is the road-multiplied value the physics step actually uses — not the configured `vehicle.physics.wheels[].tire_friction` — so it also follows a runtime `/sim/control/tire_friction` change.
+`Fy = Fz · D · sin(...)`, so the identified Pacejka `D` coefficient *is* the axle peak friction, and is scored directly against the `tire_friction` the tire telemetry reports (`front_mu` = `C_Pf[2]` vs. the FL/FR mean, `rear_mu` = `C_Pr[2]` vs. the RL/RR mean). Ground truth here is the road-multiplied value the physics step actually uses — not the configured `vehicle.physics.wheels[].tire_friction` — so it also follows a runtime `/sim/control/set_tire_friction` change.
 
 The estimate is held between identifications, so the traces are step functions: ground truth moves only when the surface or the friction command changes, the estimate only when a new model is accepted. No samples are scored before the first identification arrives.
 

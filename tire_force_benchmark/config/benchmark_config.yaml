@@ -47,7 +47,7 @@ tire_force_benchmark_node:
     nominal_source: carla_physx
 
     # The bridge publishes CARLA's live per-wheel physics here (latched JSON,
-    # republished on every change including a runtime /sim/control/tire_friction
+    # republished on every change including a runtime /sim/control/set_tire_friction
     # command). Whatever arrives on this topic overrides the two fallbacks
     # below, so changing the vehicle config cannot leave the nominal curve stale.
     vehicle_physics_topic: /sim/feedback/vehicle_physics
@@ -60,7 +60,7 @@ tire_force_benchmark_node:
     # Peak friction of the nominal curve. <= 0 takes it from the tire_friction
     # field of /sim/feedback/tire_forces - the road-multiplied value the
     # physics step actually uses (~1.05 against the 1.5 configured on this map),
-    # and the LATEST one, so a mid-run /sim/control/tire_friction change is
+    # and the LATEST one, so a mid-run /sim/control/set_tire_friction change is
     # followed rather than averaged away (the node warns when it moved).
     carla_tire_friction: 0.0
 

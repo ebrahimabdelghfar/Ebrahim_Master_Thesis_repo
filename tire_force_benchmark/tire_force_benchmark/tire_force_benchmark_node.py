@@ -249,7 +249,7 @@ class TireForceBenchmarkNode(Node):
         self.carla_tire_friction = float(self.get_parameter('carla_tire_friction').value)
         # Friction the telemetry reports, per axle. The nominal curve is drawn
         # at the LATEST value (friction is settable at runtime via
-        # /sim/control/tire_friction, and a mean would hide a change), with
+        # /sim/control/set_tire_friction, and a mean would hide a change), with
         # min/max kept so a change during the run can be reported.
         self.mu_latest = {'front': None, 'rear': None}
         self.mu_min = {'front': None, 'rear': None}
@@ -370,7 +370,7 @@ class TireForceBenchmarkNode(Node):
             # Latched on the bridge side (TRANSIENT_LOCAL, depth 1) so this
             # node gets the current parameters however late it starts, and a
             # new message whenever they change - including after a runtime
-            # /sim/control/tire_friction command.
+            # /sim/control/set_tire_friction command.
             self.physics_sub = self.create_subscription(
                 String,
                 str(self.get_parameter('vehicle_physics_topic').value),
@@ -1290,7 +1290,7 @@ class TireForceBenchmarkNode(Node):
     def _nominal_friction(self, axle_key):
         # The friction the physics step reports for that axle, not the
         # configured tire_friction: the server multiplies it by the road
-        # surface's own coefficient, and /sim/control/tire_friction can change
+        # surface's own coefficient, and /sim/control/set_tire_friction can change
         # it mid-run - hence the latest value, not an average.
         if self.carla_tire_friction > 0.0:
             return self.carla_tire_friction

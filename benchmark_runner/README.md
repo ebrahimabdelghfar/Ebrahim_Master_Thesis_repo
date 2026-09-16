@@ -71,9 +71,10 @@ count and the count in `lap_times.png` cannot disagree.
 
 ### Friction schedules
 
-Driven over `/sim/control/tire_friction` (`std_msgs/Float32`) at the simulator's
-own 0.033 s step, the mechanism `paper/sections/experiments.tex` §VI-I
-specifies. The commanded value is the **configured** coefficient; PhysX
+Driven over `/sim/control/set_tire_friction`
+(`sim_manager_msgs/SetTireFriction`), evaluated at the simulator's own 0.033 s
+step and called only when the commanded value moves, the mechanism
+`paper/sections/experiments.tex` §VI-I specifies. The commanded value is the **configured** coefficient; PhysX
 multiplies it by the road-surface factor (0.70 on silverstone), and that
 effective value comes back on `/sim/feedback/tire_forces.tire_friction`, which
 is what the benchmark scores against. `raw/mu_commanded.csv` records the

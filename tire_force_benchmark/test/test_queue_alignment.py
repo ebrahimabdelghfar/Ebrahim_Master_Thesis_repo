@@ -467,7 +467,7 @@ def test_mu_benchmark_scores_identified_d_against_reported_friction():
 
 
 def test_nominal_friction_follows_a_runtime_change():
-    # /sim/control/tire_friction can change grip mid-run: the nominal curve
+    # /sim/control/set_tire_friction can change grip mid-run: the nominal curve
     # must be drawn at the latest friction, not an average of both levels.
     with NodeUnderTest({'min_fz_threshold': 1.0, 'enable_state_benchmarking': False}) as node:
         node.tire_forces_callback(_make_tire_msg(0, fy=100.0, tire_friction=1.05))
