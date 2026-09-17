@@ -33,13 +33,10 @@ from sim_manager_msgs.srv import SetTireFriction
 
 SCHEDULES = ('constant', 'decay_2pct_s', 'step40_end_lap1', 'step40_mid_lap1')
 
-DECAY_PER_S = 0.02  # 2% per second, as the paper specifies
+DECAY_PER_S = 0.001  # 2% per second, as the paper specifies
 STEP_FACTOR = 0.6
-MU_FLOOR = 0.5          # PhysX needs a positive coefficient; a decaying run is
-                         # meaningless long before this, but it must not reach 0.
-PUBLISH_HZ = 5.0        # the sim's own step: fixed_delta_seconds 0.033
-
-
+MU_FLOOR = 0.5
+PUBLISH_HZ = 1.0
 class FrictionSchedule(Node):
 
     def __init__(self, schedule, nominal_mu, csv_path, lap_monitor=None,
