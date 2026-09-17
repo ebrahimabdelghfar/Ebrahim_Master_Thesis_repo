@@ -115,3 +115,11 @@ friction_warm_start:
     savgol_poly: 2
     use_load_transfer: true      # apply m*a_x*h_cg/l_wb to the axle vertical loads
     utilisation_quantile: 0.99   # quantile for the |a|/g lower bound reported alongside
+
+# See pacejka_params.yaml. Off for the baseline arm: nothing is published on
+# sysid/friction and the controller runs on the identified Pacejka D alone.
+mu_fast:
+  enable: false
+  rate_hz: 1.0
+  window_s: 6.0
+  min_samples: 120

@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 
+#include "mpc_path_tracking/grip_limits.hpp"
 #include "mpc_path_tracking/mpc_controller.hpp"
 #include "mpc_path_tracking/reference_trajectory_handler.hpp"
 #include "mpc_path_tracking/solver_interface.hpp"
@@ -101,7 +102,46 @@ struct Opts
   // speed (shipped behaviour), "ref" = the reference speed at the car's
   // predicted position.
   std::string cmd_base{"meas"};
+
+  // ---- friction schedule (mirrors benchmark_runner/friction_schedule.py) ----
+  std::string mu_schedule{"const"};   // const | decay | step
+  double mu_decay_per_s{0.02};
+  double mu_step_frac{0.6};
+  double mu_step_t{60.0};
+  double mu_floor{0.5};               // fraction of the nominal mu, not an absolute
+  // ---- identification model -------------------------------------------------
+  // The real estimators are covered by their own tests; what is under test here
+  // is the controller's response to an estimate that lags, is noisy, and is
+  // sometimes absent.
+  double sysid_interval{30.0};        // s between 8-float coefficient sets (0 = never)
+  double mu_fast_rate{1.0};           // Hz on sysid/friction (0 = nothing published)
+  double mu_fast_window{6.0};         // s of trailing plant mu the fit averages
+  double mu_fast_lag{0.25};           // s of detection delay on top of the window
+  double mu_fast_noise{0.02};         // 1-sigma measurement noise on the fast mu
+  double mu_fast_dropout_t0{-1.0};    // s; the estimator goes silent over [t0, t1)
+  double mu_fast_dropout_t1{-1.0};
+  // ---- ablation switches (mpc_node's limits.* block) ------------------------
+  bool grip_longitudinal{true};       // derate accel/decel by the grip ceiling too
+  bool axle_lateral{true};            // bind the lateral cap to the axle that saturates first
+  bool friction_ellipse{true};
+  bool shape_util{true};              // utilization from the identified tire shape
+  double sigma_gain{1.0};
+  double util_min{0.20};
+  double grip_rise_rate{0.5};
+  double crit_speed_safety{0.9};
 };
+
+// Plant peak friction at time t, as a fraction of the nominal mu.
+double muAt(const Opts & o, double t)
+{
+  if (o.mu_schedule == "decay") {
+    return o.mu * std::max(o.mu_floor, 1.0 - o.mu_decay_per_s * t);
+  }
+  if (o.mu_schedule == "step") {
+    return t >= o.mu_step_t ? o.mu * o.mu_step_frac : o.mu;
+  }
+  return o.mu;
+}
 
 // Last occurrence wins, so a wrapper script can supply defaults and still let
 // the caller override them from either side of the command line.
@@ -172,28 +212,56 @@ TireParams controllerTire(const Opts & o)
   return t;
 }
 
-// mpc_node::gripCeiling / effectiveLateralLimit replica: what the reference is
-// allowed to demand laterally once a tire identification has been accepted.
-double effectiveLateralLimit(const Opts & o)
-{
-  if (!(o.grip_util > 0.0)) {return o.lateral_accel_max;}
-  const VehicleParams v = carlaVehicle();
-  const double L = v.l_f + v.l_r;
-  const double fz_f = v.mass * 9.81 * v.l_r / L;
-  const double fz_r = v.mass * 9.81 * v.l_f / L;
-  const double ceiling = (std::abs(o.ctrl_Df) * fz_f + std::abs(o.ctrl_Dr) * fz_r) / v.mass;
-  return std::min(o.lateral_accel_max, ceiling * o.grip_util);
-}
-
 // Plant: peak axle mu and cornering stiffness as MEASURED off CARLA's own
 // per-wheel telemetry (mu 1.00-1.05, C ~= 12.1*Fz per rad), not the
-// controller's optimistic startup prior.
-TireParams plantTire(const Opts & o)
+// controller's optimistic startup prior. `mu` is the schedule's value at the
+// current time, so the surface changes under the running controller.
+TireParams plantTire(const Opts & o, double mu)
 {
   TireParams t;
-  t.Bf = o.plant_B; t.Cf = o.plant_C; t.Df = o.mu; t.Ef = 0.97;
-  t.Br = o.plant_B; t.Cr = o.plant_C; t.Dr = o.mu; t.Er = 0.97;
+  t.Bf = o.plant_B; t.Cf = o.plant_C; t.Df = mu; t.Ef = 0.97;
+  t.Br = o.plant_B; t.Cr = o.plant_C; t.Dr = mu; t.Er = 0.97;
   return t;
+}
+
+// mpc_node's limits.* block, replayed against the harness's own switches so each
+// term can be ablated independently. `budget` is what the reference may demand
+// of the tires in any one direction.
+struct GripState
+{
+  TireParams tire;                 // the controller's current coefficient set
+  TireParams reference_tire;       // what grip_util was tuned against
+  double pacejka_ceiling{0.0};
+  double ceiling{0.0};
+  double util_shape{1.0};
+  double axle_lateral_ratio{1.0};
+  double speed_cap{std::numeric_limits<double>::infinity()};
+  double mu_anchor{0.0};
+  double fast_mu{0.0}, fast_sigma{0.0}, fast_ratio{1.0};
+  bool fast_valid{false};
+
+  double budget(const Opts & o) const
+  {
+    if (!(ceiling > 0.0)) {return std::numeric_limits<double>::infinity();}
+    double util = util_shape;
+    if (fast_valid) {
+      util = grip::applySigmaTightening(util, fast_mu, fast_sigma, o.sigma_gain, o.util_min);
+    }
+    return ceiling * util;
+  }
+};
+
+void ingest(
+  ReferenceTrajectoryHandler & ref, const f1tenth_msgs::msg::WaypointArray & raceline,
+  const Opts & o, const GripState & g)
+{
+  const double a_grip = g.budget(o);
+  ref.setSpeedLimit(std::min(o.speed_max, g.speed_cap));
+  ref.setLateralAccelLimit(std::min(o.lateral_accel_max, a_grip * g.axle_lateral_ratio));
+  ref.setFrictionEllipse(o.friction_ellipse);
+  const double lon = o.grip_longitudinal ? a_grip : std::numeric_limits<double>::infinity();
+  ref.setLongitudinalLimits(std::min(o.decel_max, lon), std::min(o.accel_max, lon));
+  ref.setWaypoints(raceline);
 }
 
 }  // namespace
@@ -249,6 +317,7 @@ int main(int argc, char ** argv)
   o.tau_vdot_min = arg(a, "--tau-vdot-min", o.tau_vdot_min);
   o.tau_win_s = arg(a, "--tau-win-s", o.tau_win_s);
   o.cmd_antiwindup = arg(a, "--cmd-antiwindup", o.cmd_antiwindup ? 1 : 0) != 0;
+  o.axle_lateral = arg(a, "--axle-lateral", o.axle_lateral ? 1.0 : 0.0) != 0.0;
   o.ceiling_decay = arg(a, "--ceiling-decay", o.ceiling_decay);
   o.ceiling_seed = arg(a, "--ceiling-seed", o.ceiling_seed);
   o.tau_rate = arg(a, "--tau-rate", o.tau_rate);
@@ -263,13 +332,51 @@ int main(int argc, char ** argv)
   o.seed = static_cast<int>(arg(a, "--seed", o.seed));
   o.lead_lpf = arg(a, "--lead-lpf", o.lead_lpf);
   o.cmd_base = argStr(a, "--cmd-base", o.cmd_base);
+  o.mu_schedule = argStr(a, "--mu-schedule", o.mu_schedule);
+  o.mu_decay_per_s = arg(a, "--mu-decay-per-s", o.mu_decay_per_s);
+  o.mu_step_frac = arg(a, "--mu-step-frac", o.mu_step_frac);
+  o.mu_step_t = arg(a, "--mu-step-t", o.mu_step_t);
+  o.mu_floor = arg(a, "--mu-floor", o.mu_floor);
+  o.sysid_interval = arg(a, "--sysid-interval", o.sysid_interval);
+  o.mu_fast_rate = arg(a, "--mu-fast-rate", o.mu_fast_rate);
+  o.mu_fast_window = arg(a, "--mu-fast-window", o.mu_fast_window);
+  o.mu_fast_lag = arg(a, "--mu-fast-lag", o.mu_fast_lag);
+  o.mu_fast_noise = arg(a, "--mu-fast-noise", o.mu_fast_noise);
+  o.mu_fast_dropout_t0 = arg(a, "--mu-fast-dropout-t0", o.mu_fast_dropout_t0);
+  o.mu_fast_dropout_t1 = arg(a, "--mu-fast-dropout-t1", o.mu_fast_dropout_t1);
+  o.grip_longitudinal = arg(a, "--grip-longitudinal", o.grip_longitudinal ? 1 : 0) != 0;
+  o.friction_ellipse = arg(a, "--friction-ellipse", o.friction_ellipse ? 1 : 0) != 0;
+  o.shape_util = arg(a, "--shape-util", o.shape_util ? 1 : 0) != 0;
+  o.sigma_gain = arg(a, "--sigma-gain", o.sigma_gain);
+  o.util_min = arg(a, "--util-min", o.util_min);
+  o.grip_rise_rate = arg(a, "--grip-rise-rate", o.grip_rise_rate);
+  o.crit_speed_safety = arg(a, "--crit-speed-safety", o.crit_speed_safety);
+
+  const VehicleParams veh = carlaVehicle();
+  GripState grip_state;
+  grip_state.tire = controllerTire(o);
+  // mpc_node's reference tire is the yaml `tire.*` startup block, which
+  // limits.grip_utilization was tuned against - NOT the identified set that
+  // arrives later over mpc/update_params. Taking it from a default-constructed
+  // Opts is what keeps --ctrl-* an override of the identified tire alone;
+  // reading it from `o` would make shapeUtilization compare a tire with itself
+  // and silently reduce the whole term to a no-op.
+  grip_state.reference_tire = controllerTire(Opts{});
+  if (o.grip_util > 0.0) {
+    grip_state.pacejka_ceiling = grip::gripCeiling(grip_state.tire, veh);
+    grip_state.ceiling = grip_state.pacejka_ceiling;
+    grip_state.axle_lateral_ratio = o.axle_lateral
+      ? grip::axleGripCeiling(grip_state.tire, veh, -o.decel_max) / grip_state.pacejka_ceiling
+      : 1.0;
+    grip_state.util_shape = o.shape_util
+      ? grip::shapeUtilization(grip_state.tire, grip_state.reference_tire, o.grip_util)
+      : o.grip_util;
+    grip_state.speed_cap = o.crit_speed_safety * grip::criticalSpeed(grip_state.tire, veh);
+  }
 
   ReferenceTrajectoryHandler ref;
-  ref.setSpeedLimit(o.speed_max);
-  ref.setLateralAccelLimit(effectiveLateralLimit(o));
-  ref.setLongitudinalLimits(o.decel_max, o.accel_max);
   const auto raceline = loadRaceline(o.csv, o.psi_offset);
-  ref.setWaypoints(raceline);
+  ingest(ref, raceline, o, grip_state);
   if (!ref.hasWaypoints()) {
     std::cerr << "no waypoints loaded\n";
     return 1;
@@ -303,7 +410,7 @@ int main(int argc, char ** argv)
     VehicleModel(carlaVehicle(), controllerTire(o)),
     std::make_unique<AcadosMpcSolver>(cfg.N, acados), cfg);
 
-  const VehicleModel plant(carlaVehicle(), plantTire(o));
+  VehicleModel plant(carlaVehicle(), plantTire(o, muAt(o, 0.0)));
 
   // ---- Corner map, built from the CLAMPED reference profile ----------------
   // The symptom under investigation ("brakes too late / not enough") is a
@@ -383,7 +490,8 @@ int main(int argc, char ** argv)
   if (!o.out.empty()) {
     trace.open(o.out);
     trace << "t,s,x,y,psi,vx,vy,r,delta,speed_cmd,u_accel,e_y,vx_ref,kappa_ref,a_lat,beta,solved,"
-             "tau_cfg,tau_cfg_decel\n";
+             "tau_cfg,tau_cfg_decel,mu_plant,mu_est,sigma_mu,fast_valid,ceiling,util,ay_max,"
+             "ay_ratio,alpha_f,alpha_r\n";
   }
 
   // mpc_node::estimateDrivetrainTau replica (limits.drivetrain_tau_auto)
@@ -426,8 +534,102 @@ int main(int argc, char ** argv)
   int sign_flips = 0;
   double last_steer = 0.0;
 
+  // ---- friction schedule + identification model ---------------------------
+  double next_sysid_t = o.sysid_interval > 0.0 ? o.sysid_interval : 1e18;
+  double next_fast_t = o.mu_fast_rate > 0.0 ? 1.0 / o.mu_fast_rate : 1e18;
+  double last_fast_t = 0.0, last_fast_publish_t = 0.0;
+  std::normal_distribution<double> mu_noise(0.0, 1.0);
+  // Mean and spread of the plant's mu over the window the fit would have seen.
+  // The spread is what a short window costs in confidence, and it is the whole
+  // reason sigma_mu grows across a step.
+  auto fastFit = [&](double t, double & mu_hat, double & sigma) {
+      constexpr int kSamples = 20;
+      double sum = 0.0, sum_sq = 0.0;
+      for (int i = 0; i < kSamples; ++i) {
+        const double ti = std::max(
+          0.0, t - o.mu_fast_lag - o.mu_fast_window * i / (kSamples - 1.0));
+        const double m = muAt(o, ti);
+        sum += m;
+        sum_sq += m * m;
+      }
+      const double mean = sum / kSamples;
+      const double var = std::max(0.0, sum_sq / kSamples - mean * mean);
+      mu_hat = mean + o.mu_fast_noise * mu_noise(rng);
+      sigma = std::sqrt(var + o.mu_fast_noise * o.mu_fast_noise);
+    };
+  double mu_plant = muAt(o, 0.0);
+  double worst_ay_ratio = 0.0, worst_ay_ratio_t = 0.0;
+  double peak_alpha_f = 0.0, peak_alpha_r = 0.0;
+  int fast_publishes = 0, sysid_updates = 0;
+
   for (int k = 0; k < steps; ++k) {
     const double t = k * sim_dt;
+
+    // The surface changes under the running controller; everything downstream
+    // has to find out about it through the estimators, not by reading this.
+    mu_plant = muAt(o, t);
+    plant.setTireParams(plantTire(o, mu_plant));
+
+    // Fast friction estimate on sysid/friction. Nothing is published at all
+    // when the rate is 0 or during a dropout window, which is the
+    // no-warm-start configuration the controller must still run in.
+    if (t >= next_fast_t) {
+      const double dt_fast = t - last_fast_t;
+      last_fast_t = t;
+      next_fast_t += 1.0 / o.mu_fast_rate;
+      const bool dropped = o.mu_fast_dropout_t0 >= 0.0 &&
+        t >= o.mu_fast_dropout_t0 && t < o.mu_fast_dropout_t1;
+      if (!dropped) {
+        double mu_hat = 0.0, sigma = 0.0;
+        fastFit(t, mu_hat, sigma);
+        ++fast_publishes;
+        grip_state.fast_mu = mu_hat;
+        grip_state.fast_sigma = sigma;
+        grip_state.fast_valid = true;
+        if (!(grip_state.mu_anchor > 0.0)) {grip_state.mu_anchor = mu_hat;}
+        grip_state.fast_ratio = std::clamp(mu_hat / grip_state.mu_anchor, 0.4, 1.2);
+      } else if (grip_state.fast_valid && t - last_fast_publish_t > 5.0) {
+        // mu_fast.timeout_s: revert to the identified D alone. The ceiling still
+        // climbs back on the ramp, so losing the estimator never steps the
+        // reference speed up.
+        grip_state.fast_valid = false;
+        grip_state.fast_ratio = 1.0;
+      }
+      if (o.grip_util > 0.0) {
+        grip_state.ceiling = grip::rateLimitedCeiling(
+          grip_state.ceiling, grip_state.pacejka_ceiling * grip_state.fast_ratio,
+          o.grip_rise_rate, dt_fast);
+        ingest(ref, raceline, o, grip_state);
+      }
+      if (!dropped) {last_fast_publish_t = t;}
+    }
+
+    // A full coefficient set, fitted over the whole identification cycle and
+    // so anchored that far back in time.
+    if (t >= next_sysid_t) {
+      next_sysid_t += o.sysid_interval;
+      const double mu_fit = muAt(o, std::max(0.0, t - o.sysid_interval * 0.5));
+      TireParams id = controllerTire(o);
+      id.Df = mu_fit;
+      id.Dr = mu_fit;
+      ++sysid_updates;
+      ctrl.setTireParams(id);
+      grip_state.tire = id;
+      if (o.grip_util > 0.0) {
+        grip_state.pacejka_ceiling = grip::gripCeiling(id, veh);
+        grip_state.ceiling = grip_state.pacejka_ceiling;
+        grip_state.axle_lateral_ratio = o.axle_lateral
+          ? grip::axleGripCeiling(id, veh, -o.decel_max) / grip_state.pacejka_ceiling
+          : 1.0;
+        grip_state.util_shape = o.shape_util
+          ? grip::shapeUtilization(id, grip_state.reference_tire, o.grip_util)
+          : o.grip_util;
+        grip_state.speed_cap = o.crit_speed_safety * grip::criticalSpeed(id, veh);
+        grip_state.mu_anchor = grip_state.fast_valid ? grip_state.fast_mu : 0.0;
+        grip_state.fast_ratio = 1.0;
+        ingest(ref, raceline, o, grip_state);
+      }
+    }
 
     if (t >= next_odom_t) {
       odom_state = x;
@@ -596,6 +798,8 @@ int main(int argc, char ** argv)
         const auto np = ref.nearestPoint(x(0), x(1));
         const double e_y = (x(1) - np.y) * std::cos(np.psi) - (x(0) - np.x) * std::sin(np.psi);
         const double beta = std::atan2(x(4), std::max(x(3), 0.1));
+        double trace_alpha_f = 0.0, trace_alpha_r = 0.0;
+        plant.slipAngles(x, applied_steer, trace_alpha_f, trace_alpha_r);
         log_s.push_back(np.s);
         log_v.push_back(x(3));
         log_alat.push_back(std::abs(x(3) * x(5)));
@@ -605,7 +809,13 @@ int main(int argc, char ** argv)
                 << x(3) << "," << x(4) << "," << x(5) << "," << applied_steer << ","
                 << applied_speed << "," << u_prev(1) << "," << e_y << "," << np.vx << ","
                 << np.kappa << "," << x(3) * x(5) << "," << beta << ","
-                << (has_solved ? 1 : 0) << "," << tau_cfg << "," << tau_cfg_decel << "\n";
+                << (has_solved ? 1 : 0) << "," << tau_cfg << "," << tau_cfg_decel << ","
+                << mu_plant << "," << grip_state.fast_mu << "," << grip_state.fast_sigma << ","
+                << (grip_state.fast_valid ? 1 : 0) << "," << grip_state.ceiling << ","
+                << (grip_state.ceiling > 0.0 ? grip_state.budget(o) / grip_state.ceiling : 0.0)
+                << "," << ref.lateralAccelLimit() << ","
+                << std::abs(x(3) * x(5)) / (mu_plant * 9.81) << ","
+                << trace_alpha_f << "," << trace_alpha_r << "\n";
         }
       }
       if (last_steer * steer_cmd < 0.0) {++sign_flips;}
@@ -643,6 +853,14 @@ int main(int argc, char ** argv)
     ey_sq_sum += e_y * e_y;
     ++ey_n;
     peak_alat = std::max(peak_alat, std::abs(x(3) * x(5)));
+    // The pass criterion: what the car actually asked of the tires, against what
+    // the surface could give AT THAT MOMENT. Above 1.0 the car is sliding.
+    const double ay_ratio = std::abs(x(3) * x(5)) / (mu_plant * 9.81);
+    if (ay_ratio > worst_ay_ratio) {worst_ay_ratio = ay_ratio; worst_ay_ratio_t = t;}
+    double alpha_f = 0.0, alpha_r = 0.0;
+    plant.slipAngles(x, applied_steer, alpha_f, alpha_r);
+    peak_alpha_f = std::max(peak_alpha_f, std::abs(alpha_f));
+    peak_alpha_r = std::max(peak_alpha_r, std::abs(alpha_r));
     const double beta = std::atan2(x(4), std::max(x(3), 0.1));
     peak_beta = std::max(peak_beta, std::abs(beta));
     if (std::abs(beta) > 20.0 * M_PI / 180.0) {
@@ -689,8 +907,21 @@ int main(int argc, char ** argv)
 
   std::printf(
     "N=%d rate=%.0f alat=%.2f (eff %.2f) decel=%.2f accel=%.2f Q[r]=%.0f tau_cfg=%.2f mu=%.2f\n",
-    o.N, o.control_rate, o.lateral_accel_max, effectiveLateralLimit(o), o.decel_max, o.accel_max,
+    o.N, o.control_rate, o.lateral_accel_max,
+    std::min(o.lateral_accel_max, grip_state.budget(o)), o.decel_max, o.accel_max,
     o.q_r, o.tau_cfg, o.mu);
+  std::printf(
+    "  friction: schedule %s, plant mu %.3f -> %.3f | grip-longitudinal %s ellipse %s "
+    "shape-util %s sigma-gain %.2f\n",
+    o.mu_schedule.c_str(), muAt(o, 0.0), muAt(o, o.duration),
+    o.grip_longitudinal ? "on" : "off", o.friction_ellipse ? "on" : "off",
+    o.shape_util ? "on" : "off", o.sigma_gain);
+  std::printf(
+    "  estimators: %d coefficient sets (every %.0f s), %d fast publishes (%.1f Hz, %.1f s "
+    "window, %.2f s lag)%s\n",
+    sysid_updates, o.sysid_interval, fast_publishes, o.mu_fast_rate, o.mu_fast_window,
+    o.mu_fast_lag,
+    o.mu_fast_rate > 0.0 ? "" : " - NO fast channel, running on the identified D alone");
   std::printf(
     "  controller tire: f[%.3f %.3f %.3f %.3f] r[%.3f %.3f %.3f %.3f] | plant mu %.2f\n",
     o.ctrl_Bf, o.ctrl_Cf, o.ctrl_Df, o.ctrl_Ef, o.ctrl_Br, o.ctrl_Cr, o.ctrl_Dr, o.ctrl_Er, o.mu);
@@ -702,6 +933,17 @@ int main(int argc, char ** argv)
     "  max|e_y| %.2f m | peak a_lat %.2f m/s^2 | peak|beta| %.1f deg | spins %d | "
     "solver fail %d/%d | steer sign flips %d | distance %.0f m\n",
     max_ey, peak_alat, peak_beta * 180.0 / M_PI, spins, failures, cycles, sign_flips, distance);
+  // The pass criteria. (1) is the whole point: the car must never ask the tires
+  // for more than the surface can give, at any instant of the schedule.
+  const bool pass_grip = worst_ay_ratio <= 1.0;
+  const bool pass_solver = failures == 0;
+  const bool pass_spin = spins == 0;
+  std::printf(
+    "  PASS/FAIL: peak a_lat / (mu_plant*g) = %.3f at t=%.1f s [%s] | solver failures %d [%s] | "
+    "spins %d [%s] | peak|alpha| f %.1f deg r %.1f deg\n",
+    worst_ay_ratio, worst_ay_ratio_t, pass_grip ? "PASS" : "FAIL", failures,
+    pass_solver ? "PASS" : "FAIL", spins, pass_spin ? "PASS" : "FAIL",
+    peak_alpha_f * 180.0 / M_PI, peak_alpha_r * 180.0 / M_PI);
   {
     std::vector<double> s = solve_all;
     std::sort(s.begin(), s.end());

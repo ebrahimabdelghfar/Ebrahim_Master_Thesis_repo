@@ -76,6 +76,14 @@ public:
     accel_limit_ = accel_max;
   }
 
+  // Couples the two limits above through the friction ellipse: a point already
+  // spending a_y of its budget on the corner has only
+  // a_lon_max*sqrt(1 - (a_y/a_lat_max)^2) left for braking or driving. Without
+  // it the profile can ask for both budgets in full at the same waypoint, which
+  // is a combined demand above the grip ceiling even though neither term alone
+  // exceeds its own limit. Must be called before setWaypoints().
+  void setFrictionEllipse(bool enabled) { ellipse_enabled_ = enabled; }
+
   // Number of waypoints whose vx_mps exceeded speed_limit_ and were clamped
   // by the last setWaypoints() call, and the largest speed seen. Non-zero
   // means the raceline does not match the vehicle it is being driven on.
@@ -142,12 +150,17 @@ private:
   // back up from.
   void applyLongitudinalLimits();
 
+  // Longitudinal acceleration still available at waypoint `i` once its own
+  // lateral demand is paid for, per setFrictionEllipse().
+  double longitudinalBudget(double a_lon_max, size_t i) const;
+
   std::vector<ReferencePoint> waypoints_;
   double track_length_{0.0};
   double speed_limit_{std::numeric_limits<double>::infinity()};
   double lateral_accel_limit_{std::numeric_limits<double>::infinity()};
   double decel_limit_{0.0};
   double accel_limit_{0.0};
+  bool ellipse_enabled_{false};
   size_t clamped_count_{0};
   size_t curvature_clamped_count_{0};
   double max_raw_speed_{0.0};

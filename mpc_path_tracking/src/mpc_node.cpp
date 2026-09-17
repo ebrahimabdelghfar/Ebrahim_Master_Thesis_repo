@@ -15,9 +15,11 @@
 #include <tf2/utils.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
+#include "adaptive_controller_interfaces/msg/friction_estimate.hpp"
 #include "adaptive_controller_interfaces/srv/identified_param.hpp"
 #include "f1tenth_msgs/msg/waypoint_array.hpp"
 #include "mpc_path_tracking/debug_publisher.hpp"
+#include "mpc_path_tracking/grip_limits.hpp"
 #include "mpc_path_tracking/mpc_controller.hpp"
 #include "mpc_path_tracking/parameter_manager.hpp"
 #include "mpc_path_tracking/reference_trajectory_handler.hpp"
@@ -45,6 +47,10 @@ public:
     const VehicleParams vehicle_params = param_manager_.vehicleParams();
     const TireParams tire_params = param_manager_.tireParams();
     vehicle_model_ = std::make_unique<VehicleModel>(vehicle_params, tire_params);
+    // limits.grip_utilization was measured against THIS tire, so the startup set
+    // is the reference the identified tire's shape is compared with. See
+    // grip::shapeUtilization.
+    reference_tire_ = tire_params;
 
     std::unique_ptr<SolverInterface> solver;
     if (solver_cfg_.backend == "acados") {
@@ -89,6 +95,15 @@ public:
     enable_sub_ = create_subscription<std_msgs::msg::Bool>(
       topics_.enable_topic, rclcpp::QoS(1),
       std::bind(&MpcNode::enableCallback, this, _1));
+
+    // Latched to match On-Track-SysID's publisher, so a late-starting node still
+    // gets the most recent estimate. Nothing publishing here is a supported
+    // configuration - see frictionCallback() and effectiveGripBudget().
+    rclcpp::QoS friction_qos(1);
+    friction_qos.transient_local();
+    friction_sub_ = create_subscription<adaptive_controller_interfaces::msg::FrictionEstimate>(
+      get_parameter("mu_fast.topic").as_string(), friction_qos,
+      std::bind(&MpcNode::frictionCallback, this, _1));
 
     // The param-update service must never contend with the control-loop
     // timer for time on the executor - it runs on its own reentrant
@@ -140,21 +155,24 @@ private:
     tire.Cr = request->param_values[5];
     tire.Dr = request->param_values[6];
     tire.Er = request->param_values[7];
-    // Reject a set that makes the prediction model open-loop unstable inside
-    // the speed range we are actually going to drive. Above the oversteer
-    // critical speed every horizon stage linearized there diverges, and over
-    // N stages that is rho^N in the condensed QP - the solver can only report
-    // it as a generic failure. Keeping the last physically sane model is
-    // strictly better than accepting one we know cannot be solved.
-    const double v_crit = criticalSpeed(tire);
-    const double v_max = get_parameter("limits.speed_max").as_double();
-    if (v_crit < v_max) {
+    // Above the oversteer critical speed every horizon stage linearized there
+    // diverges, and over N stages that is rho^N in the condensed QP - which the
+    // solver can only report as a generic failure. Capping the reference speed
+    // below v_crit keeps every stage linearization stable, so a low-grip set is
+    // usable rather than refused. Under a decaying surface that distinction is
+    // the whole game: v_crit falls with grip, and rejecting on it would freeze
+    // the controller on the last grippy model for the rest of the run.
+    const double v_crit = grip::criticalSpeed(tire, vehicle_model_->vehicleParams());
+    const double v_cap = get_parameter("limits.critical_speed_safety").as_double() * v_crit;
+    const double v_floor = get_parameter("limits.critical_speed_floor").as_double();
+    if (v_cap < v_floor) {
       RCLCPP_ERROR(
         get_logger(),
         "mpc/update_params REJECTED: identified tire set is oversteering with critical speed "
-        "%.1f m/s, below limits.speed_max=%.1f m/s. The prediction model would be open-loop "
-        "unstable over most of the horizon. Keeping the previous tire params.",
-        v_crit, v_max);
+        "%.1f m/s, capping the reference at %.1f m/s - below limits.critical_speed_floor=%.1f "
+        "m/s, which describes a car that cannot drive this track at all. Keeping the previous "
+        "tire params.",
+        v_crit, v_cap, v_floor);
       logModelStability(tire);
       response->ack = false;
       return;
@@ -172,68 +190,139 @@ private:
     // Re-ingesting cuts corner speeds to sqrt(a_lat_max/|kappa|) against the new
     // ceiling and re-smooths the profile, which is what keeps a steady-state
     // solution in existence at every stage when grip drops.
-    identified_grip_ceiling_ = gripCeiling(tire);
+    pacejka_grip_ceiling_ = grip::gripCeiling(tire, vehicle_model_->vehicleParams());
+    // Braking is the case that binds, because that is the state the car is in at a
+    // trail-braked apex. Carried as a ratio so the rate limiter and the sigma
+    // tightening keep acting on one scalar - see effectiveGripBudget.
+    axle_lateral_ratio_ = pacejka_grip_ceiling_ > 0.0
+      ? grip::axleGripCeiling(
+      tire, vehicle_model_->vehicleParams(),
+      -get_parameter("limits.decel_max").as_double()) / pacejka_grip_ceiling_
+      : 1.0;
+    identified_speed_cap_ = v_cap;
+    // The fast mu derates RELATIVE to the surface the coefficient set was fitted
+    // on, so re-anchoring here is what stops the same friction drop being
+    // counted twice - once in D, once in the ratio.
+    mu_anchor_ = fast_mu_valid_ ? fast_mu_ : 0.0;
+    fast_ratio_ = 1.0;
+    identified_grip_ceiling_ = pacejka_grip_ceiling_;
+    util_shape_ = grip::shapeUtilization(
+      tire, reference_tire_, get_parameter("limits.grip_utilization").as_double());
     if (ref_handler_.hasWaypoints()) {
       ingestWaypoints();
     }
     response->ack = true;
   }
 
-  // Peak lateral acceleration the identified tires can carry, both axles at
-  // their Magic-Formula peak (Fy = D*Fz).
-  double gripCeiling(const TireParams & tire) const
+  // Optional fast derate on top of the identified D, published by On-Track-SysID
+  // far more often than a full coefficient set is fitted. An invalid tick is
+  // normal (the brush gate needs slip the car does not generate on a straight),
+  // so it holds the last ratio rather than collapsing the adaptation.
+  void frictionCallback(
+    const adaptive_controller_interfaces::msg::FrictionEstimate::SharedPtr msg)
   {
-    double fz_f = 0.0, fz_r = 0.0;
-    vehicle_model_->normalLoads(fz_f, fz_r);
-    return (std::abs(tire.Df) * fz_f + std::abs(tire.Dr) * fz_r) /
-           vehicle_model_->vehicleParams().mass;
-  }
-
-  // What the reference is allowed to demand laterally: the identified ceiling
-  // derated by limits.grip_utilization, never above the operator's
-  // limits.lateral_accel_max cap. Before the first identification there is no
-  // ceiling and the cap alone applies.
-  double effectiveLateralLimit() const
-  {
-    const double cap = get_parameter("limits.lateral_accel_max").as_double();
-    if (!(identified_grip_ceiling_ > 0.0)) {
-      return cap;
+    const rclcpp::Time now_stamp = now();
+    if (!msg->valid || !(msg->mu > 0.0)) {
+      return;
     }
-    const double util = get_parameter("limits.grip_utilization").as_double();
-    return std::min(cap, identified_grip_ceiling_ * util);
+    if (!fast_mu_valid_) {
+      RCLCPP_INFO(
+        get_logger(), "fast friction estimate acquired on %s: grip now follows mu as well as D",
+        get_parameter("mu_fast.topic").as_string().c_str());
+    }
+    const double dt = fast_mu_valid_ ? (now_stamp - last_fast_stamp_).seconds() : 0.0;
+    fast_mu_ = msg->mu;
+    fast_sigma_mu_ = msg->sigma_mu;
+    fast_mu_valid_ = true;
+    last_fast_stamp_ = now_stamp;
+
+    // The first estimate after a coefficient set arrives defines the anchor, so
+    // the ratio starts at 1.0 and drifts only as the surface does.
+    if (!(mu_anchor_ > 0.0)) {
+      mu_anchor_ = fast_mu_;
+    }
+    const auto bounds = get_parameter("mu_fast.ratio_bounds").as_double_array();
+    const double lo = bounds.size() == 2 ? bounds[0] : 0.4;
+    const double hi = bounds.size() == 2 ? bounds[1] : 1.2;
+    fast_ratio_ = std::clamp(fast_mu_ / mu_anchor_, lo, hi);
+    applyGripTarget(pacejka_grip_ceiling_ * fast_ratio_, dt);
   }
 
-  // Which of the two limits is actually binding, for the ingest log.
-  std::string gripSourceDescription() const
+  // Moves the ceiling toward `target`, instantly downward and on a ramp upward,
+  // then recuts the reference against it.
+  void applyGripTarget(double target, double dt)
+  {
+    if (!(target > 0.0)) {
+      return;
+    }
+    identified_grip_ceiling_ = grip::rateLimitedCeiling(
+      identified_grip_ceiling_, target,
+      get_parameter("limits.grip_rise_rate_per_s").as_double(), dt);
+    if (ref_handler_.hasWaypoints()) {
+      ingestWaypoints();
+    }
+  }
+
+  // True once a fast estimate has arrived and has not since gone stale. Losing
+  // the publisher entirely is a supported configuration, not a fault: the arms
+  // that run without a friction warm start never publish at all.
+  bool fastEstimateFresh()
+  {
+    if (!fast_mu_valid_) {
+      return false;
+    }
+    const double age = (now() - last_fast_stamp_).seconds();
+    if (age <= get_parameter("mu_fast.timeout_s").as_double()) {
+      return true;
+    }
+    RCLCPP_WARN(
+      get_logger(),
+      "fast friction estimate stale by %.1f s - reverting the grip ceiling to the identified "
+      "Pacejka D alone. The recovery still ramps at limits.grip_rise_rate_per_s.",
+      age);
+    fast_mu_valid_ = false;
+    fast_ratio_ = 1.0;
+    return false;
+  }
+
+  // What the reference may demand of the tires in any direction: the grip
+  // ceiling times the utilization margin. Before the first identification there
+  // is no ceiling and the operator's caps alone apply.
+  double effectiveGripBudget()
+  {
+    if (!(identified_grip_ceiling_ > 0.0)) {
+      return std::numeric_limits<double>::infinity();
+    }
+    double util = util_shape_;
+    if (fastEstimateFresh()) {
+      util = grip::applySigmaTightening(
+        util, fast_mu_, fast_sigma_mu_,
+        get_parameter("limits.sigma_tighten_gain").as_double(),
+        get_parameter("limits.grip_utilization_min").as_double());
+    }
+    return identified_grip_ceiling_ * util;
+  }
+
+  // Which limit is actually binding, and where the grip figure came from, for
+  // the ingest log.
+  std::string gripSourceDescription()
   {
     if (!(identified_grip_ceiling_ > 0.0)) {
       return "limits.lateral_accel_max, no tire identification yet";
     }
-    char buf[160];
-    const double util = get_parameter("limits.grip_utilization").as_double();
+    char buf[256];
     std::snprintf(
       buf, sizeof(buf),
-      "identified grip ceiling %.2f m/s^2 x %.2f utilization = %.2f, capped by "
+      "grip ceiling %.2f m/s^2 (Pacejka D %.2f x fast mu ratio %.2f, %s) x %.2f utilization "
+      "(base %.2f, shape %.2f) x %.2f binding axle under braking = %.2f, capped by "
       "limits.lateral_accel_max %.2f",
-      identified_grip_ceiling_, util, identified_grip_ceiling_ * util,
+      identified_grip_ceiling_, pacejka_grip_ceiling_, fast_ratio_,
+      fastEstimateFresh() ? "fast mu live" : "D only",
+      effectiveGripBudget() / identified_grip_ceiling_,
+      get_parameter("limits.grip_utilization").as_double(), util_shape_, axle_lateral_ratio_,
+      effectiveGripBudget() * axle_lateral_ratio_,
       get_parameter("limits.lateral_accel_max").as_double());
     return buf;
-  }
-
-  // Oversteer critical speed of the linear single-track model for `tire`, or
-  // infinity when the axle balance is understeering (stable at every speed).
-  double criticalSpeed(const TireParams & tire) const
-  {
-    const VehicleParams & vp = vehicle_model_->vehicleParams();
-    double fz_f = 0.0, fz_r = 0.0;
-    vehicle_model_->normalLoads(fz_f, fz_r);
-    const double c_front = fz_f * tire.Bf * tire.Cf * tire.Df;
-    const double c_rear = fz_r * tire.Br * tire.Cr * tire.Dr;
-    const double margin = vp.l_f * c_front - vp.l_r * c_rear;
-    if (margin <= 0.0) {
-      return std::numeric_limits<double>::infinity();
-    }
-    return (vp.l_f + vp.l_r) * std::sqrt(c_front * c_rear / (vp.mass * margin));
   }
 
   // The MPC linearizes about the *reference* at every stage, so an
@@ -302,15 +391,28 @@ private:
     // vx_ref, r_ref = vx_ref*kappa, the horizon's arc-length advance and the
     // adaptive dt mutually consistent - see
     // ReferenceTrajectoryHandler::setSpeedLimit.
-    ref_handler_.setSpeedLimit(get_parameter("limits.speed_max").as_double());
+    // Also capped below the oversteer critical speed of the identified tires, so
+    // no stage of the horizon is linearized where the model diverges.
+    ref_handler_.setSpeedLimit(
+      std::min(get_parameter("limits.speed_max").as_double(), identified_speed_cap_));
     // A speed cap alone leaves every corner at whatever speed the raceline's
     // generator chose for its own (grippier) vehicle, so the reference never
     // asks this car to brake for the turn - see
     // ReferenceTrajectoryHandler::setLateralAccelLimit.
-    ref_handler_.setLateralAccelLimit(effectiveLateralLimit());
+    // Only the lateral cap takes the axle ratio. Straight-line braking loads the
+    // axle it takes the load from, so the longitudinal budget below is unaffected.
+    const double a_grip = effectiveGripBudget();
+    ref_handler_.setLateralAccelLimit(
+      std::min(
+        get_parameter("limits.lateral_accel_max").as_double(), a_grip * axle_lateral_ratio_));
+    // The same budget bounds braking and driving. Leaving these at their yaml
+    // values means the backward sweep keeps believing in a braking authority the
+    // surface no longer supports, and the reference then arrives at the apex too
+    // fast however correct its corner speed was.
+    ref_handler_.setFrictionEllipse(get_parameter("limits.friction_ellipse").as_bool());
     ref_handler_.setLongitudinalLimits(
-      get_parameter("limits.decel_max").as_double(),
-      get_parameter("limits.accel_max").as_double());
+      std::min(get_parameter("limits.decel_max").as_double(), a_grip),
+      std::min(get_parameter("limits.accel_max").as_double(), a_grip));
     ref_handler_.setWaypoints(last_waypoints_msg_);
     RCLCPP_INFO(
       get_logger(),
@@ -737,9 +839,28 @@ private:
   std::unique_ptr<VehicleModel> vehicle_model_;
   std::unique_ptr<MpcController> controller_;
   ReferenceTrajectoryHandler ref_handler_;
-  // Peak lateral acceleration of the last ACCEPTED identified tire set; 0 until
-  // the first mpc/update_params, when limits.lateral_accel_max alone applies.
+  // Peak lateral acceleration the reference is planned against; 0 until the
+  // first mpc/update_params, when limits.lateral_accel_max alone applies. Equal
+  // to pacejka_grip_ceiling_ until a fast mu estimate derates it, and moved by
+  // grip::rateLimitedCeiling rather than assigned.
   double identified_grip_ceiling_{0.0};
+  // Peak lateral acceleration of the last ACCEPTED coefficient set on its own.
+  double pacejka_grip_ceiling_{0.0};
+  // The tire limits.grip_utilization was tuned against, fixed at startup.
+  TireParams reference_tire_;
+  double util_shape_{1.0};
+  // Fraction of pacejka_grip_ceiling_ the binding axle can carry while braking at
+  // limits.decel_max. Unity until the first accepted coefficient set.
+  double axle_lateral_ratio_{1.0};
+  double identified_speed_cap_{std::numeric_limits<double>::infinity()};
+  // Peak friction at the moment the last coefficient set was fitted, so the fast
+  // estimate derates relative to that surface rather than absolutely.
+  double mu_anchor_{0.0};
+  double fast_mu_{0.0};
+  double fast_sigma_mu_{0.0};
+  double fast_ratio_{1.0};
+  bool fast_mu_valid_{false};
+  rclcpp::Time last_fast_stamp_;
   std::vector<double> speed_cmd_history_;
   std::vector<double> speed_meas_history_;
   double tau_estimate_{0.0};
@@ -776,6 +897,8 @@ private:
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<f1tenth_msgs::msg::WaypointArray>::SharedPtr waypoint_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr enable_sub_;
+  rclcpp::Subscription<adaptive_controller_interfaces::msg::FrictionEstimate>::SharedPtr
+    friction_sub_;
   rclcpp::Publisher<ackermann_msgs::msg::AckermannDriveStamped>::SharedPtr drive_pub_;
   rclcpp::CallbackGroup::SharedPtr param_service_callback_group_;
   rclcpp::Service<adaptive_controller_interfaces::srv::IdentifiedParam>::SharedPtr param_service_;

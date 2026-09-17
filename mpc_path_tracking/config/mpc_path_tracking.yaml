@@ -61,14 +61,32 @@ mpc_path_tracking:
       steering_rate_max: 1.0       # rad/s - PLACEHOLDER, measure
       speed_max: 27.77             # m/s (100 km/h plant cap)
       speed_min: 0.0               # m/s
-      accel_max: 5.71             # m/s^2 (mu*g, grip-limited)
+      # accel_max, decel_max and lateral_accel_max are UPPER CAPS. All three are
+      # also derated by the identified grip ceiling x grip_utilization, and then
+      # coupled to each other by friction_ellipse.
+      accel_max: 5.71             # m/s^2
       decel_max: 3.71             # m/s^2 (magnitude; accel_min = -decel_max)
       jerk_max: 1000.0             # m/s^3, effectively unconstrained until tuned
-      lateral_accel_max: 6.5       # m/s^2 - UPPER CAP only, see grip_utilization
+      lateral_accel_max: 6.5       # m/s^2
       grip_utilization: 0.75        # fraction of the identified grip ceiling
+      friction_ellipse: true        # a_lon = a_lon_max*sqrt(1-(a_y/a_lat_max)^2)
+      grip_rise_rate_per_s: 0.5     # m/s^2 per s; grip DROPS apply instantly
+      critical_speed_safety: 0.9    # reference speed cap as a fraction of v_crit
+      critical_speed_floor: 3.0     # m/s, below this cap the tire set is rejected
+      sigma_tighten_gain: 1.0       # util *= (1 - gain*sigma_mu/mu)
+      grip_utilization_min: 0.20    # floor for the tightened utilization
       drivetrain_tau_s: 2.77        # s, 0.0 = one control period of accel only
       drivetrain_tau_decel_s: -0.2  # s, <0 = same as drivetrain_tau_s
       drivetrain_tau_auto: true
+
+    # ---------------- Fast friction estimate (optional) ----------------
+    # An optional derate on top of the identified Pacejka D, published by
+    # On-Track-SysID between coefficient fits. The node runs on D alone when
+    # nothing ever publishes here.
+    mu_fast:
+      topic: "/sysid/friction"
+      timeout_s: 5.0               # older than this reverts to D alone
+      ratio_bounds: [0.4, 1.2]     # clamp on mu/mu_at_last_identification
 
     # ---------------- Solver settings ----------------
     solver:

@@ -18,6 +18,7 @@ import torch
 from tqdm import tqdm
 
 from ament_index_python.packages import get_package_share_directory
+from adaptive_controller_interfaces.msg import FrictionEstimate
 from adaptive_controller_interfaces.srv import IdentifiedParam
 
 # Import helpers - handle both installed and development paths
@@ -153,10 +154,11 @@ class OnTrackSysId(Node):
         self.first_run_pub = self.create_publisher(Bool, 'sysid/first_run', qos_latched)
         self.first_run_pub.publish(Bool(data=True))
 
-        # Identified peak friction [Df, Dr, mu_axle, warm_start_mu], latched so
-        # a consumer starting after an identification still sees it.
+        # Short-window peak friction, published far more often than a full
+        # coefficient set is fitted. Latched so a consumer starting late still
+        # sees the most recent estimate. See tick_fast_friction().
         self.friction_pub = self.create_publisher(
-            Float64MultiArray, 'sysid/friction', qos_latched)
+            FrictionEstimate, 'sysid/friction', qos_latched)
 
         # Submits identified tire params to adaptive_controller_manager;
         # replaces the old one-shot latched /sysid/training_complete String.
@@ -194,8 +196,9 @@ class OnTrackSysId(Node):
         # keeps reporting it on a cycle that did not compute one, rather than
         # reverting slot 3 to NaN.
         self._last_warm_start_mu = float('nan')
-        # Full mu_estimator.py result of the last cycle, for publish_friction().
+        # Full mu_estimator.py result of the last cycle, for the identification log.
         self._last_mu_estimate = None
+        self.setup_fast_friction()
         warm_start_cfg = (self.model_params or {}).get('friction_warm_start', {})
         if warm_start_cfg.get('enable', False) and warm_start_cfg.get('accel_source', 'finite_diff') == 'imu':
             imu_topic = warm_start_cfg.get('imu_topic', '/imu')
@@ -370,6 +373,11 @@ class OnTrackSysId(Node):
             self.data[-1] = self.current_state
             self._imu_accel_buffer = np.roll(self._imu_accel_buffer, -1, axis=0)
             self._imu_accel_buffer[-1] = self._latest_imu_accel
+            if self._fast_states is not None:
+                self._fast_states = np.roll(self._fast_states, -1, axis=0)
+                self._fast_states[-1] = self.current_state
+                self._fast_accels = np.roll(self._fast_accels, -1, axis=0)
+                self._fast_accels[-1] = self._latest_imu_accel
             self.counter += 1
 
             # Log progress bar every 2% to avoid spamming too much but keeping it fluid
@@ -525,18 +533,14 @@ class OnTrackSysId(Node):
                 f"({out['mu_r']:.4f}) is not trusted at this excitation.")
         return {'f': mu, 'r': mu, 'floor': out['mu_utilisation']}
 
-    def publish_friction(self, warm_start_mu=None):
+    def log_identified_friction(self, warm_start_mu=None):
         """
-        Publishes the identified peak friction as
-        [Df, Dr, mu_axle, warm_start_mu, mu_brush_f, mu_brush_r, mu_utilisation].
+        Records the peak friction the freshly fitted coefficient set implies.
 
         Df/Dr are the Pacejka D coefficients (per-axle peak friction) and
-        mu_axle is the load-weighted vehicle-level peak. warm_start_mu is the
-        pre-training estimate, held at its last computed value. The final
-        three come straight from helpers/mu_estimator.py: the two per-axle
-        brush fits (NaN when that axle was not identifiable this cycle) and
-        the quantile(|a|/g) utilisation bound, which is always finite and is
-        always a LOWER bound on the available grip.
+        mu_axle is the load-weighted vehicle-level peak. This set reaches the
+        controller through sysid/update_params, not over a topic; sysid/friction
+        carries the short-window estimate instead (see tick_fast_friction).
         """
         D_f = float(self.C_Pf_model[2])
         D_r = float(self.C_Pr_model[2])
@@ -546,12 +550,96 @@ class OnTrackSysId(Node):
             self._last_warm_start_mu = float(
                 warm_start_mu['floor'] if isinstance(warm_start_mu, dict) else warm_start_mu)
 
-        est = self._last_mu_estimate or {}
-        msg = Float64MultiArray()
-        msg.data = [D_f, D_r, mu_axle, self._last_warm_start_mu]
-        self.friction_pub.publish(msg)
         self.get_logger().info(
             f"Identified friction: Df={D_f:.4f} Dr={D_r:.4f} mu_axle={mu_axle:.4f} warm_start_mu={self._last_warm_start_mu:.4f}")
+
+    def setup_fast_friction(self):
+        """
+        Prepares the short-window friction estimate published on sysid/friction.
+
+        A full coefficient set is fitted once every reidentification_interval_s,
+        which leaves the controller blind to a friction change for up to that
+        long. This estimate runs the same brush fit over the last window_s of
+        data instead, so grip changes reach the controller in seconds. The short
+        window costs confidence rather than correctness: sigma_mu grows, and the
+        consumer is expected to tighten its margin as it does.
+
+        The window is its own ring buffer rather than a tail of self.data,
+        because train_model.filter_data() Butterworth-filters self.data's
+        columns in place (see maybe_compute_warm_start_mu) and a filtered signal
+        would bias the axle forces the fit is built from.
+        """
+        cfg = dict((self.model_params or {}).get('mu_fast', {}) or {})
+        self._mu_fast_cfg = cfg
+        self._fast_states = None
+        self._fast_accels = None
+        self._fast_tick = 0
+        self._fast_ever_valid = False
+        if not cfg.get('enable', False) or self.model_params is None:
+            self.get_logger().info(
+                "mu_fast disabled - sysid/friction stays silent and consumers run on the "
+                "identified Pacejka D alone.")
+            return
+        window = max(1, int(round(float(cfg.get('window_s', 6.0)) * self.rate)))
+        self._fast_window = window
+        self._fast_period = max(1, int(round(self.rate / max(float(cfg.get('rate_hz', 1.0)), 1e-6))))
+        self._fast_states = np.zeros((window, 4))
+        self._fast_accels = np.zeros((window, 2))
+        self.get_logger().info(
+            f"mu_fast enabled: {cfg.get('rate_hz', 1.0)} Hz brush fit over a "
+            f"{cfg.get('window_s', 6.0)} s window ({window} samples).")
+
+    def tick_fast_friction(self):
+        """
+        Fits and publishes the short-window friction estimate, at mu_fast.rate_hz.
+
+        Publishes on every fit, with `valid` carrying the brush release gate's
+        verdict. An invalid tick is normal on a straight, where the car does not
+        generate the slip the fit needs, and the consumer holds its last ratio
+        rather than reacting to it.
+        """
+        if self._fast_states is None:
+            return
+        self._fast_tick += 1
+        if self._fast_tick < self._fast_period:
+            return
+        self._fast_tick = 0
+        if self.counter < self._fast_window:
+            return
+
+        warm_start_cfg = self.model_params.get('friction_warm_start', {}) or {}
+        brush_cfg = dict(warm_start_cfg.get('brush', {}) or {})
+        brush_cfg.setdefault('vx_min', warm_start_cfg.get('vx_min', 2.5))
+        brush_cfg.setdefault('utilisation_quantile', warm_start_cfg.get('quantile', 0.99))
+        # A window this short holds fewer samples than a full cycle, so the
+        # cycle's min_samples would reject every fit by construction.
+        brush_cfg['min_samples'] = min(
+            int(brush_cfg.get('min_samples', 200)),
+            int(self._mu_fast_cfg.get('min_samples', 120)))
+
+        use_imu = (warm_start_cfg.get('accel_source', 'finite_diff') == 'imu'
+                   and self._imu_msg_count > 0)
+        accels = self._fast_accels.copy() if use_imu else None
+        try:
+            out = estimate_mu(self._fast_states.copy(), self.model_params, brush_cfg,
+                              1.0 / self.rate, accels=accels)
+        except Exception as e:
+            self.get_logger().warn(f"mu_fast fit failed: {e}")
+            return
+
+        front = out['front']
+        msg = FrictionEstimate()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.mu = float(front['mu']) if np.isfinite(front['mu']) else 0.0
+        msg.sigma_mu = float(front['sigma_mu']) if np.isfinite(front['sigma_mu']) else 0.0
+        msg.valid = bool(out['ok_f'])
+        self.friction_pub.publish(msg)
+
+        if msg.valid and not self._fast_ever_valid:
+            self._fast_ever_valid = True
+            self.get_logger().info(
+                f"mu_fast first valid fit: mu={msg.mu:.4f} +/- {msg.sigma_mu:.4f}, "
+                f"C_alpha={front['C_alpha']:.0f} N/rad")
 
     def run_nn_train(self, warm_start_mu=None):
         """
@@ -707,7 +795,7 @@ class OnTrackSysId(Node):
             self.get_logger().warn(
                 "nn_train returned no coefficients - submitting the static prior instead.")
 
-        self.publish_friction(warm_start_mu)
+        self.log_identified_friction(warm_start_mu)
 
         self.last_time = self.current_time
         # Re-arm the rolling-window progress counter/log for the next
@@ -830,11 +918,13 @@ class OnTrackSysId(Node):
             # Estimation shouldn't stall just because the ack hasn't
             # landed yet - AWAITING_ACK is a sub-state layered on RUNNING.
             self.publish_estimates()
+            self.tick_fast_friction()
             self.handle_pending_ack()
             return
 
         # RUNNING
         self.publish_estimates()
+        self.tick_fast_friction()
         if self.next_reid_time is not None and self.get_clock().now() >= self.next_reid_time:
             self.phase = 'TRAINING'
 

@@ -124,6 +124,10 @@ if(BUILD_TESTING)
   target_link_libraries(test_reference_trajectory_handler ${PROJECT_NAME}_core)
   set_target_properties(test_reference_trajectory_handler PROPERTIES BUILD_RPATH "${THIRDPARTY_LIB_RPATH}")
 
+  ament_add_gtest(test_grip_limits test/test_grip_limits.cpp)
+  target_link_libraries(test_grip_limits ${PROJECT_NAME}_core)
+  set_target_properties(test_grip_limits PROPERTIES BUILD_RPATH "${THIRDPARTY_LIB_RPATH}")
+
   ament_add_gtest(test_acados_solver test/test_acados_solver.cpp)
   target_link_libraries(test_acados_solver ${PROJECT_NAME}_core)
   set_target_properties(test_acados_solver PROPERTIES BUILD_RPATH "${THIRDPARTY_LIB_RPATH}")

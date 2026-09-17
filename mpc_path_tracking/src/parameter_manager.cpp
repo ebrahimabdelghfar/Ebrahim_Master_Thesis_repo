@@ -82,7 +82,32 @@ void ParameterManager::declareAll()
   // than a constant, with limits.lateral_accel_max as an upper cap; the derating
   // is the margin for model error, since a reference sitting exactly on the
   // friction limit leaves none.
-  node_->declare_parameter<double>("limits.grip_utilization", 0.9);
+  node_->declare_parameter<double>("limits.grip_utilization", 0.50);
+  // Couples the lateral and longitudinal budgets through the friction ellipse, so
+  // a waypoint cannot spend both in full at once. See
+  // ReferenceTrajectoryHandler::setFrictionEllipse.
+  node_->declare_parameter<bool>("limits.friction_ellipse", true);
+  // How fast the grip ceiling is allowed to RECOVER, in m/s^2 per second. Drops
+  // always apply at once; a recovery is a claim the next identification has yet
+  // to confirm. Non-positive disables the ramp.
+  node_->declare_parameter<double>("limits.grip_rise_rate_per_s", 0.5);
+  // Fraction of the oversteer critical speed the reference may demand. Below the
+  // critical speed the prediction model's stage linearizations stay stable, which
+  // is what makes a low-grip tire set usable instead of rejected.
+  node_->declare_parameter<double>("limits.critical_speed_safety", 0.9);
+  // Critical speed below which a tire set is rejected outright rather than
+  // accepted with a capped reference: a cap this low describes a car that cannot
+  // drive the track at all, so the previous model is the better answer.
+  node_->declare_parameter<double>("limits.critical_speed_floor", 3.0);
+  // Shrinks limits.grip_utilization in proportion to sigma_mu/mu of the friction
+  // fit. 0.0 ignores the estimator's uncertainty.
+  node_->declare_parameter<double>("limits.sigma_tighten_gain", 1.0);
+  node_->declare_parameter<double>("limits.grip_utilization_min", 0.20);
+  // Fast friction estimate, an OPTIONAL derate on top of the identified D. The
+  // node runs on D alone when nothing ever publishes here.
+  node_->declare_parameter<std::string>("mu_fast.topic", "/sysid/friction");
+  node_->declare_parameter<double>("mu_fast.timeout_s", 5.0);
+  node_->declare_parameter<std::vector<double>>("mu_fast.ratio_bounds", {0.4, 1.2});
   // First-order lag of the speed loop downstream of this node (drivetrain +
   // whatever tracks the speed command). 0.0 keeps the previous behaviour.
   node_->declare_parameter<double>("limits.drivetrain_tau_s", 0.0);
@@ -242,6 +267,14 @@ void ParameterManager::printAll() const
   RCLCPP_INFO(log, "  jerk_max                  : %.2f m/s³", node_->get_parameter("limits.jerk_max").as_double());
   RCLCPP_INFO(log, "  lateral_accel_max         : %.2f m/s²", node_->get_parameter("limits.lateral_accel_max").as_double());
   RCLCPP_INFO(log, "  grip_utilization          : %.2f of identified ceiling", node_->get_parameter("limits.grip_utilization").as_double());
+  RCLCPP_INFO(log, "  friction_ellipse          : %s", node_->get_parameter("limits.friction_ellipse").as_bool() ? "true (lateral and longitudinal budgets coupled)" : "false");
+  RCLCPP_INFO(log, "  grip_rise_rate_per_s      : %.2f m/s² per s (drops are instant)", node_->get_parameter("limits.grip_rise_rate_per_s").as_double());
+  RCLCPP_INFO(log, "  critical_speed_safety     : %.2f of v_crit", node_->get_parameter("limits.critical_speed_safety").as_double());
+  RCLCPP_INFO(log, "  critical_speed_floor      : %.2f m/s", node_->get_parameter("limits.critical_speed_floor").as_double());
+  RCLCPP_INFO(log, "  sigma_tighten_gain        : %.2f", node_->get_parameter("limits.sigma_tighten_gain").as_double());
+  RCLCPP_INFO(log, "  grip_utilization_min      : %.2f", node_->get_parameter("limits.grip_utilization_min").as_double());
+  RCLCPP_INFO(log, "  mu_fast.topic             : %s (optional, D alone if silent)", node_->get_parameter("mu_fast.topic").as_string().c_str());
+  RCLCPP_INFO(log, "  mu_fast.timeout_s         : %.1f s", node_->get_parameter("mu_fast.timeout_s").as_double());
   RCLCPP_INFO(log, "  drivetrain_tau_s          : %.3f s", node_->get_parameter("limits.drivetrain_tau_s").as_double());
   RCLCPP_INFO(log, "  drivetrain_tau_decel_s    : %.3f s", node_->get_parameter("limits.drivetrain_tau_decel_s").as_double());
   RCLCPP_INFO(log, "  drivetrain_tau_auto       : %s", node_->get_parameter("limits.drivetrain_tau_auto").as_bool() ? "true (identified online)" : "false");

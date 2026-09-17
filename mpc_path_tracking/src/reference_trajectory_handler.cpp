@@ -113,20 +113,38 @@ void ReferenceTrajectoryHandler::applyLongitudinalLimits()
       for (size_t k = 0; k < n; ++k) {
         const size_t i = n - 1 - k;
         const size_t j = (i + 1) % n;
+        const double a = longitudinalBudget(decel_limit_, j);
         const double reachable =
-          std::sqrt(waypoints_[j].vx * waypoints_[j].vx + 2.0 * decel_limit_ * ds[i]);
+          std::sqrt(waypoints_[j].vx * waypoints_[j].vx + 2.0 * a * ds[i]);
         waypoints_[i].vx = std::min(waypoints_[i].vx, reachable);
       }
     }
     if (accel_limit_ > 0.0) {
       for (size_t i = 0; i < n; ++i) {
         const size_t h = (i + n - 1) % n;
+        const double a = longitudinalBudget(accel_limit_, h);
         const double reachable =
-          std::sqrt(waypoints_[h].vx * waypoints_[h].vx + 2.0 * accel_limit_ * ds[h]);
+          std::sqrt(waypoints_[h].vx * waypoints_[h].vx + 2.0 * a * ds[h]);
         waypoints_[i].vx = std::min(waypoints_[i].vx, reachable);
       }
     }
   }
+}
+
+double ReferenceTrajectoryHandler::longitudinalBudget(double a_lon_max, size_t i) const
+{
+  if (!ellipse_enabled_ || !(lateral_accel_limit_ > 0.0) ||
+    !std::isfinite(lateral_accel_limit_))
+  {
+    return a_lon_max;
+  }
+  // The budget is read at the waypoint the sweep is propagating FROM, whose vx
+  // the sweep is itself still solving for. The two existing sweeps are what
+  // resolve that coupling; a third loop would buy nothing.
+  const double v = waypoints_[i].vx;
+  const double ay = v * v * std::abs(waypoints_[i].kappa);
+  const double ratio = ay / lateral_accel_limit_;
+  return a_lon_max * std::sqrt(std::max(0.0, 1.0 - ratio * ratio));
 }
 
 ReferencePoint ReferenceTrajectoryHandler::nearestPoint(double x, double y) const

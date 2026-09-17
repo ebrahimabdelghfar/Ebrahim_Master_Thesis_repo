@@ -104,3 +104,15 @@ friction_warm_start:
     savgol_poly: 2
     use_load_transfer: true      # apply m*a_x*h_cg/l_wb to the axle vertical loads
     utilisation_quantile: 0.99   # quantile for the |a|/g lower bound reported alongside
+
+# Short-window peak-friction estimate published on sysid/friction between full
+# identification cycles, so a friction change reaches the controller in seconds
+# rather than after up to reidentification_interval_s. Reuses the friction_warm_start.brush
+# gates above, with its own min_samples because the window holds far fewer samples.
+# Consumers treat this as an OPTIONAL derate: with enable: false nothing is
+# published and they run on the identified Pacejka D alone.
+mu_fast:
+  enable: true
+  rate_hz: 1.0                 # fits per second
+  window_s: 6.0                # trailing window the fit sees
+  min_samples: 120             # gated samples needed in that window

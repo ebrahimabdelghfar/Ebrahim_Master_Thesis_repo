@@ -702,6 +702,7 @@ def get_model_param(racecar_version):
         "pacejka_de_popsize": solver_cfg.get('de_popsize', None),
         "pacejka_de_maxiter": solver_cfg.get('de_maxiter', None),
         "friction_warm_start": pacejka_params.get('friction_warm_start', {}),
+        "mu_fast": pacejka_params.get('mu_fast', {}),
         "pacejka_rollout": pacejka_params.get('pacejka_rollout', {}),
         "m": vehicle_params['m'],
         "I_z": vehicle_params['I_z'],
