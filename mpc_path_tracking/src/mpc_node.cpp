@@ -51,6 +51,9 @@ public:
     // is the reference the identified tire's shape is compared with. See
     // grip::shapeUtilization.
     reference_tire_ = tire_params;
+    // The startup tire IS the reference, so its shape factor is unity and the
+    // margin a fast-mu-only ceiling gets is the configured base.
+    util_shape_ = get_parameter("limits.grip_utilization").as_double();
 
     std::unique_ptr<SolverInterface> solver;
     if (solver_cfg_.backend == "acados") {
@@ -205,7 +208,7 @@ private:
     // counted twice - once in D, once in the ratio.
     mu_anchor_ = fast_mu_valid_ ? fast_mu_ : 0.0;
     fast_ratio_ = 1.0;
-    identified_grip_ceiling_ = pacejka_grip_ceiling_;
+    applyGripTarget(pacejka_grip_ceiling_);
     util_shape_ = grip::shapeUtilization(
       tire, reference_tire_, get_parameter("limits.grip_utilization").as_double());
     if (ref_handler_.hasWaypoints()) {
@@ -230,11 +233,20 @@ private:
         get_logger(), "fast friction estimate acquired on %s: grip now follows mu as well as D",
         get_parameter("mu_fast.topic").as_string().c_str());
     }
-    const double dt = fast_mu_valid_ ? (now_stamp - last_fast_stamp_).seconds() : 0.0;
     fast_mu_ = msg->mu;
     fast_sigma_mu_ = msg->sigma_mu;
     fast_mu_valid_ = true;
     last_fast_stamp_ = now_stamp;
+
+    // With no coefficient set yet there is nothing to derate relative to, and the
+    // startup tire block is an assumption about the surface rather than a
+    // measurement of it. The fast mu is a measurement, so it stands in as D until
+    // On-Track-SysID fits one. Leaving mu_anchor_ unset keeps the first
+    // coefficient set free to anchor the ratio where it belongs.
+    if (!(pacejka_grip_ceiling_ > 0.0)) {
+      setGripFromIsotropicMu(fast_mu_);
+      return;
+    }
 
     // The first estimate after a coefficient set arrives defines the anchor, so
     // the ratio starts at 1.0 and drifts only as the surface does.
@@ -245,16 +257,38 @@ private:
     const double lo = bounds.size() == 2 ? bounds[0] : 0.4;
     const double hi = bounds.size() == 2 ? bounds[1] : 1.2;
     fast_ratio_ = std::clamp(fast_mu_ / mu_anchor_, lo, hi);
-    applyGripTarget(pacejka_grip_ceiling_ * fast_ratio_, dt);
+    applyGripTarget(pacejka_grip_ceiling_ * fast_ratio_);
+  }
+
+  // Grip from a friction estimate alone. An isotropic mu is a Magic Formula peak
+  // of D = mu on both axles, so the ceiling and the binding axle come out of the
+  // same arithmetic a coefficient set goes through.
+  void setGripFromIsotropicMu(double mu)
+  {
+    TireParams isotropic = reference_tire_;
+    isotropic.Df = mu;
+    isotropic.Dr = mu;
+    const VehicleParams & vp = vehicle_model_->vehicleParams();
+    const double ceiling = grip::gripCeiling(isotropic, vp);
+    axle_lateral_ratio_ = ceiling > 0.0
+      ? grip::axleGripCeiling(
+      isotropic, vp, -get_parameter("limits.decel_max").as_double()) / ceiling
+      : 1.0;
+    applyGripTarget(ceiling);
   }
 
   // Moves the ceiling toward `target`, instantly downward and on a ramp upward,
-  // then recuts the reference against it.
-  void applyGripTarget(double target, double dt)
+  // then recuts the reference against it. The ramp is timed here rather than by
+  // the caller so that every route to the ceiling is rate limited, a coefficient
+  // set included: a fit that claims twice the grip is still only a claim.
+  void applyGripTarget(double target)
   {
     if (!(target > 0.0)) {
       return;
     }
+    const rclcpp::Time stamp = now();
+    const double dt = identified_grip_ceiling_ > 0.0 ? (stamp - last_ceiling_stamp_).seconds() : 0.0;
+    last_ceiling_stamp_ = stamp;
     identified_grip_ceiling_ = grip::rateLimitedCeiling(
       identified_grip_ceiling_, target,
       get_parameter("limits.grip_rise_rate_per_s").as_double(), dt);
@@ -569,13 +603,18 @@ private:
   }
 
   // Highest acceleration the drivetrain has actually delivered lately, per
-  // direction. Seeded from the planner's own limits and decayed so a stronger
-  // surface or a lighter load is picked up again; the decay is slow enough
-  // (~140 control periods) that one quiet straight does not shrink it.
+  // direction, floored at the planner's own limit so the decay only ever walks
+  // back a ceiling the plant earned above it. Decaying below that limit
+  // deadlocks limitUnreachableSpeed: a command capped at `ceiling * reach_s`
+  // delivers `ceiling` again, so a ceiling shrunk over a straight cannot be
+  // earned back and the car reaches the next apex still unable to brake.
   void updateAccelCeiling(double vdot)
   {
-    double & ceiling = vdot > 0.0 ? accel_ceiling_ : decel_ceiling_;
-    ceiling = std::max(0.05, std::max(kAccelCeilingDecay * ceiling, std::abs(vdot)));
+    const bool braking = vdot <= 0.0;
+    double & ceiling = braking ? decel_ceiling_ : accel_ceiling_;
+    const double configured =
+      get_parameter(braking ? "limits.decel_max" : "limits.accel_max").as_double();
+    ceiling = std::max(configured, std::max(kAccelCeilingDecay * ceiling, std::abs(vdot)));
   }
 
   // Anti-windup: a speed the drivetrain cannot reach within one lag constant
@@ -840,17 +879,17 @@ private:
   std::unique_ptr<MpcController> controller_;
   ReferenceTrajectoryHandler ref_handler_;
   // Peak lateral acceleration the reference is planned against; 0 until the
-  // first mpc/update_params, when limits.lateral_accel_max alone applies. Equal
-  // to pacejka_grip_ceiling_ until a fast mu estimate derates it, and moved by
-  // grip::rateLimitedCeiling rather than assigned.
+  // first fast mu or mpc/update_params, when limits.lateral_accel_max alone
+  // applies. Equal to pacejka_grip_ceiling_ until a fast mu estimate derates it,
+  // and moved by grip::rateLimitedCeiling rather than assigned.
   double identified_grip_ceiling_{0.0};
   // Peak lateral acceleration of the last ACCEPTED coefficient set on its own.
   double pacejka_grip_ceiling_{0.0};
   // The tire limits.grip_utilization was tuned against, fixed at startup.
   TireParams reference_tire_;
   double util_shape_{1.0};
-  // Fraction of pacejka_grip_ceiling_ the binding axle can carry while braking at
-  // limits.decel_max. Unity until the first accepted coefficient set.
+  // Fraction of the ceiling the binding axle can carry while braking at
+  // limits.decel_max. Unity until a fast mu or a coefficient set arrives.
   double axle_lateral_ratio_{1.0};
   double identified_speed_cap_{std::numeric_limits<double>::infinity()};
   // Peak friction at the moment the last coefficient set was fitted, so the fast
@@ -861,6 +900,7 @@ private:
   double fast_ratio_{1.0};
   bool fast_mu_valid_{false};
   rclcpp::Time last_fast_stamp_;
+  rclcpp::Time last_ceiling_stamp_;
   std::vector<double> speed_cmd_history_;
   std::vector<double> speed_meas_history_;
   double tau_estimate_{0.0};

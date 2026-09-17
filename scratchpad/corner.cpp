@@ -114,6 +114,7 @@ struct Opts
   // is the controller's response to an estimate that lags, is noisy, and is
   // sometimes absent.
   double sysid_interval{30.0};        // s between 8-float coefficient sets (0 = never)
+  double sysid_bias{1.0};             // multiplies the identified D, so 1.5 is a fit 50 % high
   double mu_fast_rate{1.0};           // Hz on sysid/friction (0 = nothing published)
   double mu_fast_window{6.0};         // s of trailing plant mu the fit averages
   double mu_fast_lag{0.25};           // s of detection delay on top of the window
@@ -123,6 +124,10 @@ struct Opts
   // ---- ablation switches (mpc_node's limits.* block) ------------------------
   bool grip_longitudinal{true};       // derate accel/decel by the grip ceiling too
   bool axle_lateral{true};            // bind the lateral cap to the axle that saturates first
+  // mpc_node has no ceiling until an estimate arrives, so --startup-ceiling 0 is
+  // the node's real cold start and 1 is a run that begins already identified.
+  bool startup_ceiling{true};
+  bool fast_mu_absolute{true};        // before any coefficient set, the fast mu IS the ceiling
   bool friction_ellipse{true};
   bool shape_util{true};              // utilization from the identified tire shape
   double sigma_gain{1.0};
@@ -239,6 +244,7 @@ struct GripState
   double mu_anchor{0.0};
   double fast_mu{0.0}, fast_sigma{0.0}, fast_ratio{1.0};
   bool fast_valid{false};
+  bool sysid_seen{false};          // a coefficient set has arrived, so the ratio has an anchor
 
   double budget(const Opts & o) const
   {
@@ -318,6 +324,8 @@ int main(int argc, char ** argv)
   o.tau_win_s = arg(a, "--tau-win-s", o.tau_win_s);
   o.cmd_antiwindup = arg(a, "--cmd-antiwindup", o.cmd_antiwindup ? 1 : 0) != 0;
   o.axle_lateral = arg(a, "--axle-lateral", o.axle_lateral ? 1.0 : 0.0) != 0.0;
+  o.startup_ceiling = arg(a, "--startup-ceiling", o.startup_ceiling ? 1.0 : 0.0) != 0.0;
+  o.fast_mu_absolute = arg(a, "--fast-mu-absolute", o.fast_mu_absolute ? 1.0 : 0.0) != 0.0;
   o.ceiling_decay = arg(a, "--ceiling-decay", o.ceiling_decay);
   o.ceiling_seed = arg(a, "--ceiling-seed", o.ceiling_seed);
   o.tau_rate = arg(a, "--tau-rate", o.tau_rate);
@@ -338,6 +346,7 @@ int main(int argc, char ** argv)
   o.mu_step_t = arg(a, "--mu-step-t", o.mu_step_t);
   o.mu_floor = arg(a, "--mu-floor", o.mu_floor);
   o.sysid_interval = arg(a, "--sysid-interval", o.sysid_interval);
+  o.sysid_bias = arg(a, "--sysid-bias", o.sysid_bias);
   o.mu_fast_rate = arg(a, "--mu-fast-rate", o.mu_fast_rate);
   o.mu_fast_window = arg(a, "--mu-fast-window", o.mu_fast_window);
   o.mu_fast_lag = arg(a, "--mu-fast-lag", o.mu_fast_lag);
@@ -362,9 +371,10 @@ int main(int argc, char ** argv)
   // reading it from `o` would make shapeUtilization compare a tire with itself
   // and silently reduce the whole term to a no-op.
   grip_state.reference_tire = controllerTire(Opts{});
-  if (o.grip_util > 0.0) {
+  if (o.grip_util > 0.0 && o.startup_ceiling) {
     grip_state.pacejka_ceiling = grip::gripCeiling(grip_state.tire, veh);
     grip_state.ceiling = grip_state.pacejka_ceiling;
+    grip_state.sysid_seen = true;
     grip_state.axle_lateral_ratio = o.axle_lateral
       ? grip::axleGripCeiling(grip_state.tire, veh, -o.decel_max) / grip_state.pacejka_ceiling
       : 1.0;
@@ -372,6 +382,8 @@ int main(int argc, char ** argv)
       ? grip::shapeUtilization(grip_state.tire, grip_state.reference_tire, o.grip_util)
       : o.grip_util;
     grip_state.speed_cap = o.crit_speed_safety * grip::criticalSpeed(grip_state.tire, veh);
+  } else if (o.grip_util > 0.0) {
+    grip_state.util_shape = o.grip_util;
   }
 
   ReferenceTrajectoryHandler ref;
@@ -537,6 +549,7 @@ int main(int argc, char ** argv)
   // ---- friction schedule + identification model ---------------------------
   double next_sysid_t = o.sysid_interval > 0.0 ? o.sysid_interval : 1e18;
   double next_fast_t = o.mu_fast_rate > 0.0 ? 1.0 / o.mu_fast_rate : 1e18;
+  double last_ceiling_t = 0.0;
   double last_fast_t = 0.0, last_fast_publish_t = 0.0;
   std::normal_distribution<double> mu_noise(0.0, 1.0);
   // Mean and spread of the plant's mu over the window the fit would have seen.
@@ -586,8 +599,20 @@ int main(int argc, char ** argv)
         grip_state.fast_mu = mu_hat;
         grip_state.fast_sigma = sigma;
         grip_state.fast_valid = true;
-        if (!(grip_state.mu_anchor > 0.0)) {grip_state.mu_anchor = mu_hat;}
-        grip_state.fast_ratio = std::clamp(mu_hat / grip_state.mu_anchor, 0.4, 1.2);
+        if (o.fast_mu_absolute && !grip_state.sysid_seen) {
+          // Nothing to derate relative to yet, so the measured mu stands in as D.
+          TireParams iso = grip_state.tire;
+          iso.Df = mu_hat;
+          iso.Dr = mu_hat;
+          grip_state.pacejka_ceiling = grip::gripCeiling(iso, veh);
+          grip_state.axle_lateral_ratio = o.axle_lateral
+            ? grip::axleGripCeiling(iso, veh, -o.decel_max) / grip_state.pacejka_ceiling
+            : 1.0;
+          grip_state.fast_ratio = 1.0;
+        } else {
+          if (!(grip_state.mu_anchor > 0.0)) {grip_state.mu_anchor = mu_hat;}
+          grip_state.fast_ratio = std::clamp(mu_hat / grip_state.mu_anchor, 0.4, 1.2);
+        }
       } else if (grip_state.fast_valid && t - last_fast_publish_t > 5.0) {
         // mu_fast.timeout_s: revert to the identified D alone. The ceiling still
         // climbs back on the ramp, so losing the estimator never steps the
@@ -598,7 +623,8 @@ int main(int argc, char ** argv)
       if (o.grip_util > 0.0) {
         grip_state.ceiling = grip::rateLimitedCeiling(
           grip_state.ceiling, grip_state.pacejka_ceiling * grip_state.fast_ratio,
-          o.grip_rise_rate, dt_fast);
+          o.grip_rise_rate, t - last_ceiling_t);
+        last_ceiling_t = t;
         ingest(ref, raceline, o, grip_state);
       }
       if (!dropped) {last_fast_publish_t = t;}
@@ -608,7 +634,7 @@ int main(int argc, char ** argv)
     // so anchored that far back in time.
     if (t >= next_sysid_t) {
       next_sysid_t += o.sysid_interval;
-      const double mu_fit = muAt(o, std::max(0.0, t - o.sysid_interval * 0.5));
+      const double mu_fit = o.sysid_bias * muAt(o, std::max(0.0, t - o.sysid_interval * 0.5));
       TireParams id = controllerTire(o);
       id.Df = mu_fit;
       id.Dr = mu_fit;
@@ -617,7 +643,12 @@ int main(int argc, char ** argv)
       grip_state.tire = id;
       if (o.grip_util > 0.0) {
         grip_state.pacejka_ceiling = grip::gripCeiling(id, veh);
-        grip_state.ceiling = grip_state.pacejka_ceiling;
+        // Rate limited like every other route to the ceiling: a coefficient set
+        // that claims more grip is a claim the surface has yet to confirm.
+        grip_state.ceiling = grip::rateLimitedCeiling(
+          grip_state.ceiling, grip_state.pacejka_ceiling, o.grip_rise_rate, t - last_ceiling_t);
+        last_ceiling_t = t;
+        grip_state.sysid_seen = true;
         grip_state.axle_lateral_ratio = o.axle_lateral
           ? grip::axleGripCeiling(id, veh, -o.decel_max) / grip_state.pacejka_ceiling
           : 1.0;
@@ -735,7 +766,9 @@ int main(int argc, char ** argv)
             const double av = std::abs(vdot);
             const bool braking = drive < 0.0;
             double & ceiling = vdot > 0.0 ? vdot_ceiling : vdot_ceiling_decel;
-            ceiling = std::max(0.05, std::max(o.ceiling_decay * ceiling, av));
+            // Floored at the planner's own limit, as mpc_node's updateAccelCeiling is.
+            const double ceiling_floor = vdot > 0.0 ? o.accel_max : o.decel_max;
+            ceiling = std::max(ceiling_floor, std::max(o.ceiling_decay * ceiling, av));
             clamp_in_window = std::max(0, clamp_in_window - 1);
             const bool saturated = (o.tau_sat_gate && (av > 0.9 * ceiling || av < o.tau_vdot_min * ceiling)) ||
               (o.cmd_antiwindup && clamp_in_window > 0);
