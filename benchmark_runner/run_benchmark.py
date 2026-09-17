@@ -300,11 +300,15 @@ class BenchmarkRunner:
         """Every step isolated, because stopping the launches must happen no
         matter what: a skipped SIGINT leaves the identification and control
         stacks driving the car after the runner has exited."""
-        self._safely('restoring nominal friction', self._stop_friction, friction)
+        self._safely('freezing the friction schedule', self._freeze_friction, friction)
         self._safely('closing the collision monitor', self._stop_collision, collision)
         for key in SHUTDOWN_ORDER:
             if key in launches:
                 self._safely(f'stopping {key}', launches[key].shutdown)
+        # After the loop: tire_force_benchmark rides in the on_track_sys_id
+        # launch and scores every tire_friction it sees until its export ends,
+        # so restoring earlier writes the restore step into its plots.
+        self._safely('restoring nominal friction', self._stop_friction, friction)
         self._safely('returning the bridge to unconfigured', self._deactivate_bridge)
         # After cleanup, so the write cannot race the bridge's own load_config.
         if self.bridge_config_original is not None:
@@ -330,6 +334,11 @@ class BenchmarkRunner:
         self.executor.remove_node(collision)
         collision.close()
         collision.destroy_node()
+
+    def _freeze_friction(self, friction):
+        if friction is None:
+            return
+        friction.stop_commanding()
 
     def _stop_friction(self, friction):
         if friction is None:

@@ -102,6 +102,16 @@ class FrictionSchedule(Node):
             return fraction is not None and fraction >= 0.5
         return False
 
+    def stop_commanding(self):
+        """Leave the surface at the value the run ended on.
+
+        The benchmark nodes keep scoring until their own export finishes, so a
+        schedule still ticking - or a restore_nominal() sent before they are
+        down - lands in friction_mu_timeseries and in the summary RMSE as data
+        the scenario never drove on.
+        """
+        self._timer.cancel()
+
     def restore_nominal(self):
         """Put the surface back before the next scenario configures the bridge."""
         self._timer.cancel()

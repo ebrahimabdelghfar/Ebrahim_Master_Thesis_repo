@@ -37,8 +37,11 @@ class _FakeLapMonitor:
 
 
 class _FakeTimer:
+    def __init__(self):
+        self.cancelled = False
+
     def cancel(self):
-        pass
+        self.cancelled = True
 
 
 def _build(schedule, tmp_path, lap_monitor=None):
@@ -82,6 +85,17 @@ def test_decay_is_two_percent_per_second_and_never_reaches_zero(tmp_path):
     assert node._mu_at(0.0) == pytest.approx(NOMINAL)
     assert node._mu_at(10.0) == pytest.approx(NOMINAL * (1.0 - 10.0 * DECAY_PER_S))
     assert node._mu_at(10_000.0) == pytest.approx(MU_FLOOR)
+    node.close()
+
+
+def test_stop_commanding_leaves_the_surface_where_the_run_ended(tmp_path):
+    node = _build('decay_2pct_s', tmp_path)
+    node._tick()
+    commanded = list(node._client.calls)
+
+    node.stop_commanding()
+    assert node._timer.cancelled
+    assert node._client.calls == commanded
     node.close()
 
 
