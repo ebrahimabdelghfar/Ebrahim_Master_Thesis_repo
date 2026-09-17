@@ -1,34 +1,12 @@
 # Scenario sweep for benchmark_runner/run_benchmark.py.
-#
-# Every path is relative to the repository root. One directory per scenario is
-# created under <graphs_root>/identification/<name> and <graphs_root>/control/<name>,
-# wiped before the run so a shorter run never leaves an earlier run's figures behind.
-
-n_laps: 3                      # TIMED laps. The car spawns behind the raceline's s=0,
-                               # so the drive to the start line is an untimed out-lap
-                               # on top of this (see lap_monitor.py).
+n_laps: 3     
 lap_timeout_s: 1200            # Abort a scenario that stops making progress.
 raceline_csv: traj_race_cl.csv
 psi_offset_rad: 1.5707963268   # TUM -> ROS heading convention; 0.0 for f1tenth_racetracks/*
 graphs_root: graphs
 racecar_version: SIM
-nominal_tire_friction: 1.0     # Sweep default, used by any scenario that omits
-                               # friction_value_const. The runner writes the value into
-                               # vehicle.physics.wheels[*].tire_friction in the bridge config
-                               # before configuring the bridge, and restores the file on
-                               # teardown. The map's road factor (0.70 on silverstone) is
-                               # applied by PhysX on top, so 1.5 gives an effective mu ~1.05.
-                               # For a non-constant friction_schedule this is the mu0 the
-                               # decay or step is taken from.
-collision_impulse_threshold: 200.0   # N*s of HORIZONTAL impulse, sqrt(x^2 + y^2). A scenario
-                               # fails on the first CARLA collision above this, so a barrier
-                               # graze does not end a run but a crash does. Overridable per
-                               # scenario. Vertical impulse is excluded on purpose: the car
-                               # spawns above the road and settles onto it, which fires ~18
-                               # events carrying the vehicle weight in z (measured 267.96 of
-                               # 267.98 N*s vertical, 3.67 horizontal). Every contact is
-                               # logged to <graphs_root>/control/<name>/raw/collisions.csv
-                               # with both magnitudes - calibrate against that file.
+nominal_tire_friction: 1.0
+collision_impulse_threshold: 200.0   # N*s of HORIZONTAL impulse, sqrt(x^2 + y^2).
 
 scenarios:
   - name: ours
@@ -44,6 +22,7 @@ scenarios:
     pacejka_params_yaml: On-Track-SysID/params/pacejka_params_base_line.yaml
     friction_schedule: constant
     friction_value_const: 1.0
+    
   # - name: test3_enhanced_mu_decay
   #   nn_params_yaml: On-Track-SysID/params/nn_params.yaml
   #   pacejka_params_yaml: On-Track-SysID/params/pacejka_params.yaml
