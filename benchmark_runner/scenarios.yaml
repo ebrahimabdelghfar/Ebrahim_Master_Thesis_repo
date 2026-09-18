@@ -13,11 +13,25 @@ scenarios:
     label: Excitation-S4D-Pinn   # figure legends only; `name` keys the graphs/ directories
     nn_params_yaml: On-Track-SysID/params/nn_params.yaml
     pacejka_params_yaml: On-Track-SysID/params/pacejka_params.yaml
-    friction_schedule: decay_2pct_s
+    friction_schedule: constant
     friction_value_const: 1.0
 
   - name: Baseline-NN-MSE
     label: Baseline-NN-MSE
+    nn_params_yaml: On-Track-SysID/params/nn_params_base_line.yaml
+    pacejka_params_yaml: On-Track-SysID/params/pacejka_params_base_line.yaml
+    friction_schedule: constant
+    friction_value_const: 1.0
+
+  - name: ours-decay-mu
+    label: Excitation-S4D-Pinn-decay-mu   # figure legends only; `name` keys the graphs/ directories
+    nn_params_yaml: On-Track-SysID/params/nn_params.yaml
+    pacejka_params_yaml: On-Track-SysID/params/pacejka_params.yaml
+    friction_schedule: decay_2pct_s
+    friction_value_const: 1.0
+
+  - name: Baseline-NN-MSE-decay-mu
+    label: Baseline-NN-MSE-decay-mu
     nn_params_yaml: On-Track-SysID/params/nn_params_base_line.yaml
     pacejka_params_yaml: On-Track-SysID/params/pacejka_params_base_line.yaml
     friction_schedule: decay_2pct_s

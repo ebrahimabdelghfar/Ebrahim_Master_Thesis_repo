@@ -114,6 +114,20 @@ Every route to the ceiling passes through this, a full coefficient set included.
 - **Nothing ever published**: no warnings, no derate. This is the configuration the baseline benchmark arm runs in.
 - **Achieved-acceleration ceiling.** The command limiter tracks what the drivetrain actually delivers and clamps the speed command to `v ± ceiling * reach_s`. That ceiling is floored at `accel_max` / `decel_max`; without the floor it decayed over a straight and could not be earned back, which cost about 7.7 s of braking authority at the next apex.
 
+## 8. What each benchmark arm sees
+
+The residual network architecture and the friction channels are independent. `apply_friction_warm_start` and the `pacejka_d_fixed` pin are applied in `nn_train` before it branches on `nn_architecture`, and the fast estimate is published by the node rather than by the model, so a baseline network and an S4D network hand the controller the same two quantities. What separates the arms is the parameter file they launch with, not the architecture.
+
+**Baseline arm** (`nn_architecture: baseline`, `friction_warm_start.enable: false`, `mu_fast.enable: false`). Nothing is published on `/sysid/friction`, so `fast_mu_valid_` is never set: the ratio stays at 1.0, `sigma_mu` never tightens the utilization, and the grip ceiling changes only when a coefficient set is accepted. A friction change reaches the controller after up to `reidentification_interval_s`. Before the first set there is no ceiling at all and the reference is cut against `lateral_accel_max` alone, which is the cold start described in §7. The identification side leaves `D` free, and only the product `B*C*D` is observable from the rollout, so `D` walks to its upper bound while that product stays correct — the controller then plans against a grip ceiling the surface does not have. This arm is the control the comparison needs, and it is blind by construction.
+
+**Warm-started arm** (`friction_warm_start.enable: true`, `mu_fast.enable: true`), with either architecture. Two channels reach the controller, anchored against each other so one friction drop is counted once.
+
+The slow channel carries the surface level. The brush fit over the identification buffer gives a front-axle `mu`, which is written to both axles' `D` and held fixed for every iteration of the co-identification loop; an axle with no fit this cycle holds the `D` it came in with. The regulariser's prior is frozen from those values, so it targets the measurement rather than wherever the loop drifted. That `D` reaches the controller on `mpc/update_params`, which recomputes `a_grip`, `axle_ratio` and `shape`, and then re-anchors `mu_anchor` to the current fast `mu` and resets the ratio to 1.0.
+
+The fast channel carries the change. Each 1 Hz fit is either ignored (`valid` false, normal on a straight, and the last ratio holds), used as `D_f = D_r = mu` when no coefficient set has arrived yet, or turned into the ratio `r` of §1 against the anchor. Its `sigma_mu` enters as margin rather than as grip, through the tightening of §3. Every resulting target passes the asymmetric rate limit of §6, and a stale estimate reverts to `D` alone.
+
+Running the baseline network with the friction channels enabled is the ablation that separates the residual model from the grip handling, because it holds everything in this document constant.
+
 ## Measured effect
 
 Offline, 0.5 %/s friction decay with a 30 s identification cycle. The metric is peak `a_lat / (mu*g)`; above 1.0 the car is asking for more than the surface has.
