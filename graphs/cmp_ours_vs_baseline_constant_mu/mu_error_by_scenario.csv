@@ -1,0 +1,5 @@
+scenario,category,value
+Excitation-S4D-Pinn,front_mu,0.145
+Excitation-S4D-Pinn,rear_mu,0.142
+Baseline-NN-MSE,front_mu,1.3
+Baseline-NN-MSE,rear_mu,1.3

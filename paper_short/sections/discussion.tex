@@ -9,34 +9,30 @@ tire parameter, no simulator-specific quantity and no property of the residual
 model, so it applies to any implementation of the virtual-steady-state-data
 strategy of~\cite{ontrack2025}, in simulation or on hardware. Its practical
 content is a design rule: the rollout must be configured to demand at least the
-friction one intends to identify, and where it cannot, $D$ should
-be reported as unidentified rather than fitted. The diagnostic signature,
-coefficients resting exactly on box constraints, is likewise generic and should
-be checked and logged by any bounded tire-fitting routine, being otherwise
+friction one intends to identify, and where it cannot, $D$ should be reported
+as unidentified rather than fitted. The diagnostic signature, coefficients
+resting exactly on box constraints, is likewise generic and should be checked
+and logged by any bounded tire-fitting routine, being otherwise
 indistinguishable in the output from a successful fit. The two structural
 properties of Section~\ref{subsec:contraction} generalise on the same grounds:
 the $BCD$ degeneracy follows from the quasi-steady force recovery
-\eqref{eq:ssforces} defining the virtual-data step, and the absence of
-contraction follows from stage~4 alone, the remedy reducing to the inherited
-behaviour at $\beta=1$. What does not generalise is the value \num{0.20}, a
-property of this vehicle's extrapolation error; what does is that $\beta=1$ is
-not defensible and $\beta=0$ worse still. The insufficiency of per-coefficient
-box constraints is also platform-independent: both failures we encountered, a
-set that satisfies every box constraint while degenerate and one that satisfies
-every box constraint while pairwise oversteering and unstable inside the
-controller's operating range, are properties of the parameterisation rather
-than of CARLA.
+\eqref{eq:ssforces}, and the absence of contraction from stage~4 alone. What
+does not generalise is the value \num{0.20}, a property of this vehicle's
+extrapolation error; what does is that $\beta=1$ is not defensible and
+$\beta=0$ worse still. The insufficiency of per-coefficient box constraints is
+also platform-independent, and the decaying surface adds a third instance to
+the two we had: a stiffness that looks right while being the product of a
+railed $B$ and a railed $D$, carried by a controller until the surface fell
+below the reference's demand.
 
 Three results are properties of this plant and must not be read as statements
 about tires: the numerical tire values, since the plant is a PhysX
-wheeled-vehicle model and agreement with Table~\ref{tab:ref} shows only that the
-identifier recovers the plant it observes; the gap between configured wheel
-friction and realised peak axle friction (\num{1.0} against \num{0.70}), an
-artefact of the server multiplying the configured coefficient by the road
-surface's own, which we report because an identifier tuned to converge on the
-configuration file's number will converge on the wrong one; and the \num{0.76}
-achieved/commanded steering ratio, where the lesson (identify against the
-achieved actuator state) is general but the magnitude is not. Sagmeister
+wheeled-vehicle model; the gap between configured wheel friction and realised
+peak axle friction (\num{1.0} against \num{0.70}), which we report because an
+identifier tuned to converge on the configuration file's number will converge
+on the wrong one; and the \num{0.76} achieved/commanded steering ratio, where
+the lesson (identify against the achieved actuator state) is general but the
+magnitude is not. Sagmeister
 \emph{et al.}~\cite{simfidelity2026} show sensitivity to model fidelity is
 largest near the acceleration limits, where this study operates, and
 R-CARLA~\cite{rcarla2025} exists because CARLA's native dynamics are a known
@@ -47,45 +43,54 @@ any claim about identification accuracy on a real vehicle.
 \label{subsec:limits}
 
 \begin{enumerate}
-\item \textbf{One run per configuration, so no metric in
-Table~\ref{tab:comparison} carries an uncertainty.} Every value is a point
-estimate from a single \SI{580.4}{\second} and a single \SI{554.6}{\second} run.
-The \SI{0.151}{\meter} against \SI{0.224}{\meter} RMS tracking difference in
-particular has no confidence interval and no evidence that it exceeds
-run-to-run variation, which is not measured here; the order-of-magnitude force
-and friction margins are large enough that such variation is unlikely to reverse
-them, but that is an argument, not a measurement.
-\item \textbf{Single surface, vehicle and trajectory.} That the surface differs
-from the one the prior was measured on makes the identification a real result
-rather than a restatement of the prior, but it is \emph{not} a demonstration of
-adaptivity: the identifier is never asked to follow a \emph{change} in friction.
-The runtime friction override and the step and decay schedules the scenario file
-already carries support that experiment, and we do not perform it here.
+\item \textbf{One run per configuration and surface, so no metric in
+Table~\ref{tab:comparison} carries an uncertainty.} The \SI{0.151}{\meter}
+against \SI{0.224}{\meter} RMS tracking difference in particular has no
+confidence interval and no evidence that it exceeds run-to-run variation, which
+is not measured here; the order-of-magnitude force and friction margins are
+large enough that such variation is unlikely to reverse them, but that is an
+argument, not a measurement. The decaying-surface departure is a single event
+and identifies a failure \emph{mechanism}, a grip ceiling pinned to a box
+constraint while the plant falls below the reference's demand, not a failure
+rate.
+\item \textbf{One decay law, at one rate, on one vehicle and trajectory.} The
+schedule is linear at \SI{0.1}{\percent} of nominal per second with a floor at
+half, a factor \num{20} slower than the \SI{2}{\percent} per second
+of~\cite{llampc2025}, for the reason Section~\ref{subsubsec:surface} gives: a
+faster decay outruns the \SI{30}{\second} buffer this class of identifier is
+built on, so the experiment would measure the sampling period rather than the
+estimator. The runs therefore establish that the pipeline tracks a friction
+change slow relative to its own cycle, with the scaling of
+Section~\ref{subsec:runtime}. Step changes, which the scenario file also
+carries, are not run, and the lag the decay exposes would appear on a step as
+an overshoot of the whole cycle.
+\item \textbf{The two surfaces were run on different controller builds.} The
+decaying-surface pair carries a grip rate limiter, a binding-axle derate and the
+fast-$\mu$ hook of Table~\ref{tab:scenarios}, none of which are in the
+static-surface pair. Within each pair the two arms are identical apart from
+Table~\ref{tab:scenarios}, so each comparison is clean; across pairs, only the
+\oursarm{} lap-time and tracking-error trend is read.
 \item \textbf{The friction estimator's excitation sweep is synthetic}
-(Table~\ref{tab:mu}). On the CARLA runs the warm start is exercised at the one
-excitation level the lap supplies, returning $\mu$ \SI{11}{\percent} high
-against the \SI{0.2}{\percent} of the synthetic plant, so the excitation
-dependence of that bias is not mapped against the simulator's per-wheel forces.
+(Appendix~\ref{subsec:mu}), so the excitation dependence of its
+\SI{11}{\percent} bias is not mapped against the simulator's per-wheel forces.
 The published peak factor is exactly this estimate, so the bias passes through
-undamped.
-\item \textbf{The rear axle is not identified on this trajectory} and the
-front-axle $\mu$ is applied to both (Section~\ref{subsec:frictionfloor}). The
+undamped, and on the decaying surface it arrives with one cycle of lag on top
+of it. Relatedly, the rear axle is not identified on this trajectory and the
+front-axle $\mu$ is applied to both (Section~\ref{subsec:frictionfloor}); the
 quasi-steady argument making $\mu_{f}=\mu_{r}$ holds on a homogeneous surface
 and would not survive a split-$\mu$ one, which this sensor set cannot detect in
 the first place.
-\item \textbf{The two configurations differ in eight settings at once}
+\item \textbf{The two configurations differ in nine settings at once}
 (Table~\ref{tab:scenarios}), so Section~\ref{subsec:summary} attributes nothing
-to the residual architecture, the objective, the integrator, the sweep bound,
-the solver, the regularisation, the warm start or the relaxation individually.
-Section~\ref{subsec:ablations} does attribute four of the eight, but by offline
-replay on recorded buffers, so its ordering is not a closed-loop ordering, and
-the integrator, the sweep bound and the regularisation are not separated at
-all. The S4D figure there (\SI{21}{\percent} on force RMSE at matched
-settings) has the same status: we report it as a measured ablation and not as a
-reproduction of the closed-loop S4 improvement of~\cite{visionsysid2026}. The excitation-aware rollout, this paper's central
-contribution, is active in \emph{both} arms, so the closed-loop comparison is
-not evidence for the identifiability correction; the evidence for that, and the
-search that fixes its operating point, is the sweep of
+to any one of them. Section~\ref{subsec:ablations} does attribute four, but by
+offline replay on recorded buffers, so its ordering is not a closed-loop
+ordering, and the integrator, the sweep bound and the regularisation are not
+separated at all. The S4D figure there (\SI{21}{\percent} on force RMSE at
+matched settings) has the same status: a measured ablation, not a reproduction
+of the closed-loop S4 improvement of~\cite{visionsysid2026}. The
+excitation-aware rollout, this paper's central contribution, is active in
+\emph{both} arms, so the closed-loop comparison is not evidence for the
+identifiability correction; the evidence for that is the sweep of
 Section~\ref{subsec:sweep}.
 \item \textbf{The physics-informed objective buys nothing measurable here.}
 Once its units are reconciled with the data term and the loop is damped, it is

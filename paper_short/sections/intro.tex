@@ -85,7 +85,7 @@ road-wheel angle, mass and wheelbase from measured static wheel loads, a
 friction warm start from the \emph{curvature} of the axle force curve, and
 physics-informed dynamics residuals normalised to the state-increment units of
 the data term, from which raw force and moment residuals sit a factor
-\num{2.3e5} away.
+$\num{2.3}\times10^{5}$ away.
 
 \item \textbf{Admissibility gates on derived physical quantities} at the
 model-to-controller boundary (Section~\ref{sec:integration}): axle cornering
@@ -94,17 +94,28 @@ trajectory's lateral demand. They replace per-coefficient box checks, which
 cannot detect a degenerate fit or a pairwise-oversteering axle set.
 
 \item \textbf{A simulation architecture that supplies the ground truth, and a
-closed-loop evaluation on it} (Sections~\ref{subsec:platform}--\ref{subsec:data}
-and~\ref{sec:results}). The evaluation runs on a static \num{0.70} friction
-surface, deliberately not the \num{1.05} the configured tire prior was measured
-on, so a pipeline unable to move off its prior scores badly. Over three
-timed laps the corrected pipeline identifies axle cornering stiffness to
-\SI{3.2}{\percent} front and \SI{1.4}{\percent} rear and tracks the peak factor
-to \SI{11}{\percent}, against an inherited configuration that rails $D$ on its
-\num{2.0} bound in every cycle and overstates stiffness by
-\SIrange{118}{132}{\percent}. Axle force RMSE is \num{12.1}$\times$ and
-\num{10.5}$\times$ lower, and MPC lateral tracking error \SI{32}{\percent}
-lower, at unchanged solver cost.
+closed-loop evaluation on two surfaces}
+(Sections~\ref{subsec:platform}--\ref{subsec:data} and~\ref{sec:results}). The
+first is static at \num{0.70}, deliberately not the \num{1.05} the configured
+tire prior was measured on, so a pipeline unable to move off its prior scores
+badly. Over three timed laps the corrected pipeline identifies axle cornering
+stiffness to \SI{3.2}{\percent} front and \SI{1.4}{\percent} rear and tracks
+the peak factor to \SI{11}{\percent}, against an inherited configuration that
+rails $D$ on its \num{2.0} bound in every cycle and overstates stiffness by
+\SIrange{118}{132}{\percent}; axle force RMSE is \num{12.1}$\times$ and
+\num{10.5}$\times$ lower and MPC lateral tracking error \SI{32}{\percent}
+lower, at unchanged solver cost. On the second the bridge drives the plant's
+friction down under a moving vehicle on the linear-decay protocol
+of~\cite{llampc2025} until half the grip is gone. The corrected pipeline
+recovers the decay \emph{rate} to \SI{7}{\percent}, which a single surface
+cannot test at any accuracy, and the level to
+\SIrange{10.9}{17.4}{\percent} once one identification cycle of transport lag is
+accounted for. The falling peak factor then re-clamps the reference speed
+profile from \SI{0.51}{\g} of peak lateral demand to \SI{0.30}{\g}, and the
+vehicle finishes three laps at unchanged tracking error for \SI{18}{\percent}
+of lap time. The inherited configuration cannot make that trade, because a peak
+factor resting on a box constraint reports no change, and it leaves the track in
+lap~2.
 \end{enumerate}
 
 All results are obtained in simulation, and Section~\ref{sec:disc} states which

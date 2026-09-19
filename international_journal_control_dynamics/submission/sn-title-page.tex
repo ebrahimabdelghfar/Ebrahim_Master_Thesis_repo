@@ -1,0 +1,126 @@
+%%=============================================================================
+%% Title page, submitted separately from the blinded manuscript.
+%%
+%% IJDC reviews double-blind, so this file carries everything main.tex must not:
+%% author names, affiliations, contact details, acknowledgements, funding, the
+%% author-contribution statement and the repository links.
+%%
+%% Build: pdflatex sn-title-page
+%%=============================================================================
+\documentclass[12pt]{sn-jnl}
+
+\usepackage{graphicx}%
+\usepackage{amsmath,amssymb,amsfonts}%
+\usepackage{amsthm}%
+\usepackage{xcolor}%
+\usepackage{textcomp}%
+\usepackage{manyfoot}%
+\usepackage{booktabs}%
+
+\raggedbottom
+
+\begin{document}
+
+\title[Excitation-Aware On-Track System Identification at Full Scale]{Excitation-Aware On-Track System Identification at Full Scale: A Simulation Study}
+
+\author*[1,2]{\fnm{Ebrahim} \sur{Abdelghfar Ebrahim}}\email{ebrahimabdelghfar550@gmail.com}
+
+\author[2]{\fnm{Hazem} \sur{Abuelanin}}
+
+\author[1]{\fnm{Mohamed} \sur{Abdelaziz}}
+
+\author[1]{\fnm{Mohamed Omar Mohamed} \sur{Elsayed}}
+
+\author[1]{\fnm{Sherif} \sur{Said}}
+
+% CONFIRM BEFORE SUBMITTING: the manuscript this was ported from declares one
+% affiliation block for all authors and marks the second author with a footnote
+% that it never defines. The split below is the reading that matches the
+% institutions named there. Street and postcode are left for you to fill in;
+% Springer's submission system requires them.
+\affil*[1]{\orgdiv{Faculty of Engineering}, \orgname{Ain Shams University},
+\orgaddress{\city{Cairo}, \country{Egypt}}}
+
+\affil[2]{\orgname{Autotronics Research Lab (ARL)},
+\orgaddress{\city{Cairo}, \country{Egypt}}}
+
+\abstract{On-track system identification learns tire models from ordinary
+racing laps instead of dedicated manoeuvres. We study one such
+residual-learning pipeline at full vehicle scale, inside a simulator that
+publishes per-wheel forces as ground truth. Transplanted unchanged from a 1:10
+platform, it converges on a tire with less than half the vehicle's grip ceiling
+and most Pacejka coefficients resting on their bounds. The cause is a loss of
+excitation created by the pipeline's own virtual-data step: the friction the
+synthetic rollout can demand is a property of the rollout configuration and not
+of the tire, as a grid on a known tire confirms. Two further defects share that
+source. The objective the coefficients are fitted against depends on them only
+through one product, so the peak factor is not recoverable from the rollout at
+any excitation, and the loop that feeds each fit its own previous answer is not
+a contraction. We correct all three, and gate the controller interface on
+derived physical quantities rather than on coefficient bounds. On a static
+surface 33\% below the one the tire prior was measured on, axle cornering
+stiffness is recovered to within 3.2\% and the peak factor to 11\%. On a
+surface losing half its grip under the moving vehicle, the corrected pipeline
+tracks the decay rate to 7\% and completes three timed laps at unchanged
+lateral tracking error for 18\% of lap time, where the inherited configuration
+holds a grip ceiling nearly four times the plant's and leaves the track.}
+
+\keywords{System identification, Tire models, Vehicle dynamics, Autonomous
+racing, Model predictive control, Persistent excitation}
+
+\maketitle
+\backmatter
+
+\bmhead{Acknowledgements}
+The \textsc{On-Track-SysID} pipeline studied here originates from the ForzaETH
+Race Stack and the work of Dikici \emph{et al.}, released under an open-source
+licence. This paper reports a port, a correction and an extension of that work
+rather than a reimplementation from scratch.
+
+\bmhead{Author Contributions}
+% CONFIRM BEFORE SUBMITTING: the statement below is the division of work the
+% manuscript implies. Springer requires a contribution statement, and it is
+% checked against the author list, so edit it to what actually happened.
+Conceptualization: Ebrahim Abdelghfar Ebrahim, Mohamed Abdelaziz;
+Methodology: Ebrahim Abdelghfar Ebrahim, Hazem Abuelanin;
+Software and investigation: Ebrahim Abdelghfar Ebrahim;
+Writing --- original draft: Ebrahim Abdelghfar Ebrahim;
+Writing --- review and editing: all authors;
+Supervision: Mohamed Abdelaziz, Mohamed Omar Mohamed Elsayed, Sherif Said.
+All authors read and approved the final manuscript.
+
+\bmhead{Funding}
+No funding was received to assist with the preparation of this manuscript.
+
+\section*{Declarations}
+
+\begin{itemize}
+\item \textbf{Data Availability}
+Every figure and table of the results section is exported together with the CSV
+file holding its samples. The scenario definitions, the exported result CSV
+files, and the figure and sweep generators are released in the project
+repository,
+\url{https://github.com/ebrahimabdelghfar/Ebrahim_Master_Thesis_repo}.
+
+\item \textbf{Code Availability}
+The identification package extends the released baseline of Dikici \emph{et
+al.} (\url{https://github.com/ForzaETH/On-Track-SysID}) and is distributed
+under the MIT licence that upstream's package manifest declares. The
+simulator bridge, \textsc{Carla\_ASU\_Bridge}
+(\url{https://github.com/ebrahimabdelghfar/Carla_ASU_Bridge}), is GPL-3.0. The
+two run as separate ROS~2 overlays communicating only over ROS~2 topics and
+services, and neither links against the other, so no combined-work obligation
+arises between them. The MPC and benchmarking packages are released with the
+project repository above.
+
+\item \textbf{Conflict of Interest}
+The authors declare no competing interests relevant to the content of this
+article.
+
+\item \textbf{Ethics approval}
+Not applicable. All results in this article are obtained in simulation. No
+experiment involved human subjects, personal data, live vertebrates, or the
+operation of a physical vehicle.
+\end{itemize}
+
+\end{document}

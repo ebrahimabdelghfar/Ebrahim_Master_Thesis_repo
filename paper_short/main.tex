@@ -10,7 +10,10 @@
 \usepackage{xcolor}
 
 \usepackage[pdftex]{graphicx}
-\graphicspath{{figures/}{pdf/}{photo/}{../graphs/comparison/}{../graphs/control/ours/}}
+% The two scenario comparisons export the same file names into different
+% directories, so figures from them are included by explicit relative path
+% (\cmpstatic, \cmpdecay below) rather than through this list.
+\graphicspath{{figures/}{pdf/}{photo/}}
 \DeclareGraphicsExtensions{.pdf,.jpeg,.jpg,.png}
 
 \usepackage[cmex10]{amsmath}
@@ -72,6 +75,10 @@
 % and only these two lines change here.
 \newcommand{\oursarm}{\texttt{Excitation-\allowbreak S4D-\allowbreak Pinn}}
 \newcommand{\basearm}{\texttt{Baseline-\allowbreak NN-\allowbreak MSE}}
+% Each arm is run on both surfaces; the decaying-surface scenarios carry a
+% `-decay-mu' suffix in the scenario file and in the figure legends.
+\newcommand{\cmpstatic}{../graphs/cmp_ours_vs_baseline_constant_mu}
+\newcommand{\cmpdecay}{../graphs/cmp_ours_vs_baseline_decay_mu}
 
 %==============================================================================
 \begin{document}

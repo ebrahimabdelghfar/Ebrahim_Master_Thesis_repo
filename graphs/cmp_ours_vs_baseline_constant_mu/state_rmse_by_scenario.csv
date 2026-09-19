@@ -1,0 +1,9 @@
+scenario,category,value
+Excitation-S4D-Pinn,v_y,0.014
+Excitation-S4D-Pinn,v_y_persistence,0.011
+Excitation-S4D-Pinn,omega,0.049
+Excitation-S4D-Pinn,omega_persistence,0.005
+Baseline-NN-MSE,v_y,0.156
+Baseline-NN-MSE,v_y_persistence,0.017
+Baseline-NN-MSE,omega,0.104
+Baseline-NN-MSE,omega_persistence,0.007

@@ -131,24 +131,12 @@ Section~\ref{subsec:resultstire} uses this curve to separate the error of the
 identified fit from the error of representing \eqref{eq:physx} in the form
 \eqref{eq:mf} that the controller requires.
 
-\begin{figure*}[t]
-\centering
-\resizebox{\textwidth}{!}{\input{figures/bridge_architecture}}
-\caption{Architecture of the \bridge{} ROS~2 interface. The bridge links
-against CARLA's C\texttt{++} client, drives the ego vehicle through CARLA's
-native Ackermann controller, and republishes state, sensors and per-wheel
-telemetry on ROS~2 topics stamped from the simulation clock. The
-\texttt{feedback/\allowbreak tire\_forces} path (highlighted) carries the
-simulator's own per-wheel slip angle, normal load and lateral force, and is the
-ground truth against which the identifier is scored.}
-\label{fig:bridge}
-\end{figure*}
-
 \subsection{\textup{\bridge{}}: interfaces and telemetry}
 \label{subsec:bridge}
 
 \bridge{}~\cite{carlaasubridge} is a C\texttt{++} ROS~2 lifecycle node linked
-directly against CARLA's client library (Fig.~\ref{fig:bridge}). It spawns and
+directly against CARLA's client library (Fig.~\ref{fig:bridge},
+Appendix~\ref{sec:iface}). It spawns and
 configures the ego vehicle, drives its inputs over a single
 \texttt{ack\-er\-mann\_msgs/AckermannDriveStamped} on \texttt{/drive}, and
 republishes simulator state as standard ROS~2 topics; all identification traffic
@@ -182,15 +170,14 @@ $T_{s}$ is empirical and is carried because the identification proved
 insensitive to it: at \SI{0.020}{\second} and \SI{0.035}{\second} the corrected
 configuration returns the \emph{same} last accepted coefficient set to four
 decimal places, and the inherited configuration keeps $D$ on its \num{2.0} bound
-at both, so the box-edge signature is not an artefact of the mismatch. Results
-are reported at $T_{s}=\SI{0.035}{\second}$. Preprocessing follows the baseline:
-a zero-phase low-pass filter, then symmetry augmentation by mirroring
+at both, so the box-edge signature is not an artefact of the mismatch.
+Preprocessing follows the baseline: a zero-phase low-pass filter, then symmetry
+augmentation by mirroring
 $(v_{y},\omega,\delta)\rightarrow(-v_{y},-\omega,-\delta)$ at unchanged $v_{x}$.
-Re-identification retriggers every \SI{30}{\second} by default.
 
-Only the deployment stage leaves this architecture: validation draws on
+Only the deployment stage leaves this architecture. Validation draws on
 \texttt{feedback/\allowbreak tire\_forces} and \texttt{feedback/imu}, neither of
 which enters the identification loop, so the estimator is scored against a
-channel it did not observe, and Section~\ref{sec:results} can attribute a
+channel it did not observe and Section~\ref{sec:results} can attribute a
 closed-loop difference to the identified model rather than to the interface
 carrying it.

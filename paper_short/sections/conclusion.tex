@@ -9,58 +9,67 @@ truth. Transplanted unchanged from a 1:10 platform, the pipeline fails in a
 specific, diagnosable and correctable way: a loss of excitation created by its
 own virtual-data step, which no change of solver, bounds or tuning removes, and
 whose reachable friction depends on the rollout configuration and not the tire.
-Two further properties of the loop follow from the same analysis. The fit's
-residual depends on $B$, $C$ and $D$ only through their product, because
-stage~3 reconstructs its forces from the rollout's own quasi-steady yaw balance
-and so observes nothing but the lateral acceleration the previous coefficient
-set produced; the peak factor is therefore not recoverable from the rollout at
-any excitation and must be measured on the recorded trace and held. And because
-each fit is handed the trajectory its own previous answer generated, the loop is
-a positive feedback path rather than a contraction, so stage~4 is reformulated
-as a relaxed fixed-point iteration.
+Two further properties of the loop follow from the same analysis. Stage~3
+reconstructs its forces from the rollout's own quasi-steady yaw balance, so its
+residual depends on $B$, $C$ and $D$ only through their product and the peak
+factor is not recoverable from the rollout at any excitation; it must be
+measured on the recorded trace and held. And each fit is handed the trajectory
+its own previous answer generated, so stage~4 is a positive feedback path
+rather than a contraction and is reformulated as a relaxed fixed-point
+iteration at $\beta=\num{0.20}$. The correction ships with an extrapolation
+bound on the steering sweep, a frozen regularisation target, identification
+against the achieved road-wheel angle, measured mass and geometry, and a
+dynamics residual normalised to the units of the data term, and it produces
+accepted identifications with no railed coefficient and the correct understeer
+sign.
 
-The correction comes with an extrapolation bound on the steering sweep, a frozen
-regularisation target, identification against the achieved rather than the
-commanded road-wheel angle, measured mass and geometry, a friction warm start
-identified from the curvature of the axle force curve and pinned for the loop, a
-relaxation $\beta=\num{0.20}$, and a dynamics residual normalised to the units
-of the data term. Together these produce accepted identifications with no
-railed coefficient and the correct understeer sign, at the margins
-Section~\ref{sec:results} reports. Those numbers are an identification and not a
-preserved prior, with three qualifications: the peak factor is identified by the
+A second surface settles what a single one cannot. With the plant's friction
+driven down under the moving vehicle on the linear-decay protocol
+of~\cite{llampc2025} until half the grip is gone, the corrected pipeline
+recovers the decay rate to \SI{7}{\percent} and the level to
+\SIrange{10.9}{17.4}{\percent} once one cycle of transport lag is accounted
+for; the falling peak factor re-clamps the reference from \SI{0.51}{\g} of peak
+lateral demand to \SI{0.30}{\g}, buying three completed laps at unchanged
+tracking error for \SI{18}{\percent} of lap time. The inherited configuration
+leaves the track in lap~2, holding a \SI{2.00}{\g} grip ceiling against a plant
+offering \SI{0.53}{\g}. Both outcomes have one cause: a peak factor resting on
+a box constraint cannot report that anything changed, so the identifier's
+failure stays invisible until the controller acts on it.
+
+Two qualifications stand on those numbers: the peak factor is identified by the
 brush estimator on the recorded trace, not by the Pacejka fit, which cannot
-identify it (Section~\ref{subsec:bcd}); one surface is not adaptivity, which
-needs a friction \emph{change} the runs do not contain; and each configuration
-is a single run, so the closed-loop margins are observations rather than
-estimates with a confidence interval. We further argue that per-coefficient box
+identify it (Section~\ref{subsec:bcd}); and each configuration is a single run
+per surface, so the closed-loop margins are observations rather than estimates
+with a confidence interval. We further argue that per-coefficient box
 constraints are not a sufficient admissibility criterion for handing a model to
-a model-based controller, and place gates on derived physical quantities at that
-interface instead.
+a model-based controller, and place gates on derived physical quantities at
+that interface instead.
 
 \subsection{Future work}
 
 \begin{enumerate}
-\item \textbf{Sweep the friction rather than merely mismatching it.} These runs
-put the prior \SI{44}{\percent} away from a \emph{static} surface, showing the
-pipeline moves on evidence but not that it tracks; the step and decay schedules
-already in the scenario file are the intended vehicle, and the strongest
-available argument for identifying on track at all.
+\item \textbf{Shorten the cycle, or step the friction.} The decay runs expose
+one cycle of transport lag as the dominant error on a moving surface, worth
+\SIrange{10.9}{17.4}{\percent} at the rate used here and proportionally more at
+a faster one. Two experiments follow directly, both scenario-file rows: the step
+schedules, on which the same lag appears as a bounded overshoot rather than a
+standing offset, and a shorter re-identification period, which the
+\SI{20.9}{\second} cycle cost of Section~\ref{subsec:runtime} leaves room for.
 \item \textbf{Run the ablations of Section~\ref{subsec:ablations} in the loop.}
 The relaxation sweep, the $D$-pinning comparison and the S4D and objective
 ablations are offline replays, enough to attribute the result but not to confirm
 the ordering survives closed-loop coupling. Each is a scenario-file row.
 \item \textbf{Excite the peak, and design for it.} The lap reaches
 $P_{99}(|\alpha|)=\SI{2.7}{\degree}$ against a plant whose curve peaks at
-\SI{8.0}{\degree}; that is enough for the friction gate to release and is also
-where the brush estimator's \SI{11}{\percent} bias comes from.
-Equation~\eqref{eq:mureach} inverts into a requirement on the manoeuvre, so a
-controller that deliberately inserts bounded slalom or ramp-steer excitation
+\SI{8.0}{\degree}, which is where the brush estimator's \SI{11}{\percent} bias
+comes from. Equation~\eqref{eq:mureach} inverts into a requirement on the
+manoeuvre, so a controller that inserts bounded slalom or ramp-steer excitation
 when the identifier reports insufficient slip-angle coverage would move the
 pipeline toward active, safety-bounded experiment
 design~\cite{goodwin1977design}.
 \item \textbf{Hardware replication.} The decisive test of every claim in
 Section~\ref{sec:disc} is a physical Formula Student vehicle. The identification
 code is unchanged between simulation and hardware; what changes is the
-availability of ground truth, and that is what makes the simulation study a
+availability of ground truth, which is what makes the simulation study a
 necessary precursor rather than a substitute.
 \end{enumerate}

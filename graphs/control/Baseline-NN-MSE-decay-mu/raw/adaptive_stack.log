@@ -1,0 +1,472 @@
+[INFO] [launch]: All log files can be found below /home/ebrahim/.ros/log/2026-09-18-21-53-37-348728-ebrahim-msi-219480
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [pure_pursuit_node.py-1]: process started with pid [219530]
+[INFO] [mpc_node-2]: process started with pid [219532]
+[INFO] [adaptive_controller_manager_node-3]: process started with pid [219534]
+[INFO] [adaptive_controller_benchmark_node-4]: process started with pid [219536]
+[mpc_node-2] [INFO] [1789757617.564749839] [mpc_path_tracking]: ╔══════════════════════════════════════════════════════════════╗
+[mpc_node-2] [INFO] [1789757617.564851336] [mpc_path_tracking]: ║          MPC PATH TRACKING — LOADED PARAMETERS              ║
+[mpc_node-2] [INFO] [1789757617.564870001] [mpc_path_tracking]: ╚══════════════════════════════════════════════════════════════╝
+[mpc_node-2] [INFO] [1789757617.564881436] [mpc_path_tracking]: ──── Topics ────
+[mpc_node-2] [INFO] [1789757617.564892868] [mpc_path_tracking]:   odom_topic                : /odom
+[mpc_node-2] [INFO] [1789757617.564902963] [mpc_path_tracking]:   waypoint_topic            : /raceline_waypoints
+[mpc_node-2] [INFO] [1789757617.564909901] [mpc_path_tracking]:   drive_topic               : mpc/drive_cmd
+[mpc_node-2] [INFO] [1789757617.564916674] [mpc_path_tracking]:   predicted_trajectory_topic : /mpc/predicted_path
+[mpc_node-2] [INFO] [1789757617.564923181] [mpc_path_tracking]:   status_topic              : /mpc/status
+[mpc_node-2] [INFO] [1789757617.564929269] [mpc_path_tracking]:   debug_topic_prefix        : /mpc/debug
+[mpc_node-2] [INFO] [1789757617.564935616] [mpc_path_tracking]:   enable_topic              : Start_Working_mpc
+[mpc_node-2] [INFO] [1789757617.564942111] [mpc_path_tracking]:   param_service             : mpc/update_params
+[mpc_node-2] [INFO] [1789757617.564947533] [mpc_path_tracking]: ──── Mode ────
+[mpc_node-2] [INFO] [1789757617.564953976] [mpc_path_tracking]:   standalone_mode           : false
+[mpc_node-2] [INFO] [1789757617.564959562] [mpc_path_tracking]: ──── Horizon / Timing ────
+[mpc_node-2] [INFO] [1789757617.564966758] [mpc_path_tracking]:   N                         : 20
+[mpc_node-2] [INFO] [1789757617.564982048] [mpc_path_tracking]:   dt_min                    : 0.0200 s
+[mpc_node-2] [INFO] [1789757617.564997456] [mpc_path_tracking]:   dt_max                    : 0.0700 s
+[mpc_node-2] [INFO] [1789757617.565008831] [mpc_path_tracking]:   dt_adaptive               : false
+[mpc_node-2] [INFO] [1789757617.565019997] [mpc_path_tracking]:   horizon_distance_m        : 5.50 m
+[mpc_node-2] [INFO] [1789757617.565031826] [mpc_path_tracking]:   adaptive_distance         : true
+[mpc_node-2] [INFO] [1789757617.565041549] [mpc_path_tracking]:   distance_gain             : 1.40 s
+[mpc_node-2] [INFO] [1789757617.565052819] [mpc_path_tracking]:   distance_curvature_gain   : 40.00 m
+[mpc_node-2] [INFO] [1789757617.565061664] [mpc_path_tracking]:   control_rate_hz           : 20.0 Hz
+[mpc_node-2] [INFO] [1789757617.565068467] [mpc_path_tracking]: ──── Cost Matrices ────
+[mpc_node-2] [INFO] [1789757617.565078304] [mpc_path_tracking]:   Q      [e_y, e_psi, vx_err, vy, r_err] : [10.0000, 5.0000, 25.0000, 0.0000, 100.0000]
+[mpc_node-2] [INFO] [1789757617.565086622] [mpc_path_tracking]:   R      [steering, accel]                : [10.0000, 1.0000]
+[mpc_node-2] [INFO] [1789757617.565094166] [mpc_path_tracking]:   R_rate [steering, accel]                : [10.0000, 50.0000]
+[mpc_node-2] [INFO] [1789757617.565102355] [mpc_path_tracking]:   Qf     [e_y, e_psi, vx_err, vy, r_err] : [10.0000, 5.0000, 25.0000, 0.0000, 100.0000]
+[mpc_node-2] [INFO] [1789757617.565110683] [mpc_path_tracking]: ──── Vehicle Geometry / Mass ────
+[mpc_node-2] [INFO] [1789757617.565120528] [mpc_path_tracking]:   mass                      : 269.8400 kg
+[mpc_node-2] [INFO] [1789757617.565135464] [mpc_path_tracking]:   Iz                        : 51.10000 kg·m²
+[mpc_node-2] [INFO] [1789757617.565148997] [mpc_path_tracking]:   l_f                       : 0.7381 m
+[mpc_node-2] [INFO] [1789757617.565167543] [mpc_path_tracking]:   l_r                       : 0.7954 m
+[mpc_node-2] [INFO] [1789757617.565181384] [mpc_path_tracking]:   h_cg                      : 0.3154 m
+[mpc_node-2] [INFO] [1789757617.565193376] [mpc_path_tracking]: ──── Pacejka Tire Model ────
+[mpc_node-2] [INFO] [1789757617.565205366] [mpc_path_tracking]:   Front: Bf=10.0000  Cf=1.9000  Df=1.5000  Ef=0.9700
+[mpc_node-2] [INFO] [1789757617.565233628] [mpc_path_tracking]:   Rear:  Br=10.0000  Cr=1.9000  Dr=1.5000  Er=0.9700
+[mpc_node-2] [INFO] [1789757617.565249322] [mpc_path_tracking]: ──── Actuator Limits ────
+[mpc_node-2] [INFO] [1789757617.565261880] [mpc_path_tracking]:   steering_angle_max        : 0.2793 rad
+[mpc_node-2] [INFO] [1789757617.565299628] [mpc_path_tracking]:   steering_angle_min        : -0.2793 rad
+[mpc_node-2] [INFO] [1789757617.565315111] [mpc_path_tracking]:   steering_rate_max         : 1.00 rad/s
+[mpc_node-2] [INFO] [1789757617.565328321] [mpc_path_tracking]:   speed_max                 : 27.77 m/s
+[mpc_node-2] [INFO] [1789757617.565342511] [mpc_path_tracking]:   speed_min                 : 0.00 m/s
+[mpc_node-2] [INFO] [1789757617.565355663] [mpc_path_tracking]:   accel_max                 : 5.71 m/s²
+[mpc_node-2] [INFO] [1789757617.565367652] [mpc_path_tracking]:   decel_max                 : 3.71 m/s²
+[mpc_node-2] [INFO] [1789757617.565379511] [mpc_path_tracking]:   jerk_max                  : 1000.00 m/s³
+[mpc_node-2] [INFO] [1789757617.565392981] [mpc_path_tracking]:   lateral_accel_max         : 6.50 m/s²
+[mpc_node-2] [INFO] [1789757617.565406357] [mpc_path_tracking]:   grip_utilization          : 0.75 of identified ceiling
+[mpc_node-2] [INFO] [1789757617.565420357] [mpc_path_tracking]:   friction_ellipse          : true (lateral and longitudinal budgets coupled)
+[mpc_node-2] [INFO] [1789757617.565430415] [mpc_path_tracking]:   grip_rise_rate_per_s      : 0.50 m/s² per s (drops are instant)
+[mpc_node-2] [INFO] [1789757617.565443785] [mpc_path_tracking]:   critical_speed_safety     : 0.90 of v_crit
+[mpc_node-2] [INFO] [1789757617.565455980] [mpc_path_tracking]:   critical_speed_floor      : 3.00 m/s
+[mpc_node-2] [INFO] [1789757617.565468942] [mpc_path_tracking]:   sigma_tighten_gain        : 1.00
+[mpc_node-2] [INFO] [1789757617.565481430] [mpc_path_tracking]:   grip_utilization_min      : 0.20
+[mpc_node-2] [INFO] [1789757617.565497777] [mpc_path_tracking]:   mu_fast.topic             : /sysid/friction (optional, D alone if silent)
+[mpc_node-2] [INFO] [1789757617.565510649] [mpc_path_tracking]:   mu_fast.timeout_s         : 5.0 s
+[mpc_node-2] [INFO] [1789757617.565524099] [mpc_path_tracking]:   drivetrain_tau_s          : 2.770 s
+[mpc_node-2] [INFO] [1789757617.565536821] [mpc_path_tracking]:   drivetrain_tau_decel_s    : -0.200 s
+[mpc_node-2] [INFO] [1789757617.565550667] [mpc_path_tracking]:   drivetrain_tau_auto       : true (identified online)
+[mpc_node-2] [INFO] [1789757617.565562169] [mpc_path_tracking]: ──── Solver Settings ────
+[mpc_node-2] [INFO] [1789757617.565573645] [mpc_path_tracking]:   solve_on_new_odom         : true (skip cycles with no new odom)
+[mpc_node-2] [INFO] [1789757617.565585618] [mpc_path_tracking]:   backend                   : acados
+[mpc_node-2] [INFO] [1789757617.565597404] [mpc_path_tracking]:   max_iter                  : 200
+[mpc_node-2] [INFO] [1789757617.565609645] [mpc_path_tracking]:   eps_abs                   : 1.0e-04
+[mpc_node-2] [INFO] [1789757617.565623383] [mpc_path_tracking]:   eps_rel                   : 1.0e-04
+[mpc_node-2] [INFO] [1789757617.565637252] [mpc_path_tracking]:   warm_start                : true
+[mpc_node-2] [INFO] [1789757617.565649794] [mpc_path_tracking]:   polish                    : true
+[mpc_node-2] [INFO] [1789757617.565661210] [mpc_path_tracking]:   time_limit_ms             : 15.0 ms
+[mpc_node-2] [INFO] [1789757617.565679060] [mpc_path_tracking]:   fallback_on_failure       : hold_last
+[mpc_node-2] [INFO] [1789757617.565705197] [mpc_path_tracking]: ──── Acados Settings (used iff solver.backend == "acados") ────
+[mpc_node-2] [INFO] [1789757617.565716982] [mpc_path_tracking]:   qp_solver                 : PARTIAL_CONDENSING_HPIPM
+[mpc_node-2] [INFO] [1789757617.565728273] [mpc_path_tracking]:   cond_N                    : 5
+[mpc_node-2] [INFO] [1789757617.565739849] [mpc_path_tracking]:   iter_max                  : 1000
+[mpc_node-2] [INFO] [1789757617.565753766] [mpc_path_tracking]:   tol_stat/eq/ineq/comp     : 1.0e-04 / 1.0e-04 / 1.0e-04 / 1.0e-04
+[mpc_node-2] [INFO] [1789757617.565771981] [mpc_path_tracking]:   warm_start                : true
+[mpc_node-2] [INFO] [1789757617.565784430] [mpc_path_tracking]:   print_level               : 0
+[mpc_node-2] [INFO] [1789757617.565795735] [mpc_path_tracking]: ──── Debug / Diagnostics ────
+[mpc_node-2] [INFO] [1789757617.565806509] [mpc_path_tracking]:   enabled                   : true
+[mpc_node-2] [INFO] [1789757617.565817083] [mpc_path_tracking]:   publish_predicted_path    : true
+[mpc_node-2] [INFO] [1789757617.565828010] [mpc_path_tracking]:   publish_cost_breakdown    : true
+[mpc_node-2] [INFO] [1789757617.565838895] [mpc_path_tracking]:   log_solve_time            : true
+[mpc_node-2] [INFO] [1789757617.565849831] [mpc_path_tracking]:   log_level                 : info
+[mpc_node-2] [INFO] [1789757617.565870574] [mpc_path_tracking]: ══════════════════════════════════════════════════════════════
+[mpc_node-2] [WARN] [1789757617.565914924] [mpc_path_tracking]: horizon.dt_min=0.0200s is shorter than the control period (1/control_rate_hz=0.0500s) - raising dt_min to 0.0500s to keep the internal step >= the actual command-hold time
+[mpc_node-2] [WARN] [1789757617.566602324] [mpc_path_tracking]: horizon.dt_min=0.0200s is shorter than the control period (1/control_rate_hz=0.0500s) - raising dt_min to 0.0500s to keep the internal step >= the actual command-hold time
+[mpc_node-2] [INFO] [1789757617.576388216] [mpc_path_tracking]: mpc_path_tracking ready: odom=/odom waypoints=/raceline_waypoints drive=mpc/drive_cmd standalone=false backend=acados
+[mpc_node-2] [WARN] [1789757617.576418963] [mpc_path_tracking]: model check: C_front=39129 N/rad C_rear=36314 N/rad -> OVERSTEERING, prediction model is open-loop unstable above v_crit=1844970076.0 m/s; every horizon stage linearized above that speed diverges and the QP becomes ill-conditioned
+[adaptive_controller_manager_node-3] [INFO] [1789757617.583113655] [adaptive_controller_manager]: adaptive_controller_manager ready, starting in BOOTSTRAP_PP
+[adaptive_controller_manager_node-3] [INFO] [1789757617.603451555] [adaptive_controller_manager]: [status] active=BOOTSTRAP state=BOOTSTRAP_PP | pp: health=BAD state=idle | mpc: health=BAD | v_x=0.00 e_y=2.681 theta=0.061 | params: stored_v=0 fwd_v=0 pending=no
+[mpc_node-2] [WARN] [1789757617.626642024] [mpc_path_tracking]: fallback active (hold_last): no odometry received yet
+[mpc_node-2] [INFO] [1789757618.125539199] [mpc_path_tracking]: loaded 2916 raceline waypoints at speed cap 27.77 m/s, lateral cap 6.50 m/s^2 (0.66 g, limits.lateral_accel_max, no tire identification yet); reference now peaks at 4.98 m/s^2 (0.51 g)
+[mpc_node-2] [WARN] [1789757618.125603022] [mpc_path_tracking]: raceline speed profile exceeds limits.speed_max=27.77 m/s at 1343/2916 waypoints (max 27.78 m/s, 1.0x the limit) - clamped. The raceline was optimized for a faster vehicle than this one; regenerate it with v_max=27.77 m/s for a usable speed profile. Raising limits.speed_max only helps if the VEHICLE can really go that fast - the cap must describe the plant, not the ambition.
+[adaptive_controller_benchmark_node-4] [INFO] [1789757618.131618109] [adaptive_controller_benchmark_node]: CSV logging enabled: /home/ebrahim/Ebrahim_Master_Thesis_repo/graphs/control/Baseline-NN-MSE-decay-mu/raw/controller.csv
+[adaptive_controller_benchmark_node-4] [INFO] [1789757618.132636345] [adaptive_controller_benchmark_node]: adaptive_controller_benchmark_node started
+[adaptive_controller_benchmark_node-4] [INFO] [1789757618.133079494] [adaptive_controller_benchmark_node]: Driving tick topic: manager/state
+[adaptive_controller_benchmark_node-4] [INFO] [1789757618.133504617] [adaptive_controller_benchmark_node]: Plot export enabled -> /home/ebrahim/Ebrahim_Master_Thesis_repo/graphs/control/Baseline-NN-MSE-decay-mu (on shutdown)
+[adaptive_controller_benchmark_node-4] [INFO] [1789757618.133915165] [adaptive_controller_benchmark_node]: CSV logging enabled -> /home/ebrahim/Ebrahim_Master_Thesis_repo/graphs/control/Baseline-NN-MSE-decay-mu/raw/controller.csv
+[adaptive_controller_manager_node-3] [INFO] [1789757619.603604262] [adaptive_controller_manager]: [status] active=BOOTSTRAP state=BOOTSTRAP_PP | pp: health=BAD state=idle | mpc: health=BAD | v_x=0.00 e_y=2.681 theta=0.061 | params: stored_v=0 fwd_v=0 pending=no
+[mpc_node-2] [WARN] [1789757619.631215091] [mpc_path_tracking]: fallback active (hold_last): QP solve failed: acados MINSTEP (code 3, 1 iters, 1000 allowed) | worst stage k=2: rho(Ad)=34918.930 at v_ref=0.6 m/s, kappa=0.0001 1/m, dt=0.050 s -> prediction grows 1e+90.9 over N=20
+[pure_pursuit_node.py-1] [INFO] [1789757621.082281880] [pure_pursuit]: Pure Pursuit Node initialized
+[pure_pursuit_node.py-1] [INFO] [1789757621.082969281] [pure_pursuit]: Lookahead: FIXED at 5.50 m
+[pure_pursuit_node.py-1] [INFO] [1789757621.083672052] [pure_pursuit]: Speed reference: FIXED at 11.00 m/s (per-waypoint vx_mps ignored)
+[pure_pursuit_node.py-1] [INFO] [1789757621.110732329] [pure_pursuit]: Received 2916 waypoints
+[mpc_node-2] [WARN] [1789757621.178188715] [mpc_path_tracking]: steering rate saturated: 0.0500 rad in 0.050 s = 1.00 rad/s at the limits.steering_rate_max cap of 1.00 rad/s
+[adaptive_controller_manager_node-3] [INFO] [1789757621.604589128] [adaptive_controller_manager]: [status] active=BOOTSTRAP state=BOOTSTRAP_PP | pp: health=BAD state=idle | mpc: health=ok | v_x=-0.00 e_y=2.681 theta=0.061 | params: stored_v=0 fwd_v=0 pending=no
+[mpc_node-2] [WARN] [1789757621.651926488] [mpc_path_tracking]: fallback active (hold_last): QP solve failed: acados MINSTEP (code 3, 449 iters, 1000 allowed) | worst stage k=2: rho(Ad)=15382.137 at v_ref=0.9 m/s, kappa=0.0001 1/m, dt=0.050 s -> prediction grows 1e+83.7 over N=20
+[adaptive_controller_manager_node-3] [INFO] [1789757621.683164237] [adaptive_controller_manager]: PP confirmed active - RUNNING_PP
+[adaptive_controller_benchmark_node-4] [INFO] [1789757622.225291517] [adaptive_controller_benchmark_node]: [t=   4.1s] N=200 RMS(e_y)=2.6808m Max|e_y|=2.6817m RMS(heading)=0.0600rad switches=0 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757623.623377118] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=5.97 e_y=0.765 theta=-0.279 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757625.643257014] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.01 e_y=-0.012 theta=0.002 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757626.225105447] [adaptive_controller_benchmark_node]: [t=   8.1s] N=400 RMS(e_y)=2.1116m Max|e_y|=2.6817m RMS(heading)=0.1095rad switches=0 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757627.643261804] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=10.98 e_y=-0.005 theta=0.001 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757629.663248340] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=10.99 e_y=-0.009 theta=0.004 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757630.225019785] [adaptive_controller_benchmark_node]: [t=  12.1s] N=600 RMS(e_y)=1.7241m Max|e_y|=2.6817m RMS(heading)=0.0894rad switches=0 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757631.663257322] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=-0.001 theta=0.000 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757633.683185806] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=0.003 theta=-0.001 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757634.224643902] [adaptive_controller_benchmark_node]: [t=  16.1s] N=800 RMS(e_y)=1.4931m Max|e_y|=2.6817m RMS(heading)=0.0774rad switches=0 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757635.683271847] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=0.015 theta=-0.001 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757637.703216137] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=0.052 theta=0.005 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757638.224473177] [adaptive_controller_benchmark_node]: [t=  20.1s] N=1000 RMS(e_y)=1.3356m Max|e_y|=2.6817m RMS(heading)=0.0693rad switches=0 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757639.723116903] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=0.042 theta=-0.002 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757641.743122022] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=0.020 theta=-0.003 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757642.224107213] [adaptive_controller_benchmark_node]: [t=  24.1s] N=1200 RMS(e_y)=1.2193m Max|e_y|=2.6817m RMS(heading)=0.0633rad switches=0 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757643.763072946] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=0.001 theta=0.000 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757645.783128948] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=-0.011 theta=0.001 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757646.224184133] [adaptive_controller_benchmark_node]: [t=  28.1s] N=1400 RMS(e_y)=1.1289m Max|e_y|=2.6817m RMS(heading)=0.0586rad switches=0 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757647.802998987] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=-0.022 theta=-0.006 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757649.803002893] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=-0.029 theta=-0.001 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757650.224114257] [adaptive_controller_benchmark_node]: [t=  32.1s] N=1600 RMS(e_y)=1.0560m Max|e_y|=2.6817m RMS(heading)=0.0548rad switches=0 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757651.803060146] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=-0.019 theta=-0.004 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757653.822994877] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=-0.008 theta=0.002 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757654.224550289] [adaptive_controller_benchmark_node]: [t=  36.1s] N=1800 RMS(e_y)=0.9956m Max|e_y|=2.6817m RMS(heading)=0.0517rad switches=0 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757655.843001161] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=-0.002 theta=-0.000 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757657.862915191] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=-0.002 theta=0.000 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757658.224435954] [adaptive_controller_benchmark_node]: [t=  40.1s] N=2000 RMS(e_y)=0.9445m Max|e_y|=2.6817m RMS(heading)=0.0490rad switches=0 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757659.862927243] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=-0.004 theta=0.002 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757661.882847524] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=0.049 theta=-0.004 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757662.223878890] [adaptive_controller_benchmark_node]: [t=  44.1s] N=2200 RMS(e_y)=0.9006m Max|e_y|=2.6817m RMS(heading)=0.0468rad switches=0 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757663.902887500] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=0.200 theta=-0.007 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757665.922825679] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=0.054 theta=-0.002 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757666.224379606] [adaptive_controller_benchmark_node]: [t=  48.1s] N=2400 RMS(e_y)=0.8632m Max|e_y|=2.6817m RMS(heading)=0.0450rad switches=0 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757667.942744171] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=-0.011 theta=0.001 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757669.942759480] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=10.99 e_y=-0.155 theta=-0.033 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757670.223941354] [adaptive_controller_benchmark_node]: [t=  52.1s] N=2600 RMS(e_y)=0.8297m Max|e_y|=2.6817m RMS(heading)=0.0434rad switches=0 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757671.942777499] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.01 e_y=-0.199 theta=0.041 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757673.962975769] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=0.003 theta=0.002 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757674.224158513] [adaptive_controller_benchmark_node]: [t=  56.1s] N=2800 RMS(e_y)=0.8009m Max|e_y|=2.6817m RMS(heading)=0.0422rad switches=0 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757675.982824624] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=-0.005 theta=-0.001 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757678.002672255] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=-0.023 theta=0.002 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757678.223996385] [adaptive_controller_benchmark_node]: [t=  60.1s] N=3000 RMS(e_y)=0.7738m Max|e_y|=2.6817m RMS(heading)=0.0407rad switches=0 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757680.002679279] [adaptive_controller_manager]: [status] active=PURE PURSUIT state=RUNNING_PP | pp: health=ok state=active | mpc: health=ok | v_x=11.00 e_y=-0.046 theta=-0.008 | params: stored_v=0 fwd_v=0 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757680.754749250] [adaptive_controller_manager]: sysid/update_params: accepted and stored new tire params
+[adaptive_controller_manager_node-3] [INFO] [1789757680.762800459] [adaptive_controller_manager]: [status] stored params awaiting arming: all gates pass
+[mpc_node-2] [INFO] [1789757680.762871975] [mpc_path_tracking]: tire params updated via mpc/update_params
+[mpc_node-2] [INFO] [1789757680.762913796] [mpc_path_tracking]: model check: C_front=13219 N/rad C_rear=16215 N/rad -> understeering, linearization stable at all speeds
+[mpc_node-2] [INFO] [1789757680.763518389] [mpc_path_tracking]: loaded 2916 raceline waypoints at speed cap 27.77 m/s, lateral cap 6.50 m/s^2 (0.66 g, grip ceiling 19.62 m/s^2 (Pacejka D 19.62 x fast mu ratio 1.00, D only) x 0.75 utilization (base 0.75, shape 0.75) x 0.84 binding axle under braking = 12.34, capped by limits.lateral_accel_max 6.50); reference now peaks at 4.98 m/s^2 (0.51 g)
+[mpc_node-2] [WARN] [1789757680.763547528] [mpc_path_tracking]: raceline speed profile exceeds limits.speed_max=27.77 m/s at 1343/2916 waypoints (max 27.78 m/s, 1.0x the limit) - clamped. The raceline was optimized for a faster vehicle than this one; regenerate it with v_max=27.77 m/s for a usable speed profile. Raising limits.speed_max only helps if the VEHICLE can really go that fast - the cap must describe the plant, not the ambition.
+[mpc_node-2] [INFO] [1789757680.764363559] [mpc_path_tracking]: loaded 2916 raceline waypoints at speed cap 27.77 m/s, lateral cap 5.23 m/s^2 (0.53 g, grip ceiling 19.62 m/s^2 (Pacejka D 19.62 x fast mu ratio 1.00, D only) x 0.32 utilization (base 0.75, shape 0.32) x 0.84 binding axle under braking = 5.23, capped by limits.lateral_accel_max 6.50); reference now peaks at 4.98 m/s^2 (0.51 g)
+[mpc_node-2] [WARN] [1789757680.764406243] [mpc_path_tracking]: raceline speed profile exceeds limits.speed_max=27.77 m/s at 1343/2916 waypoints (max 27.78 m/s, 1.0x the limit) - clamped. The raceline was optimized for a faster vehicle than this one; regenerate it with v_max=27.77 m/s for a usable speed profile. Raising limits.speed_max only helps if the VEHICLE can really go that fast - the cap must describe the plant, not the ambition.
+[adaptive_controller_manager_node-3] [INFO] [1789757680.782543481] [adaptive_controller_manager]: Beginning switch to MPC (v_frozen=11.00)
+[adaptive_controller_manager_node-3] [INFO] [1789757681.802506355] [adaptive_controller_manager]: Switch to MPC complete
+[adaptive_controller_manager_node-3] [INFO] [1789757682.022600016] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=13.91 e_y=-0.000 theta=0.002 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757682.224011573] [adaptive_controller_benchmark_node]: [t=  64.1s] N=3200 RMS(e_y)=0.7493m Max|e_y|=2.6817m RMS(heading)=0.0395rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757684.022619395] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=23.94 e_y=-0.046 theta=-0.001 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757686.042587541] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.46 e_y=-0.014 theta=-0.001 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757686.224765167] [adaptive_controller_benchmark_node]: [t=  68.1s] N=3400 RMS(e_y)=0.7269m Max|e_y|=2.6817m RMS(heading)=0.0383rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757688.062523274] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.74 e_y=-0.017 theta=-0.001 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757690.082502928] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.77 e_y=-0.008 theta=-0.006 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757690.223619260] [adaptive_controller_benchmark_node]: [t=  72.1s] N=3600 RMS(e_y)=0.7065m Max|e_y|=2.6817m RMS(heading)=0.0372rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757692.082553887] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.67 e_y=-0.016 theta=0.003 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757694.082559628] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=17.94 e_y=0.038 theta=-0.001 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757694.224255961] [adaptive_controller_benchmark_node]: [t=  76.1s] N=3800 RMS(e_y)=0.6877m Max|e_y|=2.6817m RMS(heading)=0.0363rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757696.102419992] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=18.53 e_y=0.111 theta=-0.002 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757698.122452538] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=13.61 e_y=-0.108 theta=0.009 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757698.224018115] [adaptive_controller_benchmark_node]: [t=  80.1s] N=4000 RMS(e_y)=0.6709m Max|e_y|=2.6817m RMS(heading)=0.0358rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757700.142579113] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=16.43 e_y=0.132 theta=0.007 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757702.162384061] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=16.14 e_y=0.005 theta=-0.027 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757702.223583287] [adaptive_controller_benchmark_node]: [t=  84.1s] N=4200 RMS(e_y)=0.6552m Max|e_y|=2.6817m RMS(heading)=0.0355rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757704.162440897] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=16.03 e_y=-0.152 theta=-0.037 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757706.182300169] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=16.27 e_y=-0.050 theta=-0.000 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757706.224149664] [adaptive_controller_benchmark_node]: [t=  88.1s] N=4400 RMS(e_y)=0.6405m Max|e_y|=2.6817m RMS(heading)=0.0355rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757708.202334980] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=24.78 e_y=-0.156 theta=0.005 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757710.222367697] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.46 e_y=-0.143 theta=-0.014 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757710.223949561] [adaptive_controller_benchmark_node]: [t=  92.1s] N=4600 RMS(e_y)=0.6270m Max|e_y|=2.6817m RMS(heading)=0.0348rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757712.242375096] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.74 e_y=-0.327 theta=-0.022 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757714.223590633] [adaptive_controller_benchmark_node]: [t=  96.1s] N=4800 RMS(e_y)=0.6161m Max|e_y|=2.6817m RMS(heading)=0.0345rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757714.262280155] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.75 e_y=-0.141 theta=-0.026 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757716.262323969] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.77 e_y=-0.089 theta=0.006 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757718.223402532] [adaptive_controller_benchmark_node]: [t= 100.1s] N=5000 RMS(e_y)=0.6043m Max|e_y|=2.6817m RMS(heading)=0.0339rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757718.282232442] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.77 e_y=-0.017 theta=-0.001 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757720.303555664] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.77 e_y=-0.019 theta=-0.002 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757722.223963412] [adaptive_controller_benchmark_node]: [t= 104.1s] N=5200 RMS(e_y)=0.5926m Max|e_y|=2.6817m RMS(heading)=0.0332rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757722.322216745] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=23.69 e_y=0.033 theta=0.000 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757724.322246854] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=20.85 e_y=-0.121 theta=-0.015 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757726.223346445] [adaptive_controller_benchmark_node]: [t= 108.1s] N=5400 RMS(e_y)=0.5821m Max|e_y|=2.6817m RMS(heading)=0.0330rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757726.342265283] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=21.70 e_y=-0.246 theta=-0.005 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757728.362121229] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.11 e_y=-0.224 theta=-0.002 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757730.223797726] [adaptive_controller_benchmark_node]: [t= 112.1s] N=5600 RMS(e_y)=0.5730m Max|e_y|=2.6817m RMS(heading)=0.0327rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757730.382026953] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.71 e_y=-0.075 theta=-0.010 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757732.382046054] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.76 e_y=-0.116 theta=0.007 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757734.223553266] [adaptive_controller_benchmark_node]: [t= 116.1s] N=5800 RMS(e_y)=0.5633m Max|e_y|=2.6817m RMS(heading)=0.0322rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757734.402145782] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.77 e_y=0.025 theta=0.009 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757736.402269442] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=21.45 e_y=0.220 theta=0.025 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [WARN] [1789757738.074749597] [adaptive_controller_manager]: sysid/update_params: param[1]=2.2000 outside plausible bounds [1.2000, 2.2000] - rejected
+[adaptive_controller_benchmark_node-4] [INFO] [1789757738.223226831] [adaptive_controller_benchmark_node]: [t= 120.1s] N=6000 RMS(e_y)=0.5545m Max|e_y|=2.6817m RMS(heading)=0.0318rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757738.421998968] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=21.78 e_y=-0.059 theta=-0.050 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757740.422012822] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=20.44 e_y=-0.053 theta=0.023 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757742.222958203] [adaptive_controller_benchmark_node]: [t= 124.1s] N=6200 RMS(e_y)=0.5464m Max|e_y|=2.6817m RMS(heading)=0.0317rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757742.422023039] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=19.24 e_y=0.071 theta=0.030 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757744.441920381] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=19.00 e_y=0.035 theta=-0.011 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757746.223023223] [adaptive_controller_benchmark_node]: [t= 128.1s] N=6400 RMS(e_y)=0.5386m Max|e_y|=2.6817m RMS(heading)=0.0317rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757746.441954873] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=18.67 e_y=-0.008 theta=-0.032 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757748.461916129] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=23.88 e_y=-0.378 theta=0.001 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757750.222889462] [adaptive_controller_benchmark_node]: [t= 132.1s] N=6600 RMS(e_y)=0.5318m Max|e_y|=2.6817m RMS(heading)=0.0320rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757750.481767476] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=26.61 e_y=0.257 theta=0.033 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757752.481820551] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.67 e_y=0.020 theta=-0.012 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757754.222947217] [adaptive_controller_benchmark_node]: [t= 136.1s] N=6800 RMS(e_y)=0.5244m Max|e_y|=2.6817m RMS(heading)=0.0316rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757754.501862098] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.76 e_y=-0.042 theta=0.005 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757756.521751915] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.77 e_y=0.001 theta=-0.001 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757758.222783051] [adaptive_controller_benchmark_node]: [t= 140.1s] N=7000 RMS(e_y)=0.5169m Max|e_y|=2.6817m RMS(heading)=0.0311rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757758.541746867] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.77 e_y=-0.033 theta=-0.002 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757760.541764312] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.77 e_y=-0.035 theta=-0.001 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757762.223151487] [adaptive_controller_benchmark_node]: [t= 144.1s] N=7200 RMS(e_y)=0.5097m Max|e_y|=2.6817m RMS(heading)=0.0307rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757762.541944199] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=26.17 e_y=-0.031 theta=-0.005 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757764.561711607] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=19.09 e_y=-0.062 theta=-0.004 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757766.223001264] [adaptive_controller_benchmark_node]: [t= 148.1s] N=7400 RMS(e_y)=0.5029m Max|e_y|=2.6817m RMS(heading)=0.0304rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757766.581654413] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=18.40 e_y=-0.297 theta=-0.049 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757768.601612516] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=20.22 e_y=-0.092 theta=-0.012 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757770.222596527] [adaptive_controller_benchmark_node]: [t= 152.1s] N=7600 RMS(e_y)=0.4978m Max|e_y|=2.6817m RMS(heading)=0.0306rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757770.621623209] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=26.63 e_y=-0.092 theta=0.014 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757772.641632313] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.65 e_y=0.099 theta=0.033 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757774.223173619] [adaptive_controller_benchmark_node]: [t= 156.1s] N=7800 RMS(e_y)=0.4920m Max|e_y|=2.6817m RMS(heading)=0.0304rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757774.661744963] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=21.24 e_y=0.013 theta=0.014 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757776.681610059] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=12.34 e_y=0.017 theta=0.000 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757778.222939487] [adaptive_controller_benchmark_node]: [t= 160.1s] N=8000 RMS(e_y)=0.4859m Max|e_y|=2.6817m RMS(heading)=0.0301rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757778.701521355] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=9.58 e_y=-0.032 theta=-0.004 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757780.721527915] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=10.05 e_y=-0.443 theta=0.055 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757782.222851012] [adaptive_controller_benchmark_node]: [t= 164.1s] N=8200 RMS(e_y)=0.4813m Max|e_y|=2.6817m RMS(heading)=0.0300rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757782.741483193] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=12.42 e_y=0.152 theta=-0.028 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757784.741485122] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=17.64 e_y=-0.000 theta=-0.053 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757786.223587909] [adaptive_controller_benchmark_node]: [t= 168.1s] N=8400 RMS(e_y)=0.4764m Max|e_y|=2.6817m RMS(heading)=0.0300rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757786.761469637] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=18.97 e_y=-0.062 theta=-0.015 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757788.781395917] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=18.61 e_y=-0.073 theta=-0.039 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [WARN] [1789757790.041307098] [adaptive_controller_manager]: sysid/update_params: param[1]=2.2000 outside plausible bounds [1.2000, 2.2000] - rejected
+[adaptive_controller_benchmark_node-4] [INFO] [1789757790.222883572] [adaptive_controller_benchmark_node]: [t= 172.1s] N=8600 RMS(e_y)=0.4713m Max|e_y|=2.6817m RMS(heading)=0.0299rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757790.801405992] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=23.06 e_y=-0.190 theta=-0.008 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757792.821367405] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.27 e_y=-0.031 theta=0.001 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757794.222682679] [adaptive_controller_benchmark_node]: [t= 176.1s] N=8800 RMS(e_y)=0.4661m Max|e_y|=2.6817m RMS(heading)=0.0296rad switches=1 emergency_halts=0 laps=0
+[adaptive_controller_manager_node-3] [INFO] [1789757794.821517168] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.71 e_y=-0.014 theta=0.001 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757796.841292796] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.76 e_y=-0.034 theta=0.001 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757798.222150226] [adaptive_controller_benchmark_node]: [t= 180.1s] N=9000 RMS(e_y)=0.4609m Max|e_y|=2.6817m RMS(heading)=0.0293rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757798.861322381] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=20.77 e_y=0.000 theta=0.002 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757800.881361976] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=19.65 e_y=-0.075 theta=-0.031 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757802.222566413] [adaptive_controller_benchmark_node]: [t= 184.1s] N=9200 RMS(e_y)=0.4562m Max|e_y|=2.6817m RMS(heading)=0.0292rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757802.901189612] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=24.21 e_y=-0.257 theta=-0.044 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757804.901383279] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=26.44 e_y=0.116 theta=0.011 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757806.222071065] [adaptive_controller_benchmark_node]: [t= 188.1s] N=9400 RMS(e_y)=0.4525m Max|e_y|=2.6817m RMS(heading)=0.0291rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757806.921447477] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.34 e_y=0.447 theta=0.016 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757808.941195079] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=23.76 e_y=0.312 theta=-0.002 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757810.222440841] [adaptive_controller_benchmark_node]: [t= 192.1s] N=9600 RMS(e_y)=0.4491m Max|e_y|=2.6817m RMS(heading)=0.0290rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757810.961185897] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=15.40 e_y=0.006 theta=0.002 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757812.981129783] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=11.84 e_y=0.078 theta=-0.009 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757814.222170731] [adaptive_controller_benchmark_node]: [t= 196.1s] N=9800 RMS(e_y)=0.4446m Max|e_y|=2.6817m RMS(heading)=0.0287rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757814.981147526] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=12.23 e_y=0.236 theta=-0.044 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757817.001099711] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=11.28 e_y=0.016 theta=0.000 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757818.222069216] [adaptive_controller_benchmark_node]: [t= 200.1s] N=10000 RMS(e_y)=0.4405m Max|e_y|=2.6817m RMS(heading)=0.0286rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757819.021020159] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=11.15 e_y=-0.089 theta=0.012 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757821.041111492] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=11.12 e_y=-0.250 theta=-0.009 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757822.222110246] [adaptive_controller_benchmark_node]: [t= 204.1s] N=10200 RMS(e_y)=0.4371m Max|e_y|=2.6817m RMS(heading)=0.0286rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757823.060998453] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=17.35 e_y=0.032 theta=0.010 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757825.061016658] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=18.77 e_y=0.104 theta=0.004 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757826.222111027] [adaptive_controller_benchmark_node]: [t= 208.1s] N=10400 RMS(e_y)=0.4330m Max|e_y|=2.6817m RMS(heading)=0.0284rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757827.061139404] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=18.95 e_y=0.018 theta=0.040 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757829.080946623] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=24.52 e_y=0.112 theta=-0.010 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757830.222145744] [adaptive_controller_benchmark_node]: [t= 212.1s] N=10600 RMS(e_y)=0.4291m Max|e_y|=2.6817m RMS(heading)=0.0283rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757831.100997640] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.45 e_y=0.000 theta=-0.004 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757833.121062529] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.74 e_y=-0.011 theta=-0.003 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757834.222024830] [adaptive_controller_benchmark_node]: [t= 216.1s] N=10800 RMS(e_y)=0.4251m Max|e_y|=2.6817m RMS(heading)=0.0280rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757835.140859718] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.77 e_y=-0.038 theta=-0.002 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757837.160995995] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.77 e_y=-0.019 theta=0.004 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757838.221771373] [adaptive_controller_benchmark_node]: [t= 220.1s] N=11000 RMS(e_y)=0.4213m Max|e_y|=2.6817m RMS(heading)=0.0278rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757839.180837953] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=23.24 e_y=0.077 theta=0.002 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757841.200781897] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=19.59 e_y=0.055 theta=0.011 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757842.221722876] [adaptive_controller_benchmark_node]: [t= 224.1s] N=11200 RMS(e_y)=0.4175m Max|e_y|=2.6817m RMS(heading)=0.0276rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757843.220881081] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=14.83 e_y=0.185 theta=-0.005 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [WARN] [1789757843.667318212] [adaptive_controller_manager]: sysid/update_params: param[1]=2.2000 outside plausible bounds [1.2000, 2.2000] - rejected
+[adaptive_controller_manager_node-3] [INFO] [1789757845.240733692] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=16.37 e_y=0.098 theta=0.003 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757846.222186540] [adaptive_controller_benchmark_node]: [t= 228.1s] N=11400 RMS(e_y)=0.4144m Max|e_y|=2.6817m RMS(heading)=0.0277rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757847.241040467] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=16.41 e_y=0.022 theta=-0.022 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757849.260664275] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=15.22 e_y=0.137 theta=-0.017 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757850.221739212] [adaptive_controller_benchmark_node]: [t= 232.1s] N=11600 RMS(e_y)=0.4110m Max|e_y|=2.6817m RMS(heading)=0.0278rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757851.280754366] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=16.34 e_y=-0.034 theta=-0.037 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757853.300597148] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=21.92 e_y=-0.221 theta=-0.006 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757854.221618285] [adaptive_controller_benchmark_node]: [t= 236.1s] N=11800 RMS(e_y)=0.4079m Max|e_y|=2.6817m RMS(heading)=0.0278rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757855.300636330] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.22 e_y=-0.099 theta=-0.010 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757857.320609783] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.71 e_y=-0.159 theta=-0.033 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757858.223497742] [adaptive_controller_benchmark_node]: [t= 240.1s] N=12000 RMS(e_y)=0.4054m Max|e_y|=2.6817m RMS(heading)=0.0276rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757859.341081039] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.73 e_y=-0.486 theta=0.034 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757861.360562359] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=27.85 e_y=-0.983 theta=-0.152 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757862.221806089] [adaptive_controller_benchmark_node]: [t= 244.1s] N=12200 RMS(e_y)=0.4194m Max|e_y|=2.6817m RMS(heading)=0.0355rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757863.380591604] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=12.92 e_y=20.815 theta=-0.690 | params: stored_v=1 fwd_v=1 pending=no
+[mpc_node-2] [WARN] [1789757863.576139341] [mpc_path_tracking]: steering rate saturated: 0.0500 rad in 0.050 s = 1.00 rad/s at the limits.steering_rate_max cap of 1.00 rad/s
+[adaptive_controller_manager_node-3] [INFO] [1789757865.400506112] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.32 e_y=35.066 theta=2.065 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757866.222051509] [adaptive_controller_benchmark_node]: [t= 248.1s] N=12400 RMS(e_y)=3.5095m Max|e_y|=35.1629m RMS(heading)=0.2452rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757867.420588707] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.350 theta=1.610 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757869.440419326] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.363 theta=1.612 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757870.221876557] [adaptive_controller_benchmark_node]: [t= 252.1s] N=12600 RMS(e_y)=5.9011m Max|e_y|=38.3641m RMS(heading)=0.3237rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757871.440611379] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.362 theta=1.616 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757873.460557522] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.362 theta=1.618 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757874.221605909] [adaptive_controller_benchmark_node]: [t= 256.1s] N=12800 RMS(e_y)=7.5679m Max|e_y|=38.3660m RMS(heading)=0.3794rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757875.480370873] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.371 theta=1.615 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757877.480377743] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.372 theta=1.607 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757878.221625712] [adaptive_controller_benchmark_node]: [t= 260.1s] N=13000 RMS(e_y)=8.8907m Max|e_y|=38.3720m RMS(heading)=0.4263rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757879.480388462] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.372 theta=1.601 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757881.500293768] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.373 theta=1.595 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757882.221448318] [adaptive_controller_benchmark_node]: [t= 264.1s] N=13200 RMS(e_y)=10.0078m Max|e_y|=38.3732m RMS(heading)=0.4666rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757883.500358649] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.373 theta=1.587 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757885.520396509] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.374 theta=1.583 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757886.221904235] [adaptive_controller_benchmark_node]: [t= 268.1s] N=13400 RMS(e_y)=10.9836m Max|e_y|=38.3743m RMS(heading)=0.5020rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757887.540315327] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.375 theta=1.578 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757889.560227453] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.375 theta=1.573 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757890.221515007] [adaptive_controller_benchmark_node]: [t= 272.1s] N=13600 RMS(e_y)=11.8542m Max|e_y|=38.3755m RMS(heading)=0.5337rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757891.560301606] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.376 theta=1.569 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757893.580118183] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.376 theta=1.565 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757894.221667024] [adaptive_controller_benchmark_node]: [t= 276.1s] N=13800 RMS(e_y)=12.6423m Max|e_y|=38.3768m RMS(heading)=0.5624rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757895.600154891] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.378 theta=1.565 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757897.620165543] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.379 theta=1.575 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757898.221142157] [adaptive_controller_benchmark_node]: [t= 280.1s] N=14000 RMS(e_y)=13.3636m Max|e_y|=38.3789m RMS(heading)=0.5890rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757899.640098254] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.380 theta=1.573 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757901.640127491] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.381 theta=1.571 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757902.221495081] [adaptive_controller_benchmark_node]: [t= 284.1s] N=14200 RMS(e_y)=14.0292m Max|e_y|=38.3816m RMS(heading)=0.6139rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757903.660056366] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.382 theta=1.580 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757905.660147605] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.383 theta=1.578 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757906.220995853] [adaptive_controller_benchmark_node]: [t= 288.1s] N=14400 RMS(e_y)=14.6474m Max|e_y|=38.3835m RMS(heading)=0.6374rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757907.680031428] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.383 theta=1.579 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757909.700034558] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.383 theta=1.581 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757910.221058553] [adaptive_controller_benchmark_node]: [t= 292.1s] N=14600 RMS(e_y)=15.2246m Max|e_y|=38.3835m RMS(heading)=0.6594rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757911.720119291] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.383 theta=1.583 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757913.739905773] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.383 theta=1.587 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757914.220717143] [adaptive_controller_benchmark_node]: [t= 296.1s] N=14800 RMS(e_y)=15.7659m Max|e_y|=38.3835m RMS(heading)=0.6804rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757915.739941177] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.383 theta=1.588 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757917.760007308] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.01 e_y=38.383 theta=1.589 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757918.221186817] [adaptive_controller_benchmark_node]: [t= 300.1s] N=15000 RMS(e_y)=16.2756m Max|e_y|=38.3835m RMS(heading)=0.7003rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757919.779806863] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.383 theta=1.593 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757921.779889129] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.383 theta=1.595 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757922.220877448] [adaptive_controller_benchmark_node]: [t= 304.1s] N=15200 RMS(e_y)=16.7569m Max|e_y|=38.3835m RMS(heading)=0.7192rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757923.799826611] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.01 e_y=38.383 theta=1.596 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757925.819811003] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.383 theta=1.597 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757926.221361485] [adaptive_controller_benchmark_node]: [t= 308.1s] N=15400 RMS(e_y)=17.2128m Max|e_y|=38.3835m RMS(heading)=0.7374rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757927.819847102] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.384 theta=1.597 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757929.819869199] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.383 theta=1.600 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757930.221319845] [adaptive_controller_benchmark_node]: [t= 312.1s] N=15600 RMS(e_y)=17.6457m Max|e_y|=38.3836m RMS(heading)=0.7546rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757931.839995029] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.384 theta=1.603 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757933.859779384] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.384 theta=1.603 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757934.220838642] [adaptive_controller_benchmark_node]: [t= 316.1s] N=15800 RMS(e_y)=18.0576m Max|e_y|=38.3840m RMS(heading)=0.7712rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757935.859871537] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.384 theta=1.604 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757937.879841794] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.384 theta=1.606 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757938.220744606] [adaptive_controller_benchmark_node]: [t= 320.1s] N=16000 RMS(e_y)=18.4504m Max|e_y|=38.3840m RMS(heading)=0.7871rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757939.899806626] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.384 theta=1.608 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757941.920982904] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.384 theta=1.607 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757942.220725697] [adaptive_controller_benchmark_node]: [t= 324.1s] N=16200 RMS(e_y)=18.8257m Max|e_y|=38.3843m RMS(heading)=0.8023rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757943.939771881] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.01 e_y=38.384 theta=1.608 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757945.939879491] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.384 theta=1.610 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757946.221151655] [adaptive_controller_benchmark_node]: [t= 328.1s] N=16400 RMS(e_y)=19.1847m Max|e_y|=38.3845m RMS(heading)=0.8170rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757947.959820602] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.385 theta=1.612 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757949.979758230] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.01 e_y=38.385 theta=1.613 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757950.220846009] [adaptive_controller_benchmark_node]: [t= 332.1s] N=16600 RMS(e_y)=19.5286m Max|e_y|=38.3847m RMS(heading)=0.8311rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757951.999754320] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.385 theta=1.614 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757953.999794023] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.385 theta=1.614 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757954.221147094] [adaptive_controller_benchmark_node]: [t= 336.1s] N=16800 RMS(e_y)=19.8587m Max|e_y|=38.3849m RMS(heading)=0.8447rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757956.019739178] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.385 theta=1.616 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757958.019772445] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.385 theta=1.617 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757958.220822182] [adaptive_controller_benchmark_node]: [t= 340.1s] N=17000 RMS(e_y)=20.1758m Max|e_y|=38.3849m RMS(heading)=0.8578rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757960.019775867] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.385 theta=1.618 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757962.039850072] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.385 theta=1.620 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757962.221015978] [adaptive_controller_benchmark_node]: [t= 344.1s] N=17200 RMS(e_y)=20.4808m Max|e_y|=38.3851m RMS(heading)=0.8705rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757964.059750512] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.385 theta=1.622 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757966.079718629] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.385 theta=1.624 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757966.220896555] [adaptive_controller_benchmark_node]: [t= 348.1s] N=17400 RMS(e_y)=20.7744m Max|e_y|=38.3854m RMS(heading)=0.8828rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757968.099806520] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.01 e_y=38.385 theta=1.626 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757970.119645248] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.386 theta=1.628 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757970.220989953] [adaptive_controller_benchmark_node]: [t= 352.1s] N=17600 RMS(e_y)=21.0574m Max|e_y|=38.3856m RMS(heading)=0.8947rad switches=1 emergency_halts=0 laps=1
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[adaptive_controller_manager_node-3] [INFO] [1789757972.119709342] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.386 theta=1.629 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_manager_node-3] [INFO] [1789757974.119844720] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=0.00 e_y=38.386 theta=1.630 | params: stored_v=1 fwd_v=1 pending=no
+[adaptive_controller_benchmark_node-4] [INFO] [1789757974.220415086] [adaptive_controller_benchmark_node]: [t= 356.1s] N=17800 RMS(e_y)=21.3305m Max|e_y|=38.3858m RMS(heading)=0.9063rad switches=1 emergency_halts=0 laps=1
+[adaptive_controller_manager_node-3] [INFO] [1789757976.139701320] [adaptive_controller_manager]: [status] active=MPC state=RUNNING_MPC | pp: health=ok state=active | mpc: health=ok | v_x=-0.00 e_y=38.386 theta=1.631 | params: stored_v=1 fwd_v=1 pending=no
+[ERROR] [adaptive_controller_benchmark_node-4]: process[adaptive_controller_benchmark_node-4] failed to terminate '5' seconds after receiving 'SIGINT', escalating to 'SIGTERM'
+[ERROR] [adaptive_controller_manager_node-3]: process[adaptive_controller_manager_node-3] failed to terminate '5' seconds after receiving 'SIGINT', escalating to 'SIGTERM'
+[ERROR] [mpc_node-2]: process[mpc_node-2] failed to terminate '5' seconds after receiving 'SIGINT', escalating to 'SIGTERM'
+[ERROR] [pure_pursuit_node.py-1]: process[pure_pursuit_node.py-1] failed to terminate '5' seconds after receiving 'SIGINT', escalating to 'SIGTERM'
+[INFO] [adaptive_controller_benchmark_node-4]: sending signal 'SIGTERM' to process[adaptive_controller_benchmark_node-4]
+[INFO] [adaptive_controller_manager_node-3]: sending signal 'SIGTERM' to process[adaptive_controller_manager_node-3]
+[INFO] [mpc_node-2]: sending signal 'SIGTERM' to process[mpc_node-2]
+[INFO] [pure_pursuit_node.py-1]: sending signal 'SIGTERM' to process[pure_pursuit_node.py-1]
+[mpc_node-2] [INFO] [1789757976.864790787] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[pure_pursuit_node.py-1] RUNNING PURE-PURSUIT CODE.... 
+[pure_pursuit_node.py-1] 
+[pure_pursuit_node.py-1] 
+[pure_pursuit_node.py-1] Traceback (most recent call last):
+[pure_pursuit_node.py-1]   File "/home/ebrahim/Ebrahim_Master_Thesis_repo/install/pure_pursuit/lib/pure_pursuit/pure_pursuit_node.py", line 551, in main
+[pure_pursuit_node.py-1]     rclpy.spin(node)
+[pure_pursuit_node.py-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+[pure_pursuit_node.py-1]     executor.spin_once()
+[pure_pursuit_node.py-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 812, in spin_once
+[pure_pursuit_node.py-1]     self._spin_once_impl(timeout_sec)
+[pure_pursuit_node.py-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 801, in _spin_once_impl
+[pure_pursuit_node.py-1]     handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+[pure_pursuit_node.py-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 784, in wait_for_ready_callbacks
+[pure_pursuit_node.py-1]     return next(self._cb_iter)
+[pure_pursuit_node.py-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 685, in _wait_for_ready_callbacks
+[pure_pursuit_node.py-1]     raise ExternalShutdownException()
+[pure_pursuit_node.py-1] rclpy.executors.ExternalShutdownException
+[pure_pursuit_node.py-1] 
+[pure_pursuit_node.py-1] During handling of the above exception, another exception occurred:
+[pure_pursuit_node.py-1] 
+[pure_pursuit_node.py-1] Traceback (most recent call last):
+[pure_pursuit_node.py-1]   File "/home/ebrahim/Ebrahim_Master_Thesis_repo/install/pure_pursuit/lib/pure_pursuit/pure_pursuit_node.py", line 560, in <module>
+[pure_pursuit_node.py-1]     main()
+[pure_pursuit_node.py-1]   File "/home/ebrahim/Ebrahim_Master_Thesis_repo/install/pure_pursuit/lib/pure_pursuit/pure_pursuit_node.py", line 556, in main
+[pure_pursuit_node.py-1]     rclpy.shutdown()
+[pure_pursuit_node.py-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+[pure_pursuit_node.py-1]     _shutdown(context=context)
+[pure_pursuit_node.py-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+[pure_pursuit_node.py-1]     return context.shutdown()
+[pure_pursuit_node.py-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+[pure_pursuit_node.py-1]     self.__context.shutdown()
+[pure_pursuit_node.py-1] rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+[INFO] [mpc_node-2]: process has finished cleanly [pid 219532]
+[INFO] [adaptive_controller_manager_node-3]: process has finished cleanly [pid 219534]
+[ERROR] [pure_pursuit_node.py-1]: process has died [pid 219530, exit code 1, cmd '/home/ebrahim/Ebrahim_Master_Thesis_repo/install/pure_pursuit/lib/pure_pursuit/pure_pursuit_node.py --ros-args -r __node:=pure_pursuit --params-file /home/ebrahim/Ebrahim_Master_Thesis_repo/install/pure_pursuit/share/pure_pursuit/config/pure_pursuit.yaml --params-file /tmp/launch_params_el_qe8pt'].
+[adaptive_controller_benchmark_node-4] [WARN] [1789757977.528010425] [adaptive_controller_benchmark_node]: Run failed (collision with actor 0: horizontal impulse 415.9 N*s exceeds the 200.0 N*s threshold) - marking it on the figures.
+[adaptive_controller_benchmark_node-4] Failed to publish log message to rosout: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[adaptive_controller_benchmark_node-4] [INFO] [1789757979.844319999] [adaptive_controller_benchmark_node]: Benchmark plots saved to: /home/ebrahim/Ebrahim_Master_Thesis_repo/graphs/control/Baseline-NN-MSE-decay-mu
+[adaptive_controller_benchmark_node-4] Failed to publish log message to rosout: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[adaptive_controller_benchmark_node-4] Traceback (most recent call last):
+[adaptive_controller_benchmark_node-4]   File "/home/ebrahim/Ebrahim_Master_Thesis_repo/build/adaptive_controller_benchmark/adaptive_controller_benchmark/adaptive_controller_benchmark_node.py", line 781, in main
+[adaptive_controller_benchmark_node-4]     rclpy.spin(node)
+[adaptive_controller_benchmark_node-4]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+[adaptive_controller_benchmark_node-4]     executor.spin_once()
+[adaptive_controller_benchmark_node-4]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 812, in spin_once
+[adaptive_controller_benchmark_node-4]     self._spin_once_impl(timeout_sec)
+[adaptive_controller_benchmark_node-4]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 801, in _spin_once_impl
+[adaptive_controller_benchmark_node-4]     handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+[adaptive_controller_benchmark_node-4]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 784, in wait_for_ready_callbacks
+[adaptive_controller_benchmark_node-4]     return next(self._cb_iter)
+[adaptive_controller_benchmark_node-4]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 685, in _wait_for_ready_callbacks
+[adaptive_controller_benchmark_node-4]     raise ExternalShutdownException()
+[adaptive_controller_benchmark_node-4] rclpy.executors.ExternalShutdownException
+[adaptive_controller_benchmark_node-4] 
+[adaptive_controller_benchmark_node-4] During handling of the above exception, another exception occurred:
+[adaptive_controller_benchmark_node-4] 
+[adaptive_controller_benchmark_node-4] Traceback (most recent call last):
+[adaptive_controller_benchmark_node-4]   File "/home/ebrahim/Ebrahim_Master_Thesis_repo/install/adaptive_controller_benchmark/lib/adaptive_controller_benchmark/adaptive_controller_benchmark_node", line 33, in <module>
+[adaptive_controller_benchmark_node-4]     sys.exit(load_entry_point('adaptive-controller-benchmark', 'console_scripts', 'adaptive_controller_benchmark_node')())
+[adaptive_controller_benchmark_node-4]   File "/home/ebrahim/Ebrahim_Master_Thesis_repo/build/adaptive_controller_benchmark/adaptive_controller_benchmark/adaptive_controller_benchmark_node.py", line 786, in main
+[adaptive_controller_benchmark_node-4]     rclpy.shutdown()
+[adaptive_controller_benchmark_node-4]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+[adaptive_controller_benchmark_node-4]     _shutdown(context=context)
+[adaptive_controller_benchmark_node-4]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+[adaptive_controller_benchmark_node-4]     return context.shutdown()
+[adaptive_controller_benchmark_node-4]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+[adaptive_controller_benchmark_node-4]     self.__context.shutdown()
+[adaptive_controller_benchmark_node-4] rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+[ERROR] [adaptive_controller_benchmark_node-4]: process has died [pid 219536, exit code 1, cmd '/home/ebrahim/Ebrahim_Master_Thesis_repo/install/adaptive_controller_benchmark/lib/adaptive_controller_benchmark/adaptive_controller_benchmark_node --ros-args -r __node:=adaptive_controller_benchmark_node --params-file /home/ebrahim/Ebrahim_Master_Thesis_repo/install/adaptive_controller_benchmark/share/adaptive_controller_benchmark/config/benchmark_config.yaml --params-file /tmp/launch_params_7ppy2bco'].

@@ -11,34 +11,60 @@ synchronous mode at a \SI{0.033}{\second} fixed physics step. The identifier
 collects \SI{30}{\second} of data on a \SI{50}{\hertz} timer that the server's
 step rate holds to \SI{30}{\hertz} (Section~\ref{subsec:data}) and
 re-identifies from the newest buffer, matching the baseline's data
-budget~\cite{ontrack2025}. Ground
-truth is the simulator's own per-wheel telemetry, which the identifier never
-reads; every figure is exported with the CSV holding its samples, and the
-cross-run comparison reads those CSVs rather than re-deriving any metric.
+budget~\cite{ontrack2025}. Ground truth is the simulator's own per-wheel
+telemetry, which the identifier never reads; every figure is exported with the
+CSV holding its samples, and the cross-run comparison reads those CSVs rather
+than re-deriving any metric.
 
-Two clocks appear below, and no metric mixes them. The controller
-node stamps its own quantities (run duration, handover time, lap time and
-every tracking error) on the ROS wall clock, on which the two runs last
-\SI{580.4}{\second} and \SI{554.6}{\second}. The identifier and the force
-benchmark stamp theirs on the simulation clock, which the server advances
-faster than wall time (\num{1.56} and \num{1.66} here) and on which the same
-two runs last \SI{906.6}{\second} and \SI{920.7}{\second}.
+Two clocks appear below, and no metric mixes them. The controller node stamps
+its own quantities (run duration, handover time, lap time and every tracking
+error) on the ROS wall clock. The identifier and the force benchmark stamp
+theirs on the simulation clock, which the server advances faster than wall time,
+at a ratio between \num{1.28} and \num{1.66} across the four runs. Table~\ref{tab:comparison}
+labels each block with the clock it is measured on.
 
-\subsubsection{Surface}
-Every run uses a \emph{static} surface: the per-wheel coefficient is held at its
-configured \num{1.0}, and the road-surface factor of \num{0.70} PhysX applies on
-top of it makes the effective coefficient \num{0.70}, constant to the last digit
-the simulator reports over all \num{10744} and \num{12026} force-validation
-samples of the two runs. It is deliberately \emph{not} the $\mu=\num{1.05}$
-surface the tire prior was measured on
-(Section~\ref{subsubsec:priorprovenance}), so an arm that cannot move off
-its prior cannot score well here. It remains a \emph{single} surface: the
-adaptivity claim a friction sweep would support is not made
-(Section~\ref{subsec:limits}).
+\subsubsection{Two friction schedules}
+\label{subsubsec:surface}
+Four runs are reported, two configurations crossed with two surfaces.
+
+On the \emph{static} surface the per-wheel coefficient is held at its configured
+\num{1.0}, and the road-surface factor of \num{0.70} PhysX applies on top of it
+makes the effective coefficient \num{0.700}, constant to the last digit the
+simulator reports over all force-validation samples of both runs. It is
+deliberately not the $\mu=\num{1.05}$ surface the tire prior was measured on
+(Section~\ref{subsubsec:priorprovenance}), so an arm that cannot move off its
+prior cannot score well. What it does not test is tracking: the identifier is
+asked to find one number and then hold it.
+
+The \emph{decaying} surface supplies the change. A schedule node drives the
+per-wheel coefficient over the ROS wall clock through
+\begin{equation}
+\mu_{\mathrm{cmd}}(t)=\max\!\big(\mu_{\mathrm{floor}},\;\mu_{0}(1-\eta t)\big),
+\qquad \eta=10^{-3}\,\si{\per\second},
+\label{eq:decay}
+\end{equation}
+with $\mu_{0}=\num{1.0}$ and $\mu_{\mathrm{floor}}=\num{0.5}$, reached at
+$t=\SI{500}{\second}$; the command is applied through the bridge's
+\texttt{set\_tire\_friction} service while the car is driving, so the surface
+changes under a moving vehicle rather than between runs. The effective axle
+coefficient the plant reports therefore falls monotonically from \num{0.700} to
+the \num{0.350} floor, half the grip gone over the run, and the force-validation
+window opens at \num{0.637}. The linear-decay protocol is that of
+LLA-MPC~\cite{llampc2025}, which decays $\mu$ at \SI{2}{\percent} of nominal per
+second on a 1:43 vehicle. We keep the law and the total excursion and reduce the
+rate by a factor of \num{20}, because the scaling of the platform sets what an
+on-track identifier can be scored against at all: at \SI{2}{\percent} per second
+the surface is exhausted in \SI{50}{\second}, shorter than one
+\SI{30}{\second} buffer plus the \SI{20.9}{\second} its fit takes
+(Section~\ref{subsec:runtime}), and no identifier of this class would publish a
+second coefficient set before the experiment ended. At \eqref{eq:decay}'s rate
+the surface instead loses about \num{0.06} of $\mu$ per identification cycle,
+which is the regime in which tracking is a question rather than a race against
+the sampling period.
 
 \subsubsection{Reference trajectory}
 \label{subsubsec:raceline}
-Both runs follow the same optimised raceline (Fig.~\ref{fig:raceline}),
+All four runs follow the same optimised raceline (Fig.~\ref{fig:raceline}),
 generated with the TUM global race trajectory optimisation
 package~\cite{tumracetraj} under its minimum-curvature
 formulation~\cite{heilmeier2020}: a closed \SI{5828.2}{\meter} lap of
@@ -46,45 +72,34 @@ formulation~\cite{heilmeier2020}: a closed \SI{5828.2}{\meter} lap of
 \SIrange{9.62}{25.78}{\meter\per\second}, minimum corner radius
 \SI{18.7}{\meter} ($|\kappa|_{\max}=\SI{0.0536}{\per\meter}$). Its peak lateral
 demand is $\max(v_{x}^{2}|\kappa|)=\SI{4.98}{\meter\per\second\squared}$
-(\SI{0.51}{\g}), roughly \SI{73}{\percent} of the \SI{0.70}{\g} this surface
-sustains. It replaces an earlier trajectory whose \SI{1.22}{\g} demand the
-admissibility gate of Section~\ref{sec:integration} rejected against the same
-plant; that regeneration, not a relaxed gate, unblocked the closed-loop runs.
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{raceline.pdf}
-\caption{The optimised raceline used for both
-runs~\cite{tumracetraj,heilmeier2020}. (a) Track layout, coloured by lateral
-demand, with the marked corner ($R=\SI{18.7}{\meter}$) the tightest on the lap.
-(b) Reference speed profile. (c) Lateral demand $v_{x}^{2}|\kappa|$ along the
-lap against the flat \SI{5.0}{\meter\per\second\squared} envelope handed to the
-optimiser (dashed) and the grip the vehicle has on this surface (dotted,
-$\approx\SI{0.70}{\g}$, measured). No segment exceeds the plant's grip.}
-\label{fig:raceline}
-\end{figure*}
+(\SI{0.51}{\g}), roughly \SI{73}{\percent} of the \SI{0.70}{\g} the static
+surface sustains. On the decaying surface that same trajectory stops being
+admissible part way through the run, which is the point of running it: the
+plant passes below the reference's demand at an effective $\mu$ of about
+\num{0.51}, and what the two arms do about it is the result of
+Section~\ref{subsec:resultsclosedloop}.
 
 \subsubsection{The two configurations}
 \label{subsubsec:scenarios}
-Two configurations of the same pipeline are run back to back on that
-trajectory, three timed laps each, with an untimed out-lap. They differ in the
-eight settings of Table~\ref{tab:scenarios} and in nothing else; vehicle, map,
-trajectory, controller, data budget, loop count, tire prior and box constraints
-are shared. \basearm{} is the inherited configuration evaluated at full scale
-on the corrected rollout speed, so the comparison isolates those eight settings
-rather than reproducing the published pipeline in full; \oursarm{} is the
-shipped configuration. Since the eight settings move together, what follows is
-a configuration comparison, not a per-factor ablation, which
+The two configurations of the pipeline differ in the nine settings of
+Table~\ref{tab:scenarios} and in nothing else; vehicle, map, trajectory,
+controller, data budget, loop count, tire prior and box constraints are shared,
+and each configuration meets both surfaces with the same parameter file.
+\basearm{} is the inherited configuration evaluated at full scale on the
+corrected rollout speed, so the comparison isolates those nine settings rather
+than reproducing the published pipeline in full; \oursarm{} is the shipped
+configuration. Since the settings move together, what follows is a
+configuration comparison, not a per-factor ablation, which
 Section~\ref{subsec:ablations} supplies offline for the four that carry the
 result. Nor is it a test of this paper's central contribution: the rollout
-speed is taken from the measured lap in \emph{both} arms, the mean speed
-under MPC being \SI{22.2}{\meter\per\second}, so \oursarm{}'s
-\SI{15}{\meter\per\second} floor never binds. The excitation correction
-itself, together with the operating point it ships, is established in
+speed is taken from the measured lap in \emph{both} arms, and no run's mean
+speed falls below \SI{16}{\meter\per\second}, so \oursarm{}'s
+\SI{15}{\meter\per\second} floor never binds. The excitation correction itself,
+together with the operating point it ships, is established in
 Section~\ref{subsec:sweep}.
 
 \begin{table}[t]
-\caption{The two configurations.}
+\caption{The two configurations. Each is run on both surfaces.}
 \label{tab:scenarios}
 \centering
 \begin{threeparttable}
@@ -103,15 +118,20 @@ Pacejka solver & Trust-region~\cite{branch1999trust} & Differential
 evolution~\cite{storn1997de}\\
 Tikhonov weight $\lambda$ & \num{0} & \num{0.05}, frozen target\\
 Friction warm start & Off & On; $D$ pinned per axle\\
+Fast-$\mu$ derate & Off & On, \SI{1}{\hertz} on \SI{6}{\second}\\
 Update relaxation $\beta$ & \num{1.00} (undamped) & \num{0.20}\\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}[flushleft]\scriptsize
 \item Everything not listed is identical between the two, the tire prior and
 the box constraints included. $\beta$ is the relaxation of \eqref{eq:relax};
-\num{1.00} is the inherited undamped update. The rollout speed is taken from
-the measured lap in both arms and is not a difference here
-(Section~\ref{subsubsec:scenarios}).
+\num{1.00} is the inherited undamped update. The fast-$\mu$ derate is the brush
+estimator of Section~\ref{subsec:friction} refitted on a trailing
+\SI{6}{\second} window between coefficient cycles and published as an optional
+ratio the controller applies to the identified grip ceiling, clamped to
+$[\num{0.4},\num{1.2}]$; with the warm start off there is nothing to publish.
+The rollout speed is taken from the measured lap in both arms and is not a
+difference here.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}
@@ -123,16 +143,16 @@ The prior $\phip^{0}$ both arms start from, and that the Tikhonov term of
 obtained by fitting \eqref{eq:mf} to CARLA's own per-wheel telemetry over a
 dedicated limit-excitation run that reached $\alpha=\SI{0.37}{\radian}$, axle
 $\mu=\num{1.05}$ and \SI{1.50}{\g}. It is not independent of the validation
-data, since that is the same channel the force and friction results are scored
-against; the manoeuvre that produced it is one the pipeline is not allowed to
-run, the raceline peaking at \SI{0.51}{\g}; and, decisively, it was measured on
-a surface these runs do not use, carrying $D=\num{1.009}/\num{1.002}$ and axle
-slopes of \SI{13.2}{\kilo\newton\per\radian} front and
-\SI{13.9}{\kilo\newton\per\radian} rear against the \num{0.70} and the
-\num{17.4} and \SI{16.6}{\kilo\newton\per\radian} this surface realises.
-Returning it unchanged is a \SI{44}{\percent} grip overstatement and a
-\SIrange{16}{24}{\percent} stiffness deficit, so an arm has to move away from
-that prior, in the right direction, to score well.
+data, and the manoeuvre that produced it is one the pipeline is not allowed to
+run, the raceline peaking at \SI{0.51}{\g}. Decisively, it was measured on a
+surface none of these runs use, carrying $D=\num{1.009}/\num{1.002}$ and axle
+slopes of \num{13.2} and \SI{13.9}{\kilo\newton\per\radian} against the
+\num{0.70} and the \num{17.4} and \SI{16.6}{\kilo\newton\per\radian} the static
+surface realises. Returning it unchanged is a \SI{44}{\percent} grip
+overstatement on the static surface and a \SI{188}{\percent} one at the
+decaying surface's floor, so an arm has to move away from that prior, in the
+right direction, to score well, and on the decaying surface it has to keep
+moving.
 
 \subsection{Selecting the rollout operating point $(v,\delta_{\mathrm{sweep}})$}
 \label{subsec:sweep}
@@ -152,11 +172,11 @@ everything it loses is lost to excitation. Rollout speed $v$, sweep amplitude
 $\delta_{\mathrm{sweep}}$ and true $D$ are swept, each cell repeated over five
 noise realisations at the one-step persistence RMSE measured on CARLA runs of
 this vehicle. The configuration axes are swept one at a time, because
-$\mu_{\mathrm{reach}}$ is a function of both; the repetition is over noise rather
-than the solver because the noise-free fit is exactly seed-invariant here. The
-selection criterion is the one the pipeline needs: the widest range of true $D$
-recovered without railing, over the whole \numrange{0.70}{1.80} column span,
-since the tire is unknown when the configuration is fixed.
+$\mu_{\mathrm{reach}}$ is a function of both. The selection criterion is the one
+the pipeline needs: the widest range of true $D$ recovered without railing, over
+the whole \numrange{0.70}{1.80} column span, since the tire is unknown when the
+configuration is fixed. The span matters twice over on a decaying surface, where
+one configuration has to cover every $D$ the run passes through.
 
 \begin{table*}[t]
 \caption{The search that fixes the shipped rollout operating point: peak factor
@@ -204,456 +224,422 @@ bound, so the fit reports $\mu_{\mathrm{reach}}$ and not the tire. Second, the
 boundary is $\mu_{\mathrm{reach}}\gtrsim D$ and not a speed: at
 \SI{6}{\meter\per\second}, where $\mu_{\mathrm{reach}}=0.96$, the $0.70$ and
 $1.05$ tires are recovered to within \SI{3}{\percent} while the $1.40$ and
-$1.80$ tires are \SI{13}{\percent} and \SI{30}{\percent} short; for
-$\mu_{\mathrm{reach}}$ between \num{1.7} and \num{4.5} (the $v=\num{8}$ and
-$v=\num{13}$ rows) every tire is recovered to within \SI{4}{\percent} with no
-systematic railing. The bound predicts where the information runs out, not a
-step, and it is not a quantity to maximise: at
-$v=\SI{20}{\meter\per\second}$, $\mu_{\mathrm{reach}}=\num{10.64}$, the rollout
-sits far past saturation for every tire on the grid and $\hat D$ re-biases
-upward, the \num{0.70} tire returning \num{0.92}. Third, the failure is not the solver's: multi-start, a global solver
-or a better start point cannot recover a coefficient the data does not contain.
+$1.80$ tires are \SI{13}{\percent} and \SI{30}{\percent} short, and for
+$\mu_{\mathrm{reach}}$ between \num{1.7} and \num{4.5} every tire is recovered
+to within \SI{4}{\percent} with no systematic railing. Nor is the bound a
+quantity to maximise: at $v=\SI{20}{\meter\per\second}$,
+$\mu_{\mathrm{reach}}=\num{10.64}$, the rollout sits far past saturation for
+every tire on the grid and $\hat D$ re-biases upward, the \num{0.70} tire
+returning \num{0.92}. Third, the failure is not the solver's: multi-start, a
+global solver or a better start point cannot recover a coefficient the data
+does not contain.
 
-Panel (b) sweeps the other argument of \eqref{eq:mureach} at fixed
-$v=\SI{15}{\meter\per\second}$. Starving the amplitude destroys $D$ just as
-starving the speed does, so speed is not the governing variable, and the
-direction of the error is set by the rollout rather than the tire: an
-under-speeded rollout returns \emph{too little} grip, an under-swept one too
-much (at $\delta_{\mathrm{sweep}}=\SI{0.06}{\radian}$ the \num{1.05} tire comes
-back at \num{1.30} and the \num{1.40} tire at \num{1.68}, two of the eight
-coefficients on a bound throughout the under-swept rows). That is the
-signature of an unidentified parameter, not a biased one. The axes do \emph{not}
-collapse onto a common $\mu_{\mathrm{reach}}$, for the upper-bound reason of
-Section~\ref{subsec:excitation}: at $v=\SI{20}{\meter\per\second}$
-\eqref{eq:mureach} reads \num{10.64} against a realised \numrange{1.40}{2.18}.
-Read against the realised demand both axes behave alike, so \eqref{eq:mureach}
-should be used as the pipeline uses it: a cheap screening bound, conclusive
-when it falls below $D$, and not a measure of excitation achieved.
+Panel (b) sweeps the other argument of \eqref{eq:mureach}. Starving the
+amplitude destroys $D$ just as starving the speed does, so speed is not the
+governing variable, and the rollout rather than the tire sets the direction of
+the error: an under-speeded rollout returns \emph{too little} grip, an
+under-swept one too much (at $\delta_{\mathrm{sweep}}=\SI{0.06}{\radian}$ the
+\num{1.05} tire comes back at \num{1.30} and the \num{1.40} tire at \num{1.68},
+two of the eight coefficients on a bound throughout those rows). That is the
+signature of an unidentified parameter, not a biased one. The axes do
+\emph{not} collapse onto a common $\mu_{\mathrm{reach}}$, for the upper-bound
+reason of Section~\ref{subsec:excitation}: at $v=\SI{20}{\meter\per\second}$
+\eqref{eq:mureach} reads \num{10.64} against a realised
+\numrange{1.40}{2.18}. Read against the realised demand both axes behave alike,
+so \eqref{eq:mureach} is a cheap screening bound, conclusive when it falls
+below $D$, and not a measure of excitation achieved.
 
-The two panels together fix the shipped point. On speed, the admissible band is
-bounded on both sides: below by railing ($v\le\SI{6}{\meter\per\second}$,
-which loses the \num{1.40} and \num{1.80} tires) and above by the saturation
-re-bias ($v=\SI{20}{\meter\per\second}$, which returns \num{0.92} for the
-\num{0.70} tire). Only the $v=\num{8}$ and $v=\num{13}$ rows recover
-every tire in the span to within \SI{4}{\percent}. The
-\SI{15}{\meter\per\second} floor of Section~\ref{subsec:excitation} is placed
-inside that band and, being a floor, it is the measured lap speed that governs
-above it. On amplitude, $\delta_{\mathrm{sweep}}\le\SI{0.15}{\radian}$ holds two
-of the eight coefficients on a bound at every $D$, while \SI{0.40}{\radian} and
-\SI{0.54}{\radian} rail nothing and recover every tire; \SI{0.54}{\radian} is
-therefore taken as $\delta_{\max}$, the ceiling of the $1.5P_{99}$ clip, which
-is what actually selects the amplitude on a given lap. The grid does not
-license raising either knob further: past these values the recovery degrades,
-which is why the pipeline treats \eqref{eq:mureach} as a bound to clear and not
-a quantity to maximise. All of it is a best case. With the residual set to
-zero, a Magic Formula is fitted to Magic-Formula data under exactly matched
-structure, so the selected point is the best setting \emph{on this grid} and
-not a proven optimum.
+The two panels fix the shipped point between a lower edge and an upper one. On
+speed, railing loses the \num{1.40} and \num{1.80} tires at
+$v\le\SI{6}{\meter\per\second}$ and the saturation re-bias spoils the
+\num{0.70} tire at \SI{20}{\meter\per\second}; only $v=\num{8}$ and
+$v=\num{13}$ recover every tire in the span to within \SI{4}{\percent}, and the
+\SI{15}{\meter\per\second} floor sits inside that band with the measured lap
+speed governing above it. On amplitude,
+$\delta_{\mathrm{sweep}}\le\SI{0.15}{\radian}$ holds two coefficients on a
+bound at every $D$, while \SI{0.40}{\radian} and \SI{0.54}{\radian} rail
+nothing, so \SI{0.54}{\radian} is taken as $\delta_{\max}$, the ceiling of the
+$1.5P_{99}$ clip that selects the amplitude on a given lap. All of it is a best
+case: with the residual set to zero a Magic Formula is fitted to Magic-Formula
+data under exactly matched structure, so the selected point is the best setting
+\emph{on this grid} and not a proven optimum.
 
 \subsection{Cross-run summary}
 \label{subsec:summary}
 
-Table~\ref{tab:comparison} is the complete comparison. \oursarm{} is better
-on every quantity scored against the plant (peak friction, axle force on both
-axles, both one-step states, lateral tracking error in every phase, and both
-error tails) and behind only on QP solve time, by \SI{5}{\percent} of the RMS
-and \SI{1}{\percent} of the worst case, both two orders of magnitude inside the
-control period. The margins are
-\numrange{9.0}{12.1}$\times$ on peak friction and axle force and
-\num{1.5}$\times$ on MPC tracking error. The rest of this section reads those
-rows against the figures; Section~\ref{subsec:ablations} attributes them.
+Table~\ref{tab:comparison} is the complete comparison over both surfaces. On
+the static surface \oursarm{} is better on every quantity scored against the
+plant and behind only on QP solve time, by \SI{5}{\percent} of the RMS and
+\SI{1}{\percent} of the worst case, both two orders of magnitude inside the
+control period. The margins are \numrange{9.0}{12.1}$\times$ on peak friction
+and axle force and \num{1.5}$\times$ on MPC tracking error.
 
-\begin{table}[t]
-\caption{Cross-run comparison of the two configurations.}
+On the decaying surface the comparison stops being a margin and becomes an
+outcome. \oursarm{} completes the same three timed laps, at
+\SI{0.139}{\meter} RMS lateral error under MPC, which is its static-surface
+figure to within \SI{8}{\percent} although half the grip is gone by the end.
+\basearm{} leaves the track in lap~2 and the run is scored as a failure, its
+\SI{23.7}{\meter} RMS error under MPC being the departure itself rather than a
+tracking quality. The peak-friction column is where the two diverge first:
+\oursarm{} follows the surface down, \basearm{} publishes $D=\num{2.000}$
+throughout, and the \num{1.408} error that implies is what the controller is
+holding when the trajectory stops being admissible. The rest of this section
+reads those rows against the figures; Section~\ref{subsec:ablations} attributes
+them.
+
+\begin{table*}[t]
+\caption{Cross-run comparison. Two configurations on two surfaces.}
 \label{tab:comparison}
 \centering
 \begin{threeparttable}
-\scriptsize
-\setlength{\tabcolsep}{2pt}
-\begin{tabular}{@{}lrr@{}}
+\footnotesize
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{@{}lrrrr@{}}
 \toprule
-Metric & \oursarm{} & \basearm{}\\
+& \multicolumn{2}{c}{Static surface, $\mu=0.700$} & \multicolumn{2}{c}{Decaying surface, $\mu:0.700\rightarrow0.350$}\\
+\cmidrule(lr){2-3}\cmidrule(l){4-5}
+Metric & \oursarm{} & \basearm{} & \oursarm{} & \basearm{}\\
 \midrule
-\multicolumn{3}{@{}l}{\emph{Closed-loop tracking (3 timed laps)}}\\
-Run duration, wall clock [\si{\second}] & 580.4 & 554.6\\
-RMS $e_{y}$, overall [\si{\meter}] & \textbf{0.256} & 0.319\\
-RMS $e_{y}$, MPC [\si{\meter}] & \textbf{0.151} & 0.224\\
-ITAE $e_{y}$ [\si{\meter\second\squared}] & \textbf{16041} & 25502\\
-MPC solve, RMS / max [\si{\milli\second}] & 0.399 / 2.604 & \textbf{0.380 / 2.568}\\
+\multicolumn{5}{@{}l}{\emph{Outcome and closed-loop tracking (wall clock)}}\\
+Timed laps completed & \textbf{3} & \textbf{3} & \textbf{3} & 1 (off track, lap 2)\\
+Run duration [\si{\second}] & 580.4 & 554.6 & 640.9 & 358.7\\
+Lap times [\si{\second}] & 175.2 / 145.4 / 142.8 & 162.3 / 135.8 / 138.0 & 189.8 / 160.9 / 169.2 & 167.7 / --- / ---\\
+RMS $e_{y}$, overall [\si{\meter}] & \textbf{0.256} & 0.319 & \textbf{0.264} & 21.505\\
+RMS $e_{y}$, MPC [\si{\meter}] & \textbf{0.151} & 0.224 & \textbf{0.139} & 23.705\\
+Max $|e_{y}|$, MPC [\si{\meter}] & \textbf{0.683} & 0.776 & \textbf{0.664} & 38.386\\
+ITAE $e_{y}$, MPC [\si{\meter\second\squared}] & \textbf{15925} & 25384 & \textbf{17888} & $1.32\times10^{6}$\\
+MPC solve, RMS / max [\si{\milli\second}] & 0.399 / 2.604 & \textbf{0.380 / 2.568} & \textbf{0.420 / 3.589} & 0.678 / 4.062\\
 \addlinespace
-\multicolumn{3}{@{}l}{\emph{Axle lateral force against per-wheel telemetry}}\\
-Front / rear RMSE [\si{\newton}] & \textbf{27.2 / 33.2} & 329.6 / 348.4\\
-Front / rear $R^{2}$ & \textbf{0.993 / 0.987} & $-0.160$ / $-0.461$\\
-Front / rear max abs.\ error [\si{\newton}] & \textbf{130 / 134} & 1249 / 1219\\
+\multicolumn{5}{@{}l}{\emph{Axle lateral force against per-wheel telemetry (simulation clock)}}\\
+Front / rear RMSE [\si{\newton}] & \textbf{27.2 / 33.2} & 329.6 / 348.4 & \textbf{32.9 / 36.5} & 171.4 / 178.3\\
+Front / rear $R^{2}$ & \textbf{0.993 / 0.987} & $-0.160$ / $-0.461$ & \textbf{0.984 / 0.977} & 0.708 / 0.647\\
+Front / rear max abs.\ error [\si{\newton}] & \textbf{264 / 135} & 1295 / 1316 & \textbf{249 / 236} & 2507 / 2069\\
 \addlinespace
-\multicolumn{3}{@{}l}{\emph{Peak friction against the plant's $\mu=0.70$}}\\
-Front / rear $\mu$ RMSE, whole run & \textbf{0.145 / 0.142} & 1.300 / 1.300\\
-Front / rear $\mu$ RMSE, after release & \textbf{0.078 / 0.078} & 1.300 / 1.300\\
+\multicolumn{5}{@{}l}{\emph{Peak friction against the plant's effective $\mu$}}\\
+Front / rear $\mu$ RMSE, whole run & \textbf{0.145 / 0.142} & 1.300 / 1.300 & \textbf{0.209 / 0.207} & 1.408 / 1.408\\
+Front / rear $\mu$ RMSE, after release & \textbf{0.078 / 0.078} & 1.300 / 1.300 & \textbf{0.149 / 0.149} & 1.408 / 1.408\\
 \addlinespace
-\multicolumn{3}{@{}l}{\emph{One-step state prediction}}\\
-$v_{y}$ / $\omega$ RMSE [\si{\meter\per\second}, \si{\radian\per\second}] & \textbf{0.014 / 0.049} & 0.156 / 0.104\\
-Skill vs.\ persistence, $v_{y}$ / $\omega$ & $\mathbf{-0.27}$ / $\mathbf{-8.8}$ & $-8.18$ / $-13.9$\\
+\multicolumn{5}{@{}l}{\emph{One-step state prediction}}\\
+$v_{y}$ / $\omega$ RMSE [\si{\meter\per\second}, \si{\radian\per\second}] & \textbf{0.014 / 0.049} & 0.156 / 0.104 & \textbf{0.011 / 0.037} & 0.055 / 0.105\\
+\addlinespace
+\multicolumn{5}{@{}l}{\emph{Last accepted coefficient set, front / rear}}\\
+$B$ & 12.89 / 13.75 & 7.64 / 11.19 & 16.10 / 16.42 & \textbf{4.00} / \textbf{4.00}\\
+$C$ & 1.240 / 1.248 & 1.806 / 1.346 & 1.362 / 1.416 & 1.204 / 1.591\\
+$D$ & 0.768 / 0.768 & \textbf{2.000} / \textbf{2.000} & 0.460 / 0.460 & \textbf{2.000} / \textbf{2.000}\\
+$E$ & $-2.52$ / $-1.84$ & \textbf{$-3.00$} / $-1.77$ & $-2.08$ / $-1.40$ & \textbf{$-3.00$} / $-1.74$\\
+Axle stiffness [\si{\kilo\newton\per\radian}] & 16.9 / 16.8 & 37.9 / 38.4 & 13.8 / 13.6 & 13.2 / 16.2\\
+Grip ceiling \eqref{eq:gripceiling} [\si{\g}] & 0.77 & 2.00 & 0.46 & 2.00\\
+Plant grip at that moment [\si{\g}] & 0.70 & 0.70 & 0.35 & 0.53\\
 \bottomrule
 \end{tabular}
+\begin{tablenotes}[flushleft]\scriptsize
+\item Bold marks the better arm within a surface for the metric blocks, and a
+coefficient resting on a box constraint in the coefficient block. The box is
+$\phip\in([4.0,1.2,0.4,-3.0],[20.0,2.2,2.0,1.0])$ per axle. The \basearm{}
+decaying-surface row is the last set it published before leaving the track, and
+its tracking figures are the departure, not a tracking quality. Lap times run on
+the ROS wall clock while the simulator advances its fixed step faster than real
+time, at a ratio that differs between runs, so they are not read as a
+vehicle-performance comparison across arms; within the \oursarm{} column the
+static-to-decaying difference is discussed in
+Section~\ref{subsec:resultsclosedloop}.
+\end{tablenotes}
 \end{threeparttable}
-\end{table}
+\end{table*}
 
 \subsection{Identified tire model}
 \label{subsec:resultstire}
 
-Figure~\ref{fig:pacejka} puts both identified curves against the plant's own
-curve~\eqref{eq:physx} and lists the coefficients.
+The coefficient block of Table~\ref{tab:comparison} separates the two arms
+before any downstream metric does.
 
-First, no coefficient of \oursarm{} rests on a box constraint in any of its
-six accepted identifications; its last accepted set is
-$B=\num{12.890}/\num{13.746}$ inside $[4,20]$, $C=\num{1.240}/\num{1.248}$
-inside $[1.2,2.2]$, $D=\num{0.768}$ on both axles inside $[0.4,2.0]$ and
-$E=\num{-2.517}/\num{-1.836}$ inside $[-3,1]$. \basearm{} puts $D$
-on its upper bound of \num{2.000} on both axles in \emph{every} accepted
-identification and $E_{f}$ on its lower bound of \num{-3.0} likewise. The
-\emph{inner} fits are a separate matter: \oursarm{}'s run logs \num{35} fits
-that stopped on a bound, \num{30} of them on $C$'s lower \num{1.2} and none on
-$D$, which the pin takes out of the fit, against \num{96} for \basearm{} spread
-over $B$, $C$ and $D$. It is the relaxation of \eqref{eq:relax} that keeps the
-accepted set off an edge its iterates touch. A peak
-factor of \num{2.000} against a plant realising \num{0.70} is less a
-\SI{186}{\percent} parameter error than the box-edge signature of
-Section~\ref{subsec:identifiability}: the coefficient is not identified, and no
-per-coefficient bounds check distinguishes that from a fit.
+First, no coefficient of \oursarm{} rests on a box constraint in any accepted
+identification of either run. \basearm{} puts $D$ on its upper bound of
+\num{2.000} on both axles in \emph{every} accepted identification of both runs
+and $E_{f}$ on its lower bound of \num{-3.0} likewise, and on the decaying
+surface it adds $B$ on its lower bound of \num{4.0} on both axles, so five of
+its eight coefficients are resting on an edge in the set the car was driving on
+when it left the track. The \emph{inner} fits are a separate matter:
+\oursarm{}'s static run logs \num{35} fits that stopped on a bound, \num{30} of
+them on $C$'s lower \num{1.2} and none on $D$, which the pin takes out of the
+fit, against \num{96} for \basearm{} spread over $B$, $C$ and $D$; on the
+decaying surface the count rises to \num{56}, still concentrated on $C$. It is the
+relaxation of \eqref{eq:relax} that keeps the accepted set off an edge its
+iterates touch. A peak factor of \num{2.000} against a plant realising
+\num{0.700} is less a \SI{186}{\percent} parameter error than the box-edge
+signature of Section~\ref{subsec:identifiability}: the coefficient is not
+identified, and no per-coefficient bounds check distinguishes that from a fit.
 
-Second, the linear range is identified rather than inherited. Every slope is
-\eqref{eq:stiffness} for an identified set; for the plant it is the slope fitted
-to the simulator's own per-wheel forces over
-$|\alpha|\in[\num{0.005},\num{0.02}]\,\si{\radian}$, all at the static axle
-loads $F_{z,f}=\SI{1373}{\newton}$, $F_{z,r}=\SI{1274}{\newton}$, so the three
-are comparable. The plant realises \SI{17.4}{\kilo\newton\per\radian} front and
+Second, the linear range is identified rather than inherited. Every stiffness in
+the table is \eqref{eq:stiffness} at the static axle loads
+$F_{z,f}=\SI{1373}{\newton}$, $F_{z,r}=\SI{1274}{\newton}$; for the plant it is
+the slope fitted to the simulator's own per-wheel forces over
+$|\alpha|\in[\num{0.005},\num{0.02}]\,\si{\radian}$, so the two are comparable.
+The static surface realises \SI{17.4}{\kilo\newton\per\radian} front and
 \SI{16.6}{\kilo\newton\per\radian} rear over this run's load range, below the
 $\bar F_{z}=1$ closed-form values of Table~\ref{tab:ref} for the reason its
-first footnote gives. The prior carries \num{13.2} and \num{13.9}, \SI{24}{\percent} and
-\SI{16}{\percent} low; \oursarm{} returns \num{16.9} and \num{16.8},
-\SI{3.2}{\percent} low front and \SI{1.4}{\percent} high rear, removing
-\SI{87}{\percent} and \SI{91}{\percent} of the prior's error. The product
-$BCDF_{z}$, the only quantity the rollout fit determines
-(Section~\ref{subsec:bcd}), is what moves and then holds: the five cycles after
-the friction gate releases sit within
-\SIrange{16.0}{16.9}{\kilo\newton\per\radian}, a \SI{5}{\percent} spread about a
-plant at \num{17.4}. \basearm{} returns \num{37.9} and \num{38.4},
+first footnote gives. The prior carries \num{13.2} and \num{13.9},
+\SI{24}{\percent} and \SI{16}{\percent} low; \oursarm{} returns \num{16.9} and
+\num{16.8}, \SI{3.2}{\percent} low front and \SI{1.4}{\percent} high rear,
+removing \SI{87}{\percent} and \SI{91}{\percent} of the prior's error, and the
+product $BCDF_{z}$ that the rollout fit determines
+(Section~\ref{subsec:bcd}) then holds within
+\SIrange{16.0}{16.9}{\kilo\newton\per\radian} over the five cycles after the
+gate releases. \basearm{} returns \num{37.9} and \num{38.4},
 \SI{118}{\percent} and \SI{132}{\percent} high, which is $D=\num{2.0}$
-multiplying a $B$ the fit chose against it.
+multiplying a $B$ the fit chose against it. On the decaying surface
+\oursarm{}'s stiffness falls with the surface, to \num{13.8} and
+\SI{13.6}{\kilo\newton\per\radian} at the last accepted set, while \basearm{}
+arrives at \num{13.2} and \SI{16.2}{\kilo\newton\per\radian} by a different
+route: $B$ at its floor multiplied by $D$ at its ceiling. A plausible stiffness
+assembled from two railed coefficients is the clearest case this paper has for
+gating on derived quantities rather than on coefficients, since the stiffness
+gate passes it.
 
 Third, both sets keep the understeer sign and pass the stability gate of
 Section~\ref{subsec:gates}; what separates them is the grip ceiling, which
-\eqref{eq:gripceiling} puts at \SI{2.00}{\g} for \basearm{}
-against \SI{0.77}{\g} for \oursarm{}, a plant sustaining \SI{0.71}{\g} and a
-trajectory demanding \SI{0.51}{\g}. The baseline's ceiling is a claim the plant
-cannot honour by a factor of \num{2.8}; only the identified set is admissible on
-the quantity the controller consumes. All three readings are possible because
-the lap now traverses part of the curvature:
+\eqref{eq:gripceiling} puts at \SI{2.00}{\g} for \basearm{} on both surfaces
+against \SI{0.77}{\g} and \SI{0.46}{\g} for \oursarm{}. The baseline's ceiling
+is a claim the plant cannot honour by a factor of \num{2.8} on the static
+surface and \num{3.8} at the moment the car leaves the decaying one, and the
+grip gate is one-sided, so it passes both. All of these readings are possible
+because the lap traverses part of the curvature:
 $P_{99}(|\alpha|)=\SI{2.7}{\degree}$ and $\max|\alpha|=\SI{5.8}{\degree}$
-against the \SI{8.0}{\degree} at which the plant's curve peaks. Against the
-static axle loads the force reaches $\max|F_{y}|/F_{z}=\num{0.71}$ front and
-\num{0.72} rear, the whole of what the surface offers, but only in transients:
-at $P_{99}$ the same ratio is \num{0.49} and \num{0.50}, about \num{0.70} of
-the axle's peak force. This is still not a limit manoeuvre, but it suffices for
-the friction gate to release, which on the $\mu=\num{1.05}$ runs it did not.
+against the \SI{8.0}{\degree} at which the plant's curve peaks on the static
+surface, and $\max|F_{y}|/F_{z}$ reaches \num{0.71} front and \num{0.72} rear
+in transients against \num{0.49} and \num{0.50} at $P_{99}$. This is not a
+limit manoeuvre, but it suffices for the friction gate to release, which on the
+$\mu=\num{1.05}$ runs it did not; as the decaying surface falls the same lap
+becomes relatively more demanding, so the gate keeps releasing rather than
+closing.
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{pacejka_identified_vs_nominal_by_scenario}
-\caption{Identified tire models against the plant. Top and middle: the plant's
-own curve~\eqref{eq:physx} at the measured static load of each axle (black)
-against each run's last accepted identification. Bottom: the identified Magic
-Formula coefficients. \basearm{}'s accepted peak factor sits on
-its box constraint $D=\num{2.0}$ on both axles in every cycle, so its curve
-carries roughly \num{2.8} times the plant's force at the edge of the plotted
-range, while \oursarm{} tracks both the plant's initial slope and its peak.
-All force metrics are axle sums.}
-\label{fig:pacejka}
-\end{figure}
-
-\subsection{Peak friction}
+\subsection{Peak friction: holding one surface, tracking another}
 \label{subsec:resultsmu}
 
-Table~\ref{tab:comparison} reports the error of the identified peak factor
-against the effective friction the plant reports per wheel, and
-Fig.~\ref{fig:mutimeseries} its evolution over the run. This is where the
-pinned-$D$ design of Section~\ref{subsec:friction} is directly observable,
-because the arm starts \SI{44}{\percent} away from the answer.
-\oursarm{} publishes six accepted identifications. The first carries
-$D_{f}=\num{1.009}$, $D_{r}=\num{1.002}$: the friction gate rejected that
-buffer, so the axles held the prior they came in with, the hold-rather-than-fit
-rule of Section~\ref{subsec:frictionfloor} and not a fitted value. From
-$t=\SI{140.6}{\second}$ the gate releases on every subsequent cycle and the
-published peak factor drops to \num{0.779}, \num{0.821}, \num{0.749},
+Figure~\ref{fig:mutimeseries} shows what each arm published for the peak factor
+over both runs, and Table~\ref{tab:comparison} gives the errors behind it. The
+pinned-$D$ design of Section~\ref{subsec:friction} is directly observable here,
+because both arms start \SI{44}{\percent} away from the static answer and
+\SI{188}{\percent} away from the decaying one's floor.
+
+On the static surface \oursarm{} publishes six accepted identifications. The
+first carries $D_{f}=\num{1.009}$, $D_{r}=\num{1.002}$: the friction gate
+rejected that buffer, so the axles held the prior they came in with, the
+hold-rather-than-fit rule of Section~\ref{subsec:frictionfloor} and not a fitted
+value. From $t=\SI{140.6}{\second}$ the gate releases on every subsequent cycle
+and the published peak factor drops to \num{0.779}, \num{0.821}, \num{0.749},
 \num{0.756} and \num{0.768}, front and rear alike, against a plant at
 \num{0.700}: \SI{10.7}{\percent} high on average, from a prior that was
 \SI{44}{\percent} high. The whole-run $\mu$ RMSE is dominated by the first
-\SI{140}{\second} at the prior; over the \SI{766}{\second} of simulation time
-after the first release it is \num{0.078} on both axles. \basearm{} returns
-$D=\num{2.000}$ on both axles in every accepted identification and never leaves
-the bound, a constant $\mu$ error of \num{1.300}, so \oursarm{} is
-\num{9.0}$\times$ better on the whole-run figure and \num{16.7}$\times$ better
-once its warm start has released, a difference worth \SI{1.23}{\g} of claimed
-grip against a plant that sustains \num{0.71}. Two qualifications belong on that
-column: the peak factor is \emph{measured} by the brush estimator on the
-recorded trace and then held, not recovered by the Pacejka fit, which
-Section~\ref{subsec:bcd} shows cannot recover it; and the residual
-\SI{10.7}{\percent} bias is one-signed, consistent with the brush model's
-tendency to over-read $\mu$ where the curve is not fully traversed.
+\SI{140}{\second} at the prior; after the first release it is \num{0.078} on
+both axles.
 
-\begin{figure}[t]
+On the decaying surface the same six cycles land on a surface that has moved
+between each of them. The gate again rejects the first buffer and releases from
+$t=\SI{145.1}{\second}$, and the published peak factor then falls monotonically:
+\num{0.706}, \num{0.679}, \num{0.609}, \num{0.525} and \num{0.460}, against a
+plant falling from \num{0.580} to \num{0.350} over the same interval. Read as a
+rate, the identifier recovers the decay itself: the published sequence falls at
+$4.28\times10^{-4}\,\si{\per\second}$ against the plant's
+$4.00\times10^{-4}\,\si{\per\second}$, a
+\SI{7}{\percent} error on the quantity that a static surface cannot test at all.
+Read as a level it carries two offsets, and separating them matters. Each cycle
+is fitted on the buffer that preceded it, so the published value describes the
+surface of roughly one cycle earlier; against the plant one cycle back the
+residual is \SIrange{10.9}{17.4}{\percent} high, mean \SI{14.3}{\percent},
+against the \SI{10.7}{\percent} the same estimator carries on a surface that
+does not move. The apparent whole-run RMSE of \num{0.209} is therefore that
+familiar brush-model bias plus one cycle of transport lag on a surface losing
+about \num{0.06} of $\mu$ per cycle, and not a new error mode. The remedy for
+the lag is a shorter cycle rather than a better fit, and the fast-$\mu$ derate
+of Table~\ref{tab:scenarios} is that shorter cycle; on this run it spent the
+last cycles at the upper end of its clamp and so did not shorten anything
+(Section~\ref{subsec:ablations}).
+
+\basearm{} returns $D=\num{2.000}$ on both axles in every accepted
+identification of both runs and never leaves the bound. On the static surface
+that is a constant $\mu$ error of \num{1.300}, so \oursarm{} is
+\num{9.0}$\times$ better on the whole-run figure and \num{16.7}$\times$ better
+once its warm start has released. On the decaying surface the error grows as
+the plant walks away from the bound, reaching \num{1.408} RMSE before the run
+ends early, and \oursarm{} is \num{6.7}$\times$ better there. Two
+qualifications belong on this whole subsection: the peak factor is
+\emph{measured} by the brush estimator on the recorded trace and then held, not
+recovered by the Pacejka fit, which Section~\ref{subsec:bcd} shows cannot
+recover it; and the residual bias is one-signed, consistent with the brush
+model's tendency to over-read $\mu$ where the curve is not fully traversed,
+which is also why the tracking result below has margin to work with.
+Appendix~\ref{subsec:mu} evaluates the same estimator on a synthetic brush-tire
+plant, where $\mu$ is known exactly and the excitation can be swept
+independently of it, and shows that it is flat in excitation above its gate
+while the utilisation bound it replaces is not.
+
+\begin{figure*}[t]
 \centering
 % Front-axle column only: the rear panels are numerically identical (D is pinned
 % to the same value on both axles), so they are cropped to give the front panels
-% the full column width. Trim is in PDF points on an 864x460.8 pt page; the
-% gutter between the two panel columns sits at x = 652..669 px of a 1320 px
-% raster, and the top 40 px carry the now-redundant suptitle.
-\includegraphics[trim=0 0 431 26, clip, width=0.85\columnwidth]{mu_timeseries_by_scenario}
-\caption{Peak friction over the run, front axle, one row per configuration: the
-plant's effective $\mu$ (black) against the identified peak factor $D$ published
-at each accepted identification. The rear axle is identical and is omitted,
-since $D$ is pinned to the same value on both axles
-(Section~\ref{subsec:frictionfloor}). The surface is static, so every departure
-from the black line is estimator error. \oursarm{} publishes the
-$\mu=\num{1.05}$ prior while the friction gate is closed, then steps down onto
-the plant within \SI{11}{\percent} at the first release and holds there for the
-remaining five cycles, while \basearm{} sits on the $D\le\num{2.0}$ box
-constraint for the whole run.}
+% the full width. Trim is in PDF points on the 864x460.8 pt page shared by both
+% files; the gutter between the two panel columns sits at x = 652..669 px of a
+% 1320 px raster, and the top 40 px carry the now-redundant suptitle. The bottom
+% 25 pt are the strip Comparison.save reserves in both files for the
+% incomplete-run banner, which the right trim would otherwise slice mid-word;
+% the caption states the same fact.
+\includegraphics[trim=0 25 431 26, clip, width=0.49\textwidth]{\cmpstatic/mu_timeseries_by_scenario}\hfill
+\includegraphics[trim=0 25 431 26, clip, width=0.49\textwidth]{\cmpdecay/mu_timeseries_by_scenario}
+\caption{Peak friction over the run, front axle, one row per configuration:
+the plant's effective $\mu$ (black) against the identified peak factor $D$
+published at each accepted identification. Left, the static surface; right, the
+decaying surface. The rear axle is identical and is omitted, since $D$ is pinned
+to the same value on both axles (Section~\ref{subsec:frictionfloor}). On the
+static surface every departure from the black line is estimator error:
+\oursarm{} publishes the $\mu=\num{1.05}$ prior while the gate is closed, steps
+down onto the plant within \SI{11}{\percent} at the first release, and holds.
+On the decaying surface the same five accepted cycles walk the published $D$
+down at \SI{7}{\percent} of the plant's own rate, offset by one cycle of
+transport lag and the same estimator bias. \basearm{} sits on the
+$D\le\num{2.0}$ box constraint throughout both runs, and its right-hand panel
+ends where the car left the track.}
 \label{fig:mutimeseries}
-\end{figure}
+\end{figure*}
 
 \subsection{Axle lateral force and one-step state prediction}
 \label{subsec:resultsforce}
 
 The identified curve is scored at the measured $(\alpha,F_{z})$ against the
-plant's own lateral force, summed per axle (Table~\ref{tab:comparison};
-Fig.~\ref{fig:errhist}(a)). \oursarm{} leads on both axles by an order of
-magnitude in RMSE and in the error tails; the baseline's negative $R^{2}$ means
-its curve predicts the plant's axle force worse than the mean of that force
-does. This is the linear-range result seen as force: at
-$P_{99}(|\alpha|)=\SI{2.7}{\degree}$ the metric is dominated by cornering
-stiffness, so the models separate almost entirely on slope. Because $D$
-multiplies that slope in \eqref{eq:stiffness}, \basearm{}'s railed
-$D$ is the direct cause of its force error. The comparison is also why the
-relaxed update of \eqref{eq:relax} belongs in the method rather than a
-configuration file: pinning $D$ alone does not produce these numbers, since with
-$\beta=1$ the same arm degrades monotonically with iteration count
-(Section~\ref{subsec:ablations}).
+plant's own lateral force, summed per axle (Table~\ref{tab:comparison}). On the
+static surface \oursarm{} leads on both axles by an order of magnitude in RMSE
+and in the error tails; the baseline's negative $R^{2}$ means its curve predicts
+the plant's axle force worse than the mean of that force does. This is the
+linear-range result seen as force: at $P_{99}(|\alpha|)=\SI{2.7}{\degree}$ the
+metric is dominated by cornering stiffness, so the models separate almost
+entirely on slope. Because $D$ multiplies that slope in \eqref{eq:stiffness},
+\basearm{}'s railed $D$ is the direct cause of its force error. Pinning $D$
+alone does not produce these numbers: with $\beta=1$ the same arm degrades
+monotonically with iteration count (Section~\ref{subsec:ablations}), which is
+why the relaxed update of \eqref{eq:relax} belongs in the method rather than a
+configuration file.
+
+On the decaying surface \oursarm{}'s force error grows by about a fifth,
+\SI{32.9}{\newton} front against \SI{27.2}{\newton}, which is the transport lag
+of Section~\ref{subsec:resultsmu} converted into force, and $R^{2}$ stays at
+\num{0.984} and \num{0.977}. \basearm{}'s force error is \emph{lower} there than
+on the static surface, \SI{171.4}{\newton} against \SI{329.6}{\newton}, and its
+$R^{2}$ turns positive. That is not a success: its run is scored over \num{2597}
+samples against \num{10744}, it ends before the surface reaches its floor, and
+its worst-case error is the largest in the table at \SI{2507}{\newton}. A model
+with five coefficients on a box edge produced a better-looking aggregate over a
+shorter and slower run, which is the diagnostic problem
+Section~\ref{subsec:identifiability} describes.
 
 Level~1 of the validation protocol is reported against a persistence baseline
 (next state equals last measured state) written by the same benchmark node.
-\oursarm{} leads on both signals, by an order of magnitude on lateral
-velocity ($R^{2}$ \num{0.998} against \num{0.709}) and by a factor of two on yaw
-rate ($R^{2}$ \num{0.892} against \num{0.527}); in
-Fig.~\ref{fig:errhist}(b)--(c) the separation on $v_{y}$ is in the centre of the
-distribution, while on $\omega$ the two share a centre and differ in tail mass.
-Neither model beats persistence at the \SI{0.035}{\second} model step, the skill
-scores being negative for both configurations and both signals, because a
-one-step metric on a smooth trajectory rewards not moving. One-step accuracy is
-therefore weak evidence for either tire model, and the gap is read only as
-confirming the direction the axle-force and closed-loop comparisons establish.
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=0.485\textwidth]{tire_force_error_hist_by_scenario}\hfill
-\includegraphics[width=0.245\textwidth]{state_error_hist_v_y}\hfill
-\includegraphics[width=0.245\textwidth]{state_error_hist_omega}
-\caption{Error distributions, truth minus estimate. (a) Axle lateral force,
-shared bin edges over the pooled central \SI{99}{\percent} and normalised to
-each run's sample count; both are centred, and \basearm{}'s
-distribution is roughly an order of magnitude wider at every quantile (maximum
-absolute error \SI{1249}{\newton} against \SI{130}{\newton} front,
-\SI{1219}{\newton} against \SI{134}{\newton} rear). (b) One-step lateral
-velocity, where \oursarm{} is an order of magnitude tighter
-(\SI{0.014}{\meter\per\second} against \SI{0.156}{\meter\per\second} RMSE).
-(c) One-step yaw rate, where the configurations differ in tail mass rather than
-centre. Neither model beats its own persistence baseline at the
-\SI{0.035}{\second} model step.}
-\label{fig:errhist}
-\end{figure*}
+\oursarm{} leads on both signals on both surfaces, by an order of magnitude on
+lateral velocity on the static surface ($R^{2}$ \num{0.998} against
+\num{0.709}) and by a factor of two on yaw rate ($R^{2}$ \num{0.892} against
+\num{0.527}). Neither model beats persistence at the \SI{0.035}{\second} model
+step for either configuration or signal, because a one-step metric on a smooth
+trajectory rewards not moving. One-step accuracy is therefore weak evidence for
+either tire model, and the gap is read only as confirming the direction the
+axle-force and closed-loop comparisons establish.
 
 \subsection{Closed-loop tracking}
 \label{subsec:resultsclosedloop}
 
-Both runs finish three timed laps with zero emergency halts and the same
-finite-state sequence, with the handover at $t=\SI{79.1}{\second}$ for
-\oursarm{} (Fig.~\ref{fig:speedcost}) and $t=\SI{64.0}{\second}$ for
-\basearm{}. Under MPC, where the identified model enters the loop,
-\oursarm{} tracks at \SI{0.151}{\meter} RMS lateral error against
-\SI{0.224}{\meter}, a \SI{32}{\percent} reduction, with maximum
-\SI{0.683}{\meter} against \SI{0.776}{\meter} (Fig.~\ref{fig:trackingbox}). ITAE
-is $\int t|e_{y}|\,\mathrm{d}t$, neither scale-free nor comparable across runs
-of different length, so the duration-normalised forms
-$\mathrm{IAE}/T=\num{0.104}$ against \num{0.157} and
+Figure~\ref{fig:overlay} puts the two surfaces side by side over the whole of
+each run.
+
+On the static surface both arms finish three timed laps with zero emergency
+halts and the same finite-state sequence, with the handover at
+$t=\SI{79.1}{\second}$ for \oursarm{} and $t=\SI{64.0}{\second}$ for
+\basearm{}. Under MPC, where the identified model enters the loop, \oursarm{}
+tracks at \SI{0.151}{\meter} RMS lateral error against \SI{0.224}{\meter}, a
+\SI{32}{\percent} reduction, with maximum \SI{0.683}{\meter} against
+\SI{0.776}{\meter}. ITAE is $\int t|e_{y}|\,\mathrm{d}t$, neither scale-free
+nor comparable across runs of different length, so the duration-normalised
+forms $\mathrm{IAE}/T=\num{0.104}$ against \num{0.157} and
 $\mathrm{ITAE}/(T^{2}/2)=\num{0.095}$ against \num{0.166} are reported beside
-it; all three order the runs alike. The ITAE split confirms that the whole
-difference sits in the MPC phase: the pure-pursuit phases, which do not use the
-identified model, give \num{110} and \num{107}, within \SI{3}{\percent} of each
-other and two orders of magnitude smaller. The QP cost is unchanged: RMS and
-worst-case solve times are two orders of magnitude below the
-\SI{50}{\milli\second} control period (Fig.~\ref{fig:speedcost}) and both
-slightly in the baseline's favour, by \SI{5}{\percent} and \SI{1}{\percent}. The
-identified coefficients change the model the QP carries, not its size. Lap time
-is not read as a result: timing runs on the ROS wall clock while the simulator
-advances its fixed step faster than real time, at a ratio that differed between
-the runs, so the \SIrange{5}{6}{\percent} lap-time spread is not a
-vehicle-performance difference.
+it; all three order the runs alike. The split by controller confirms that the
+whole difference sits in the MPC phase: the pure-pursuit phases, which do not
+use the identified model, give \num{110} and \num{107}, within
+\SI{3}{\percent} of each other. The QP cost is unchanged, both arms staying two
+orders of magnitude below the \SI{50}{\milli\second} control period; the
+identified coefficients change the model the QP carries, not its size.
 
-\begin{figure}[t]
+On the decaying surface the two arms separate at $t\approx\SI{246}{\second}$,
+in lap~2. \basearm{}'s lateral error steps from under \SI{1}{\meter} to
+\SI{38.4}{\meter} inside a few seconds, its speed goes through zero to
+$-16.9\,\si{\meter\per\second}$, and the run ends on a collision whose horizontal
+impulse of \SI{415.9}{\newton\second} is twice the \SI{200}{\newton\second}
+abort threshold. The plant's effective $\mu$ at that moment is \num{0.525},
+worth \SI{0.53}{\g}, against a reference that is still asking for
+\SI{0.51}{\g} at its peak and a model that is still reporting a
+\SI{2.00}{\g} ceiling. The failure is not a tracking degradation that grew
+until it mattered; the tracking error is flat and small right up to the
+departure, which is what a grip limit being crossed looks like from inside the
+controller.
+
+\oursarm{} completes its three laps on the same surface and its tracking error
+does not degrade as the grip halves: binned in \SI{100}{\second} windows after
+the handover it reads \num{0.153}, \num{0.138}, \num{0.155}, \num{0.094},
+\num{0.152} and \SI{0.092}{\meter} RMS, with no trend, against \num{0.123} to
+\SI{0.179}{\meter} over the corresponding windows of the static-surface run.
+What moves instead is the speed. The identified grip ceiling falls with the published $D$, the
+controller re-clamps the reference speed profile against it, and the peak
+lateral demand of the clamped reference drops from \SI{4.98}{\meter\per\second\squared}
+(\SI{0.51}{\g}) at the start of the run to \SI{2.92}{\meter\per\second\squared}
+(\SI{0.30}{\g}) at the end. The three lap times lengthen accordingly, to
+\num{189.8}, \num{160.9} and \SI{169.2}{\second} against \num{175.2},
+\num{145.4} and \SI{142.8}{\second} on the static surface, an \SI{18}{\percent}
+loss on the last lap. That trade is the whole argument for identifying on
+track: the vehicle pays lap time it has to pay, and the identification is what
+tells it how much. \basearm{} never makes the trade, because a peak factor
+pinned to a box constraint cannot tell the controller that anything has
+changed. Lap times themselves are not read as a vehicle-performance result
+across arms, for the clock reason of Section~\ref{subsec:setup}; the comparison
+that carries this paragraph is within the \oursarm{} column, where the same
+configuration meets two surfaces.
+
+\begin{figure*}[t]
 \centering
-\includegraphics[width=\columnwidth]{speed_and_compute_cost.png}
-\caption{Speed and solver cost along the \oursarm{} run: longitudinal speed
-$v_{x}$ (left axis) against MPC QP solve time (right axis) over the full
-\SI{580.4}{\second}, shaded by the active controller state. The handover from
-pure pursuit to MPC falls at $t=\SI{79.1}{\second}$; after it the vehicle cycles
-the raceline's \SIrange{9.6}{25.8}{\meter\per\second} reference profile while
-the solve time stays two orders of magnitude below the \SI{50}{\milli\second}
-control period. \oursarm{} only; not a comparison between arms.}
-\label{fig:speedcost}
-\end{figure}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{tracking_error_by_scenario}
-\caption{Absolute lateral tracking error by configuration and active
-controller. The pure-pursuit boxes cover the acquisition phase before handover
-and do not use the identified model. The MPC boxes do.}
-\label{fig:trackingbox}
-\end{figure}
-
-\subsection{Peak-friction warm start on a synthetic plant}
-\label{subsec:mu}
-
-The friction warm start is evaluated on a synthetic single-track plant with
-brush tires, because only a synthetic plant supplies a $\mu$ known exactly and
-an excitation level that can be swept independently of it: a swept-sine steering
-input for \SI{40}{\second} at \SI{50}{\hertz} with true $\mu=0.70$, the same
-effective peak as the CARLA surface, the steering amplitude setting how far up
-the tire curve the manoeuvre reaches (Table~\ref{tab:mu}).
-
-\begin{table}[t]
-\caption{Peak friction recovered from a synthetic brush-tire plant (true $\mu=0.70$), against excitation.}
-\label{tab:mu}
-\centering
-\begin{threeparttable}
-\small
-\begin{tabular}{@{}cccc@{}}
-\toprule
-$\delta$ amplitude & Grip reached & Bound $\hat\mu$ & Brush fit
-\eqref{eq:brush}\\
-\midrule
-\SI{0.033}{\radian} & \SI{45}{\percent}  & 0.312 & gated off\\
-\SI{0.047}{\radian} & \SI{63}{\percent}  & 0.442 & \textbf{0.699}\\
-\SI{0.060}{\radian} & \SI{80}{\percent}  & 0.557 & \textbf{0.699}\\
-\SI{0.090}{\radian} & \SI{100}{\percent} & 0.700 & \textbf{0.697}\\
-\bottomrule
-\end{tabular}
-\begin{tablenotes}[flushleft]\scriptsize
-\item Column~2 is the fraction of the available grip the manoeuvre reached,
-$\max|F_{y}|/(\mu F_{z})$; column~3 is the utilisation bound
-$\max|F_{y}|/F_{z}$, which is what that fraction leaves as a lower bound on
-$\mu$. The brush fit of \eqref{eq:brush}
-instead recovers the peak from the curvature of $F_{y}(\alpha)$ and is
-therefore flat in excitation.
-\item The first row is refused by the absolute gate
-$\max|F_{y}|/F_{z}\ge\num{0.40}$ of Section~\ref{subsec:friction}: at
-$\mu=0.70$, \SI{45}{\percent} utilisation is only \num{0.31} of $F_{z}$. The
-utilisation bound is reported instead.
-\end{tablenotes}
-\end{threeparttable}
-\end{table}
-
-At \SI{63}{\percent} utilisation, a level an ordinary lap reaches, the
-utilisation bound is \SI{37}{\percent} low while the brush fit is within
-\SI{0.2}{\percent}, and it stays within \SI{0.2}{\percent} across true
-$\mu\in\{0.7,1.05,1.4\}$ on noise-free data. With odometry and IMU noise
-injected the error is grip-dependent, the noise being absolute while the
-available force is not: at $\mu=0.70$ it is \SI{20}{\percent} at
-\SI{63}{\percent} utilisation and \SI{0.4}{\percent} at the peak. Below the
-absolute \num{0.40} floor on $|F_{y}|/F_{z}$ the gate suppresses the fit and
-reports the bound, so the failure is visible rather than silent. The gate
-behaves the same way on the CARLA run: it rejects the first buffer, and on the
-five it accepts returns $\mu$ within \SI{11}{\percent} of the plant at an
-absolute axle utilisation of \numrange{0.54}{0.68}. That \SI{11}{\percent} bias
-against the \SI{0.2}{\percent} of the synthetic plant is the cost of a real
-rollout, a reconstructed $I_{z}\dot\omega$ term and a curve whose sustained
-demand is only about \num{0.70} of the axle's peak force
-(Section~\ref{subsec:resultstire}), and it dominates the identified peak
-factor's error.
+\includegraphics[width=0.49\textwidth]{\cmpstatic/control_timeseries_overlay_by_scenario}\hfill
+\includegraphics[width=0.49\textwidth]{\cmpdecay/control_timeseries_overlay_by_scenario}
+\caption{Lateral error, longitudinal speed and MPC solve time over the whole of
+each run, both configurations overlaid, shaded by the active controller state
+of the \oursarm{} arm. Left, the static surface, where both arms run to three
+laps and the traces stay superimposed. Right, the decaying surface, where
+\basearm{} departs the track at $t\approx\SI{246}{\second}$ ($e_{y}$ to
+\SI{38.4}{\meter}, speed through zero) while \oursarm{} runs to
+\SI{640.9}{\second}. \oursarm{}'s speed trace on the right loses its peaks over
+the second half of the run: the controller re-clamps the reference against a
+grip ceiling that is falling because the identifier says it is. Solve time
+stays two orders of magnitude below the \SI{50}{\milli\second} control period
+in every case.}
+\label{fig:overlay}
+\end{figure*}
 
 \subsection{What carries the result}
 \label{subsec:ablations}
 
-The two arms differ in eight settings at once, so that comparison establishes an
-ordering and attributes nothing. This subsection attributes it, at the cost of
-leaving the loop: every number below is an \emph{offline replay} of the
-identification stage on the five \SI{30}{\second} buffers each arm collected
-during its own run, scored with the quantity the closed-loop tire-force
-benchmark itself reports, so these numbers and Table~\ref{tab:comparison}'s are
-on the same scale.
-
-\subsubsection{Damping the co-identification loop}
-Table~\ref{tab:beta} sweeps $\beta$ of \eqref{eq:relax} at six iterations
-throughout; two columns are the argument. At $\beta=\num{1.00}$, the inherited
-undamped update, axle force RMSE is \num{70.4} and \SI{62.3}{\newton}, reached
-by degrading monotonically from \num{38.9} and \SI{26.3}{\newton} at a single
-iteration: the loop amplifies its own extrapolation instead of refining the
-estimate. At $\beta=\num{0.00}$ the coefficients never move from the pinned
-prior, which is no identification at all, and that is the worst column,
-\num{92.5} and \SI{71.8}{\newton}. The minimum sits between them at
-$\beta=\num{0.20}$, \num{28.0} and \SI{19.4}{\newton}, a mean of
-\SI{23.7}{\newton}, and the identified $BCD$ rises with $\beta$ over the whole
-damped range (\num{7.82} at $\beta=0$ to \num{12.75} at $\beta=\num{0.50}$; the
-undamped \num{12.42} is no longer ordered by it), so the damping trades how
-much of each fit is accepted against how much extrapolation error comes with
-it. Six iterations are therefore defensible on
-this evidence, provided the update is damped.
-
-\begin{table}[t]
-\caption{Relaxation sweep. Five recorded buffers, six iterations, offline replay.}
-\label{tab:beta}
-\centering
-\begin{threeparttable}
-\scriptsize
-\setlength{\tabcolsep}{3.2pt}
-\begin{tabular}{@{}lrrrrrrrrr@{}}
-\toprule
-$\beta$ & 0.00 & 0.05 & 0.10 & 0.15 & \textbf{0.20} & 0.25 & 0.30 & 0.50 & 1.00\\
-\midrule
-Front $F_{y}$ RMSE [\si{\newton}] & 92.5 & 68.3 & 48.6 & 33.9 & \textbf{28.0} & 31.2 & 36.4 & 55.6 & 70.4\\
-Rear $F_{y}$ RMSE [\si{\newton}] & 71.8 & 49.0 & 31.3 & 19.8 & \textbf{19.4} & 26.0 & 30.2 & 38.4 & 62.3\\
-Front $BCD$ [\si{\per\radian}] & 7.82 & 8.82 & 9.66 & 10.36 & 10.88 & 11.32 & 11.65 & 12.75 & 12.42\\
-\bottomrule
-\end{tabular}
-\begin{tablenotes}[flushleft]\scriptsize
-\item $\beta=\num{1.00}$ is the inherited undamped update and $\beta=\num{0.00}$ the pinned prior, i.e.\ no identification. \num{0.20} ships.
-\end{tablenotes}
-\end{threeparttable}
-\end{table}
-
-\subsubsection{The other three settings}
-Pinning the peak factor accounts for most of what remains. Replayed on five
-buffers of a $\mu=\num{1.05}$ run, letting the fit move $D$ gives a mean
-$|D-\mu|$ of \num{0.585} and a front-stiffness spread of
-\SI{32.9}{\kilo\newton\per\radian}; pinning only the axles whose brush fit was
-released reduces those to \num{0.191} and \num{32.3}, and also holding
-the axles with no released measurement, the shipped rule, to \num{0.084} and
-\SI{18.5}{\kilo\newton\per\radian}. What removes most of the error is
-refusing to let an unmeasured $D$ be fitted at all. Normalising the
-physics-informed objective is necessary but not sufficient alone: it moves the
-loss shares from \SI{99.9996}{\percent} on the dynamics residual to
-\SI{1.47}{\percent}, yet applied without the damping it makes the force metric
-slightly \emph{worse} (\num{77.1} and \SI{76.2}{\newton} against \num{70.4} and
-\SI{62.3}{\newton}), because an objective that now fits the data supplies a
-sharper trajectory for the undamped loop to amplify. Two settings deserve a
-weaker statement than the closed-loop comparison alone would support: the S4D
-residual is worth \SI{21}{\percent} on the force metric at matched settings and
-a single iteration (\SI{35.3}{\newton} against the baseline MLP's
-\SI{44.7}{\newton}), an offline replay and not a closed-loop result; and the
-residual \emph{objective} is a wash, \texttt{physics\_informed} and plain
-\texttt{mse} being indistinguishable at \SI{23.7}{\newton} each once the
-normalisation and the damping are both in place. We keep it because it costs
-nothing and is the paper's stated formulation, not because it buys accuracy.
+The two arms differ in nine settings at once, so the comparison above
+establishes an ordering and attributes nothing. Appendix~\ref{sec:ablations}
+attributes it by offline replay of the identification stage on the five
+\SI{30}{\second} buffers each arm collected during its own run, scored with the
+quantity the closed-loop tire-force benchmark reports. Four settings carry the
+result. Refusing to fit an unmeasured $D$ removes most of the error, cutting the
+mean $|D-\mu|$ from \num{0.585} to \num{0.084} on replayed buffers of a
+$\mu=\num{1.05}$ run. Damping the loop carries the rest: axle force RMSE is
+\num{70.4} and \SI{62.3}{\newton} at the inherited $\beta=\num{1.00}$,
+\num{92.5} and \SI{71.8}{\newton} at $\beta=\num{0}$, which is no
+identification at all, and \num{28.0} and \SI{19.4}{\newton} at the
+$\beta=\num{0.20}$ that ships. Normalising the physics-informed objective is
+necessary but not sufficient alone, and the S4D residual is worth
+\SI{21}{\percent} on the force metric at matched settings. Two settings buy
+nothing measurable: the residual \emph{objective}, indistinguishable from a
+plain one-step MSE once the normalisation and the damping are both in place,
+and the fast-$\mu$ derate, which sat at the upper end of its
+$[\num{0.4},\num{1.2}]$ clamp over the last cycles of the decaying run, so the
+reference re-clamp of Section~\ref{subsec:resultsclosedloop} is carried by the
+published $D$ and not by the derate.
 
 \subsection{Identification cost}
 \label{subsec:runtime}
@@ -663,4 +649,8 @@ lap, takes \SI{20.9}{\second} end to end, inside the \SI{30}{\second}
 re-identification period. The reduction from the \SI{181.4}{\second} it
 originally took is exact: no epoch count, iteration count, early-stopping rule
 or loss weight changed, and the identified coefficients agree to four decimal
-places. The per-phase breakdown is in the supplementary material.
+places. That margin is what makes the decaying-surface result possible at all,
+and it is also what bounds it: one cycle of lag on a surface moving at
+\eqref{eq:decay}'s rate costs the \SIrange{10.9}{17.4}{\percent} offset of
+Section~\ref{subsec:resultsmu}, and a surface moving ten times faster would cost
+ten times that. The per-phase breakdown is in the supplementary material.

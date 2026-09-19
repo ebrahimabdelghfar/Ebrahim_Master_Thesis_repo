@@ -1,0 +1,5 @@
+scenario,category,value
+Excitation-S4D-Pinn-decay-mu,RMS,0.4203848300147767
+Excitation-S4D-Pinn-decay-mu,Max,3.589367
+Baseline-NN-MSE-decay-mu,RMS,0.6776552329204001
+Baseline-NN-MSE-decay-mu,Max,4.061531

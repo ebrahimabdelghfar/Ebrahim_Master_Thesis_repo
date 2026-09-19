@@ -1,0 +1,7 @@
+scenario,category,value
+Excitation-S4D-Pinn-decay-mu,Overall,18044.12703544673
+Excitation-S4D-Pinn-decay-mu,RUNNING_PP,136.1539613742146
+Excitation-S4D-Pinn-decay-mu,RUNNING_MPC,17887.67543402682
+Baseline-NN-MSE-decay-mu,Overall,1316108.3358423864
+Baseline-NN-MSE-decay-mu,RUNNING_PP,110.80047484939786
+Baseline-NN-MSE-decay-mu,RUNNING_MPC,1315977.396295645

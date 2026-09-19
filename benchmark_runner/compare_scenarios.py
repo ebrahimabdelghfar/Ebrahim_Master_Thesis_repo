@@ -42,6 +42,10 @@ FAILURE_COLOR = '#b00020'
 AXLE_FORCE_SIGNALS = ('front_sum_fy', 'rear_sum_fy')
 STATE_SIGNALS = ('v_y', 'omega')
 MU_SIGNALS = ('front_mu', 'rear_mu')
+
+# Plant reference curves in the Pacejka panels, all black so no scenario color
+# is read as one of them.
+REFERENCE_STYLES = ('-', (0, (6, 2)), (0, (2, 2)))
 STATE_UNITS = {'v_y': 'm/s', 'omega': 'rad/s'}
 
 # Control-side timeseries, as (signal, source attribute, axis label). All three
@@ -180,6 +184,20 @@ class ScenarioData:
                 continue
         return alpha, identified, nominal
 
+    def pacejka_reference_label(self, axle):
+        """What fy_nominal_N is for that axle: the plant's own curve at the run's
+        friction under nominal_source 'carla_physx', a prior model otherwise."""
+        for row in self.pacejka:
+            if row['axle'] != axle:
+                continue
+            if row.get('nominal_source') != 'carla_physx':
+                return 'Nominal (prior model)'
+            try:
+                return f'Ground truth (CARLA PhysX, $\\mu$={float(row["mu"]):.2f})'
+            except (TypeError, ValueError, KeyError):
+                return 'Ground truth (CARLA PhysX)'
+        return 'Nominal'
+
     def control_columns(self, source, *columns):
         """Run clock, FSM state and one list per named column, all empty when absent."""
         t, states = [], []
@@ -241,10 +259,12 @@ class Comparison:
 
     def save(self, fig, basename, header, rows, top=1.0):
         self._banner(fig)
-        # Reserve the bottom strip when there is a banner, and `top` for a
-        # figure-level legend: tight_layout accounts for neither and would lay
-        # the axes over them.
-        bottom = 0.05 if self.incomplete else 0.0
+        # Reserve the bottom strip for the banner, and `top` for a figure-level
+        # legend: tight_layout accounts for neither and would lay the axes over
+        # them. The strip is reserved whether or not a banner is drawn, so the
+        # axes land in the same place in every sweep and the paper can place a
+        # complete run and an incomplete one side by side.
+        bottom = 0.05
         fig.tight_layout(rect=(0, bottom, 1, top) if (bottom or top < 1.0) else None)
         # PDF is what the paper includes (IEEE wants >= 300 dpi and these are
         # line plots, so vector is both smaller and exact); the PNG stays for
@@ -653,10 +673,18 @@ def _control_overlay(cmp, scenarios):
     scenarios differ over a run; the panel figure is where one run is read on
     its own.
     """
+    height = 3.2 * len(CONTROL_SIGNALS)
     fig, axes = cmp.plt.subplots(len(CONTROL_SIGNALS), 1, squeeze=False,
-                                 figsize=(10, 3.2 * len(CONTROL_SIGNALS)))
+                                 figsize=(10, height))
     rows = []
+    states_seen = set()
+    # The runs hand over at different times, so overlaying every run's shading
+    # would give one instant two colors. The first scenario supplies it and the
+    # title says so.
+    shading = scenarios[0]
     for ax, (signal, source, ylabel) in zip(axes[:, 0], CONTROL_SIGNALS):
+        t_shade, states, _ = shading.control_columns(source)
+        states_seen.update(_shade_states(ax, t_shade, states))
         drew = False
         for s in scenarios:
             t, _, (values,) = s.control_columns(source, signal)
@@ -671,9 +699,13 @@ def _control_overlay(cmp, scenarios):
         ax.grid(True, alpha=0.3)
         if drew:
             ax.legend(fontsize=7)
-    fig.suptitle('Control timeseries by scenario (overlay)')
+    top = 1.0 - 0.75 / height
+    fig.suptitle(f'Control timeseries by scenario (overlay; FSM shading: '
+                 f'{shading.name})', y=1.0 - 0.18 / height)
+    _state_legend(fig, [s for s in STATE_ORDER if s in states_seen],
+                  False, 1.0 - 0.33 / height)
     cmp.save(fig, 'control_timeseries_overlay_by_scenario',
-             ['scenario', 'signal', 't_run_s', 'value'], rows)
+             ['scenario', 'signal', 't_run_s', 'value'], rows, top=top)
 
 
 def _control_timeseries(cmp, scenarios):
@@ -740,28 +772,28 @@ def _control_timeseries(cmp, scenarios):
 
 
 def _pacejka(cmp, scenarios):
-    """Every scenario's identified curve against the plant's nominal curve,
-    plus the coefficients that actually differ between parameter sets."""
+    """Every scenario's identified curve against the plant's own curve at that
+    run's friction, plus the coefficients that differ between parameter sets."""
     fig, axes = cmp.plt.subplots(3, 1, figsize=(7.5, 11))
     rows = []
     for ax, axle in zip(axes[:2], ('front', 'rear')):
-        # The nominal curve belongs to the plant, so it is drawn once when every
-        # scenario reports the same one - and once per scenario when a friction
-        # schedule moved mu and they no longer agree.
-        curves = [(s.name,) + s.pacejka_curve(axle) for s in scenarios]
+        # The reference curve belongs to the plant, so it is keyed by the curve
+        # itself: one black line when the runs agree, and one per distinct
+        # friction when a decay schedule left them at different mu.
+        curves = [(s,) + s.pacejka_curve(axle) for s in scenarios]
         curves = [c for c in curves if c[1]]
-        shared_nominal = len({tuple(nominal) for _, _, _, nominal in curves}) == 1
-        for idx, (name, alpha, identified, nominal) in enumerate(curves):
-            if not shared_nominal:
-                ax.plot(alpha, nominal, linewidth=2.0, alpha=0.6, label=f'{name} (nominal)',
-                        color=cmp.color(name))
-                rows.extend([f'{name} (nominal)', axle, a, f] for a, f in zip(alpha, nominal))
-            elif idx == 0:
-                ax.plot(alpha, nominal, color='black', linewidth=2.0, label='Nominal (plant)')
-                rows.extend(['(nominal)', axle, a, f] for a, f in zip(alpha, nominal))
-            ax.plot(alpha, identified, linewidth=1.6, linestyle='--', label=name,
-                    color=cmp.color(name))
-            rows.extend([name, axle, a, f] for a, f in zip(alpha, identified))
+        references = {}
+        for s, alpha, _identified, nominal in curves:
+            references.setdefault(tuple(nominal),
+                                  (alpha, s.pacejka_reference_label(axle)))
+        for idx, (nominal, (alpha, label)) in enumerate(references.items()):
+            ax.plot(alpha, nominal, color='black', linewidth=2.0,
+                    linestyle=REFERENCE_STYLES[idx % len(REFERENCE_STYLES)], label=label)
+            rows.extend([label, axle, a, f] for a, f in zip(alpha, nominal))
+        for s, alpha, identified, _nominal in curves:
+            ax.plot(alpha, identified, linewidth=1.6, linestyle='--', label=s.name,
+                    color=cmp.color(s.name))
+            rows.extend([s.name, axle, a, f] for a, f in zip(alpha, identified))
         drew_nominal = bool(curves)
         ax.set_title(f'{axle.capitalize()} axle')
         ax.set_xlabel(r'$\alpha$ [rad]')
@@ -796,7 +828,7 @@ def _pacejka(cmp, scenarios):
     ax.grid(True, axis='y', alpha=0.3)
     ax.legend(fontsize=7)
 
-    fig.suptitle('Identified vs. nominal tire model by scenario')
+    fig.suptitle('Identified vs. ground-truth tire model by scenario')
     cmp.save(fig, 'pacejka_identified_vs_nominal_by_scenario',
              ['scenario', 'series', 'alpha_rad_or_coefficient', 'value'],
              rows + coeff_rows)

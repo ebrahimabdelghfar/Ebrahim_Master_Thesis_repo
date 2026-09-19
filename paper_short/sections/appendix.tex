@@ -42,7 +42,8 @@ choice that is empirical rather than derived.
 \emph{A7. Simulator determinism and timing.} CARLA runs in synchronous mode with
 a \SI{0.033}{\second} physics step; sim time advances faster than wall time, at
 a ratio set by the host load and therefore not identical across runs
-(\num{1.56} and \num{1.66} on the two runs of Section~\ref{sec:results}). All
+(between \num{1.28} and \num{1.66} on the four runs of
+Section~\ref{sec:results}). All
 identification and force-validation data is stamped from the simulation clock,
 while the controller node stamps its own metrics on the wall clock; the two are
 never mixed inside one metric (Section~\ref{subsec:setup}).
@@ -60,12 +61,181 @@ parameter sets, so the reported identifications are reproducible in distribution
 but not bit for bit, while the sweep of Table~\ref{tab:sweep} is seeded
 explicitly and is bit-reproducible.
 
+\emph{A9. Reference trajectory.} Figure~\ref{fig:raceline} shows the raceline
+all four runs follow and the lateral demand it places on the plant.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{raceline.pdf}
+\caption{The optimised raceline used for all four
+runs~\cite{tumracetraj,heilmeier2020}. (a) Track layout, coloured by lateral
+demand, with the marked corner ($R=\SI{18.7}{\meter}$) the tightest on the lap.
+(b) Reference speed profile. (c) Lateral demand $v_{x}^{2}|\kappa|$ along the
+lap against the flat \SI{5.0}{\meter\per\second\squared} envelope handed to the
+optimiser (dashed) and the grip the vehicle has on the static surface (dotted,
+$\approx\SI{0.70}{\g}$, measured). No segment exceeds the plant's grip there;
+on the decaying surface the dotted line falls through the solid one.}
+\label{fig:raceline}
+\end{figure*}
+
+
+\section{Peak-Friction Warm Start on a Synthetic Plant}
+\label{subsec:mu}
+
+The friction warm start is evaluated on a synthetic single-track plant with
+brush tires, because only a synthetic plant supplies a $\mu$ known exactly and
+an excitation level that can be swept independently of it: a swept-sine steering
+input for \SI{40}{\second} at \SI{50}{\hertz} with true $\mu=0.70$, the same
+effective peak as the static CARLA surface, the steering amplitude setting how
+far up the tire curve the manoeuvre reaches (Table~\ref{tab:mu}).
+
+\begin{table}[t]
+\caption{Peak friction recovered from a synthetic brush-tire plant (true $\mu=0.70$), against excitation.}
+\label{tab:mu}
+\centering
+\begin{threeparttable}
+\small
+\begin{tabular}{@{}cccc@{}}
+\toprule
+$\delta$ amplitude & Grip reached & Bound $\hat\mu$ & Brush fit
+\eqref{eq:brush}\\
+\midrule
+\SI{0.033}{\radian} & \SI{45}{\percent}  & 0.312 & gated off\\
+\SI{0.047}{\radian} & \SI{63}{\percent}  & 0.442 & \textbf{0.699}\\
+\SI{0.060}{\radian} & \SI{80}{\percent}  & 0.557 & \textbf{0.699}\\
+\SI{0.090}{\radian} & \SI{100}{\percent} & 0.700 & \textbf{0.697}\\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]\scriptsize
+\item Column~2 is the fraction of the available grip the manoeuvre reached,
+$\max|F_{y}|/(\mu F_{z})$; column~3 is the utilisation bound
+$\max|F_{y}|/F_{z}$, which is what that fraction leaves as a lower bound on
+$\mu$. The brush fit of \eqref{eq:brush}
+instead recovers the peak from the curvature of $F_{y}(\alpha)$ and is
+therefore flat in excitation.
+\item The first row is refused by the absolute gate
+$\max|F_{y}|/F_{z}\ge\num{0.40}$ of Section~\ref{subsec:friction}: at
+$\mu=0.70$, \SI{45}{\percent} utilisation is only \num{0.31} of $F_{z}$. The
+utilisation bound is reported instead.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+At \SI{63}{\percent} utilisation, a level an ordinary lap reaches, the
+utilisation bound is \SI{37}{\percent} low while the brush fit is within
+\SI{0.2}{\percent}, and it stays there across true $\mu\in\{0.7,1.05,1.4\}$ on
+noise-free data; with odometry and IMU noise injected the error is
+grip-dependent, \SI{20}{\percent} at \SI{63}{\percent} utilisation and
+\SI{0.4}{\percent} at the peak for $\mu=0.70$. Below the absolute \num{0.40}
+floor on $|F_{y}|/F_{z}$ the gate suppresses the fit and reports the bound, so
+the failure is visible rather than silent. The gate behaves the same way on the
+CARLA runs, rejecting the first buffer of each and returning $\mu$ within
+\SI{11}{\percent} of the static plant at an absolute axle utilisation of
+\numrange{0.54}{0.68}. That \SI{11}{\percent} bias is the cost of a real
+rollout, a reconstructed $I_{z}\dot\omega$ term and a curve whose sustained
+demand is only about \num{0.70} of the axle's peak force, and it dominates the
+identified peak factor's error on both surfaces. The decaying surface adds a
+lag rather than a new error term.
+
+\section{Attribution by Offline Replay}
+\label{sec:ablations}
+
+This appendix attributes the closed-loop ordering of
+Section~\ref{subsec:summary} to individual settings, at the cost of leaving the
+loop. Every number below is an \emph{offline replay} of the identification
+stage on the five \SI{30}{\second} buffers each arm collected during its own
+run, scored with the quantity the closed-loop tire-force benchmark itself
+reports, so these numbers and Table~\ref{tab:comparison}'s are on the same
+scale. Section~\ref{subsec:ablations} summarises what follows.
+
+\subsection*{Damping the co-identification loop}
+Table~\ref{tab:beta} sweeps $\beta$ of \eqref{eq:relax} at six iterations
+throughout; two columns are the argument. At $\beta=\num{1.00}$, the inherited
+undamped update, axle force RMSE is \num{70.4} and \SI{62.3}{\newton}, reached
+by degrading monotonically from \num{38.9} and \SI{26.3}{\newton} at a single
+iteration: the loop amplifies its own extrapolation instead of refining the
+estimate. At $\beta=\num{0.00}$ the coefficients never move from the pinned
+prior, which is no identification at all, and that is the worst column,
+\num{92.5} and \SI{71.8}{\newton}. The minimum sits between them at
+$\beta=\num{0.20}$, \num{28.0} and \SI{19.4}{\newton}, a mean of
+\SI{23.7}{\newton}, and the identified $BCD$ rises with $\beta$ over the whole
+damped range (\num{7.82} at $\beta=0$ to \num{12.75} at $\beta=\num{0.50}$; the
+undamped \num{12.42} is no longer ordered by it), so the damping trades how
+much of each fit is accepted against how much extrapolation error comes with
+it. Six iterations are therefore defensible on this evidence, provided the
+update is damped.
+
+\begin{table}[t]
+\caption{Relaxation sweep. Five recorded buffers, six iterations, offline replay.}
+\label{tab:beta}
+\centering
+\begin{threeparttable}
+\scriptsize
+\setlength{\tabcolsep}{3.2pt}
+\begin{tabular}{@{}lrrrrrrrrr@{}}
+\toprule
+$\beta$ & 0.00 & 0.05 & 0.10 & 0.15 & \textbf{0.20} & 0.25 & 0.30 & 0.50 & 1.00\\
+\midrule
+Front $F_{y}$ RMSE [\si{\newton}] & 92.5 & 68.3 & 48.6 & 33.9 & \textbf{28.0} & 31.2 & 36.4 & 55.6 & 70.4\\
+Rear $F_{y}$ RMSE [\si{\newton}] & 71.8 & 49.0 & 31.3 & 19.8 & \textbf{19.4} & 26.0 & 30.2 & 38.4 & 62.3\\
+Front $BCD$ [\si{\per\radian}] & 7.82 & 8.82 & 9.66 & 10.36 & 10.88 & 11.32 & 11.65 & 12.75 & 12.42\\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]\scriptsize
+\item $\beta=\num{1.00}$ is the inherited undamped update and $\beta=\num{0.00}$ the pinned prior, i.e.\ no identification. \num{0.20} ships.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+
+\subsection*{The other settings}
+Pinning the peak factor accounts for most of what remains, and the decaying
+surface is where its value is easiest to state: an estimator that cannot move
+$D$ has nothing to publish when the surface changes. Replayed on five buffers
+of a $\mu=\num{1.05}$ run, letting the fit move $D$ gives a mean $|D-\mu|$ of
+\num{0.585} and a front-stiffness spread of
+\SI{32.9}{\kilo\newton\per\radian}; pinning only the axles whose brush fit was
+released reduces those to \num{0.191} and \num{32.3}, and also holding the axles
+with no released measurement, the shipped rule, to \num{0.084} and
+\SI{18.5}{\kilo\newton\per\radian}. What removes most of the error is refusing
+to let an unmeasured $D$ be fitted at all. Normalising the physics-informed
+objective is necessary but not sufficient alone: it moves the loss shares from
+\SI{99.9996}{\percent} on the dynamics residual to \SI{1.47}{\percent}, yet
+applied without the damping it makes the force metric slightly \emph{worse}
+(\num{77.1} and \SI{76.2}{\newton} against \num{70.4} and \SI{62.3}{\newton}),
+because an objective that now fits the data supplies a sharper trajectory for
+the undamped loop to amplify. Two settings deserve a weaker statement than the
+closed-loop comparison alone would support: the S4D residual is worth
+\SI{21}{\percent} on the force metric at matched settings and a single iteration
+(\SI{35.3}{\newton} against the baseline MLP's \SI{44.7}{\newton}), an offline
+replay and not a closed-loop result; and the residual \emph{objective} is a
+wash, \texttt{physics\_informed} and plain \texttt{mse} being indistinguishable
+at \SI{23.7}{\newton} each once the normalisation and the damping are both in
+place. We keep it because it costs nothing and is the paper's stated
+formulation, not because it buys accuracy. The fast-$\mu$ derate is likewise
+not separated: it is active only in \oursarm{}, and on the decaying surface it
+sat at the upper end of its $[\num{0.4},\num{1.2}]$ clamp over the last cycles,
+so the reference re-clamp of Section~\ref{subsec:resultsclosedloop} is carried
+by the published $D$ and not by the derate.
+
 \section{Simulator--ROS~2 Interface}
 \label{sec:iface}
 
 \subsection*{Feedback path}
-Table~\ref{tab:topics} lists the interface consumed by the identifier and its
-validation.
+Figure~\ref{fig:bridge} shows the bridge and Table~\ref{tab:topics} lists the
+interface consumed by the identifier and its validation.
+
+\begin{figure*}[t]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/bridge_architecture}}
+\caption{Architecture of the \bridge{} ROS~2 interface. The bridge links
+against CARLA's C\texttt{++} client, drives the ego vehicle through CARLA's
+native Ackermann controller, and republishes state, sensors and per-wheel
+telemetry on ROS~2 topics stamped from the simulation clock. The
+\texttt{feedback/\allowbreak tire\_forces} path (highlighted) carries the
+simulator's own per-wheel slip angle, normal load and lateral force, and is the
+ground truth against which the identifier is scored.}
+\label{fig:bridge}
+\end{figure*}
 
 \begin{table}[t]
 \caption{ROS~2 interface used by the identification and validation pipeline.

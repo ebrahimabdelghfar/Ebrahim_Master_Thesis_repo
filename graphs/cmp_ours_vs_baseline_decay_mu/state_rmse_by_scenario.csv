@@ -1,0 +1,9 @@
+scenario,category,value
+Excitation-S4D-Pinn-decay-mu,v_y,0.011
+Excitation-S4D-Pinn-decay-mu,v_y_persistence,0.007
+Excitation-S4D-Pinn-decay-mu,omega,0.037
+Excitation-S4D-Pinn-decay-mu,omega_persistence,0.004
+Baseline-NN-MSE-decay-mu,v_y,0.055
+Baseline-NN-MSE-decay-mu,v_y_persistence,0.083
+Baseline-NN-MSE-decay-mu,omega,0.105
+Baseline-NN-MSE-decay-mu,omega_persistence,0.01

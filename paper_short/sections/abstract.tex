@@ -17,13 +17,19 @@ its own previous answer is not a contraction. We correct all three (rollout
 speed from the measured lap, sweep bounded to the observed steering, peak
 factor measured off the trace and pinned, update damped into a relaxed
 fixed-point iteration) and gate the controller interface on derived physical
-quantities rather than on coefficient bounds. Over three timed laps on a surface
-\SI{33}{\percent} below the one its prior was measured on, no accepted
-coefficient rails, axle cornering stiffness is recovered to
-\SI{3.2}{\percent} front and \SI{1.4}{\percent} rear and the peak factor to
-\SI{11}{\percent}, against a railed peak factor and a
-\SIrange{118}{132}{\percent} stiffness error for the inherited configuration. All results
-are in simulation, one run per configuration.
+quantities rather than on coefficient bounds. Two surfaces are run. On a static
+surface \SI{33}{\percent} below the one its prior was measured on, no accepted
+coefficient rails, axle cornering stiffness is recovered to \SI{3.2}{\percent}
+front and \SI{1.4}{\percent} rear and the peak factor to \SI{11}{\percent},
+against a railed peak factor and a \SIrange{118}{132}{\percent} stiffness error
+for the inherited configuration. On a surface whose friction decays linearly
+until half the grip is gone, the corrected pipeline tracks the decay rate to
+\SI{7}{\percent}, offset by one identification cycle of lag, and completes three
+timed laps at unchanged lateral tracking error by trading \SI{18}{\percent} of
+lap time; the inherited configuration holds its peak factor on a box constraint,
+never re-clamps the reference against a grip ceiling it claims is
+\num{3.8}$\times$ the plant's, and leaves the track in lap~2. All results are in
+simulation, one run per configuration and surface.
 \end{abstract}
 
 \begin{IEEEkeywords}

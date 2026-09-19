@@ -99,11 +99,10 @@ $\mathcal{L}_{\mathrm{data}}$ is a mean square over a one-step increment while
 the two balance residuals are a force and a moment, four to six orders of
 magnitude apart, so $\lambda_{s}$ is not a relative weight at all: measured at
 initialisation on a \SI{30}{\second} buffer of this vehicle, the unnormalised
-steady term contributes \SI{99.9996}{\percent} of $\mathcal{L}$ against
-\SI{0.0004}{\percent} for the data term, a ratio of $\num{2.3e5}$. Such a
-residual fits the nominal model's own force imbalance rather than the data it
-was given. Each residual is therefore expressed as the state
-increment it implies, the unit the network's output is in,
+steady term contributes \SI{99.9996}{\percent} of $\mathcal{L}$, a ratio of
+$\num{2.3}\times10^{5}$, and such a residual fits the nominal model's own force imbalance
+rather than the data it was given. Each residual is therefore expressed as the
+state increment it implies, the unit the network's output is in,
 \begin{equation}
 r_{\mathrm{lat}}=\frac{T_{s}}{m}\,\Big(m\dot v_{y}+mv_{x}\omega-(\Fyr+\Fyf\cos\delta)\Big),
 \label{eq:physnorm}

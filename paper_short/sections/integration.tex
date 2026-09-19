@@ -19,20 +19,23 @@ quantity rather than a coefficient:
 
 \begin{enumerate}
 \item \textbf{Grip ceiling versus trajectory demand.} The controller computes
-$\max_{k}(v_{x,k}^{2}|\kappa_{k}|)$ over the speed-clamped reference and
-rejects any identification whose $a_{y}^{\max}$ from \eqref{eq:gripceiling}
-falls below it. On the earlier trajectory the degenerate fit reported a
-\SI{0.40}{\g} ceiling against a \SI{1.22}{\g} demand and produced
-\SI{41.89}{\meter} of cross-track error at \SI{27}{\meter\per\second},
-against \SI{0.03}{\meter} for a physically plausible set ($D=\num{1.5}$) on the
-same trajectory, at the same speed and through the same controller; the same
-identified set gives \SI{0.16}{\meter} at \SI{11.1}{\meter\per\second} and
-\SI{0.43}{\meter} at \SI{15}{\meter\per\second}, the $v^{2}$ scaling the
-Introduction describes. These figures come from an offline closed-loop harness rather than a controlled
-pair of simulator runs, and are quoted as the observation that motivated the
-gate, not as a result. The gate is one-sided by construction and catches only a
-ceiling that is too low, so \basearm{}'s \SI{2.00}{\g}
-(Section~\ref{subsec:resultstire}) passes it.
+$\max_{k}(v_{x,k}^{2}|\kappa_{k}|)$ over the speed-clamped reference, rejects
+any identification whose $a_{y}^{\max}$ from \eqref{eq:gripceiling} falls below
+it, and otherwise re-clamps the reference speed profile against that ceiling,
+which is the path by which a falling peak factor slows the vehicle in
+Section~\ref{subsec:resultsclosedloop}. On the earlier trajectory the degenerate
+fit reported a \SI{0.40}{\g} ceiling against a \SI{1.22}{\g} demand and produced
+\SI{41.89}{\meter} of cross-track error at \SI{27}{\meter\per\second}, against
+\SI{0.03}{\meter} for a physically plausible set ($D=\num{1.5}$) on the same
+trajectory, at the same speed and through the same controller; the same
+identified set gives \SI{0.16}{\meter} at \SI{11.1}{\meter\per\second}, the
+$v^{2}$ scaling the Introduction describes. These figures come from an offline
+closed-loop harness rather than a controlled pair of simulator runs, and are
+quoted as the observation that motivated the gate, not as a result. The gate is
+one-sided by construction and catches only a ceiling that is too low, so
+\basearm{}'s \SI{2.00}{\g} (Section~\ref{subsec:resultstire}) passes it on both
+surfaces, which is why the decaying-surface departure is visible in the
+controller and not at this interface.
 \item \textbf{Understeer sign and critical speed.} A set with
 $l_{f}C_{f}>l_{r}C_{r}$ whose $v_{\mathrm{crit}}$ falls inside the controller's
 speed range makes the prediction model open-loop unstable, and the resulting

@@ -1,0 +1,5 @@
+scenario,category,value
+Excitation-S4D-Pinn,RMS,0.3994774338426081
+Excitation-S4D-Pinn,Max,2.604331
+Baseline-NN-MSE,RMS,0.3798744277351181
+Baseline-NN-MSE,Max,2.567818

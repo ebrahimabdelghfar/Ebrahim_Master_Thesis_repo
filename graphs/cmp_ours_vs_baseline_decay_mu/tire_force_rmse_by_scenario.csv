@@ -1,0 +1,5 @@
+scenario,category,value
+Excitation-S4D-Pinn-decay-mu,front_sum_fy,32.883
+Excitation-S4D-Pinn-decay-mu,rear_sum_fy,36.469
+Baseline-NN-MSE-decay-mu,front_sum_fy,171.429
+Baseline-NN-MSE-decay-mu,rear_sum_fy,178.341

@@ -1,0 +1,5 @@
+scenario,lap,lap_time_s
+Excitation-S4D-Pinn-decay-mu,1,189.75774431228638
+Excitation-S4D-Pinn-decay-mu,2,160.87840867042542
+Excitation-S4D-Pinn-decay-mu,3,169.17789435386658
+Baseline-NN-MSE-decay-mu,1,167.65799236297607
