@@ -85,10 +85,12 @@ run_benchmark_scenarios:
 	source $(CARLA_BRIDGE_SETUP) && \
 	MPLBACKEND=Agg python3 $(WORKSPACE)/benchmark_runner/run_benchmark.py \
 	--config $(SCENARIOS) $(if $(ONLY),--only $(ONLY))
+# Pass ONLY="<name> <name> ..." to compare a subset instead of every scenario, and
+# OUT=<dirname> to write it somewhere other than graphs/comparison.
 compare_benchmark_scenarios:
 	@source /opt/ros/humble/setup.bash && source ${WORKSPACE}/install/setup.bash && \
 	MPLBACKEND=Agg python3 $(WORKSPACE)/benchmark_runner/compare_scenarios.py \
-	--config $(SCENARIOS)
+	--config $(SCENARIOS) $(foreach s,$(ONLY),--only $(s)) $(if $(OUT),--out $(OUT))
 setup_ros2_workspace:
 	@source /opt/ros/humble/setup.bash && \
 	bash ${WORKSPACE}/scripts/colcon_build.sh

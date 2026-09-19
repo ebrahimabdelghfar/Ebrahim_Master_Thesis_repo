@@ -186,9 +186,10 @@ class Comparison:
         # run), so the same colour would mean a different scenario per panel.
         palette = plt.get_cmap('tab10').colors
         self._colors = {name: palette[i % len(palette)] for i, name in enumerate(names)}
-        # [(scenario, reason)] for the runs that did not finish. Every figure
-        # carries the caveat, because any of them can mix a short run in with
-        # complete ones and nothing else on the axes would say so.
+        # [(scenario, lap)] for the runs that did not finish, the lap being the
+        # one under way when the car failed. Every figure carries the caveat,
+        # because any of them can mix a short run in with complete ones and
+        # nothing else on the axes would say so.
         self.incomplete = list(incomplete)
 
     def color(self, name):
@@ -197,8 +198,8 @@ class Comparison:
     def _banner(self, fig):
         if not self.incomplete:
             return
-        detail = '; '.join(f'{name} ({reason})' for name, reason in self.incomplete)
-        fig.text(0.5, 0.012, f'Incomplete run(s) included: {detail}',
+        detail = '; '.join(f'{name} failed in lap {lap}' for name, lap in self.incomplete)
+        fig.text(0.5, 0.012, detail,
                  ha='center', va='bottom', fontsize=6, color=FAILURE_COLOR, wrap=True)
 
     def save(self, fig, basename, header, rows):
@@ -362,7 +363,8 @@ def build(scenarios, out_dir):
     names = [s.name for s in scenarios]
     cmp = Comparison(
         out_dir, plt, names=names,
-        incomplete=[(s.name, s.failure_reason) for s in scenarios if s.failure_reason])
+        incomplete=[(s.name, len(s.lap_times) + 1)
+                    for s in scenarios if s.failure_reason])
 
     _summary_csv(scenarios, out_dir)
     _lap_times(cmp, scenarios)
@@ -691,14 +693,26 @@ def _is_float(value):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', default=str(Path(__file__).resolve().parent / 'scenarios.yaml'))
+    parser.add_argument('--only', action='append', default=None,
+                        help='Compare only the named scenario (repeatable)')
+    parser.add_argument('--out', default='comparison',
+                        help='Output directory name under <graphs_root> (default: comparison)')
     args = parser.parse_args()
 
-    with Path(args.config).open() as handle:
+    config_path = Path(args.config).resolve()
+    with config_path.open() as handle:
         config = yaml.safe_load(handle)
     graphs_root = REPO_ROOT / config.get('graphs_root', 'graphs')
 
+    entries = config['scenarios']
+    if args.only:
+        entries = [e for e in entries if e['name'] in args.only]
+        missing = set(args.only) - {e['name'] for e in entries}
+        if missing:
+            parser.error(f'no such scenario(s) in {config_path}: {sorted(missing)}')
+
     scenarios = []
-    for entry in config['scenarios']:
+    for entry in entries:
         data = ScenarioData(entry['name'], graphs_root, entry.get('label'))
         if data.exists():
             scenarios.append(data)
@@ -715,7 +729,7 @@ def main():
             print(f'WARNING: {s.name} did not finish ({s.failure_reason}) - its '
                   f'partial data is still compared, and every figure says so.')
 
-    build(scenarios, graphs_root / 'comparison')
+    build(scenarios, graphs_root / args.out)
     return 0
 
 
