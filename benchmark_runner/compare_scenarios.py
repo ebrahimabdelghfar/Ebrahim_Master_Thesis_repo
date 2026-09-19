@@ -26,12 +26,31 @@ from run_status import read_failure_reason  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+sys.path.insert(0, str(REPO_ROOT / 'adaptive_controller_benchmark'))
+
+from adaptive_controller_benchmark.online_metrics import STATE_COLORS  # noqa: E402
+
+# adaptive_controller_benchmark_node.py's list, duplicated because that module
+# imports rclpy - keep the two in step.
+STATE_ORDER = [
+    'BOOTSTRAP_PP', 'RUNNING_PP', 'SWITCHING_TO_MPC', 'RUNNING_MPC',
+    'SWITCHING_TO_PP', 'EMERGENCY_HALT',
+]
+
 FAILURE_COLOR = '#b00020'
 
 AXLE_FORCE_SIGNALS = ('front_sum_fy', 'rear_sum_fy')
 STATE_SIGNALS = ('v_y', 'omega')
 MU_SIGNALS = ('front_mu', 'rear_mu')
 STATE_UNITS = {'v_y': 'm/s', 'omega': 'rad/s'}
+
+# Control-side timeseries, as (signal, source attribute, axis label). All three
+# share the run clock `t_run_s`, so scenarios may be overlaid on one axis.
+CONTROL_SIGNALS = (
+    ('e_y_m', 'tracking_series', 'Lateral error $e_y$ [m]'),
+    ('v_x_mps', 'speed_series', 'Speed $v_x$ [m/s]'),
+    ('mpc_solve_time_ms', 'speed_series', 'MPC solve time [ms]'),
+)
 
 
 # ---------------- CSV loading ----------------
@@ -93,6 +112,8 @@ class ScenarioData:
             self.control_dir / 'tracking_error_boxplot_by_controller.csv')
         self.tracking_series = _read_rows(
             self.control_dir / 'tracking_error_timeseries.csv')
+        self.speed_series = _read_rows(
+            self.control_dir / 'speed_and_compute_cost.csv')
         self.force_errors = _group(
             _read_rows(self.ident_dir / 'tire_forces_error_hist.csv'),
             'signal', 'error_gt_minus_est')
@@ -159,6 +180,22 @@ class ScenarioData:
                 continue
         return alpha, identified, nominal
 
+    def control_columns(self, source, *columns):
+        """Run clock, FSM state and one list per named column, all empty when absent."""
+        t, states = [], []
+        values = [[] for _ in columns]
+        for row in getattr(self, source):
+            try:
+                sample = [float(row[c]) for c in columns]
+                time = float(row['t_run_s'])
+            except (TypeError, ValueError, KeyError):
+                continue
+            t.append(time)
+            states.append(row.get('state', ''))
+            for out, value in zip(values, sample):
+                out.append(value)
+        return t, states, values
+
     def series(self, rows, signal):
         t, gt, est = [], [], []
         for row in rows:
@@ -202,11 +239,13 @@ class Comparison:
         fig.text(0.5, 0.012, detail,
                  ha='center', va='bottom', fontsize=6, color=FAILURE_COLOR, wrap=True)
 
-    def save(self, fig, basename, header, rows):
+    def save(self, fig, basename, header, rows, top=1.0):
         self._banner(fig)
-        # Reserve the bottom strip when there is a banner: tight_layout does not
-        # account for figure-level text and would lay the axes over it.
-        fig.tight_layout(rect=(0, 0.05, 1, 1) if self.incomplete else None)
+        # Reserve the bottom strip when there is a banner, and `top` for a
+        # figure-level legend: tight_layout accounts for neither and would lay
+        # the axes over them.
+        bottom = 0.05 if self.incomplete else 0.0
+        fig.tight_layout(rect=(0, bottom, 1, top) if (bottom or top < 1.0) else None)
         # PDF is what the paper includes (IEEE wants >= 300 dpi and these are
         # line plots, so vector is both smaller and exact); the PNG stays for
         # quick viewing outside LaTeX.
@@ -382,6 +421,8 @@ def build(scenarios, out_dir):
                     for s in scenarios),
         ['RMS', 'Max'])
     _e_y_hist(cmp, scenarios)
+    _control_overlay(cmp, scenarios)
+    _control_timeseries(cmp, scenarios)
 
     cmp.grouped_bars(
         'tire_force_rmse_by_scenario', 'Tire lateral force: model accuracy per axle',
@@ -570,6 +611,132 @@ def _e_y_hist(cmp, scenarios):
     ax.set_title('Lateral tracking error distribution by scenario')
     ax.grid(True, alpha=0.3)
     cmp.save(fig, 'e_y_error_hist_by_scenario', ['scenario', 'e_y_m'], rows)
+
+
+def _shade_states(ax, t, states):
+    """axvspan per contiguous FSM-state run, as the per-scenario figures draw it.
+
+    Returns the distinct states shaded, in STATE_ORDER, for the legend.
+    """
+    if not t:
+        return []
+    seen = set()
+    start = 0
+    for i in range(1, len(t) + 1):
+        if i == len(t) or states[i] != states[start]:
+            end = t[i - 1] if i - 1 > start else t[start] + 1e-3
+            ax.axvspan(t[start], end, color=STATE_COLORS.get(states[start], '#cccccc'),
+                       alpha=0.15, linewidth=0)
+            seen.add(states[start])
+            start = i
+    return [s for s in STATE_ORDER if s in seen]
+
+
+def _state_legend(fig, states, failed, y):
+    """One legend for the whole grid, above the panels so it covers no trace."""
+    import matplotlib.lines as mlines
+    import matplotlib.patches as mpatches
+    handles = [mpatches.Patch(color=STATE_COLORS.get(s, '#cccccc'), alpha=0.3, label=s)
+               for s in states]
+    if failed:
+        handles.append(mlines.Line2D([], [], color=FAILURE_COLOR, linestyle='-.',
+                                     linewidth=1.6, label='Run gave up here'))
+    if handles:
+        fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, y),
+                   fontsize=8, framealpha=0.8, ncol=len(handles))
+
+
+def _control_overlay(cmp, scenarios):
+    """One axis per control signal, every scenario drawn on it in its own color.
+
+    The runs share a clock only in that both start at t=0, so this says how the
+    scenarios differ over a run; the panel figure is where one run is read on
+    its own.
+    """
+    fig, axes = cmp.plt.subplots(len(CONTROL_SIGNALS), 1, squeeze=False,
+                                 figsize=(10, 3.2 * len(CONTROL_SIGNALS)))
+    rows = []
+    for ax, (signal, source, ylabel) in zip(axes[:, 0], CONTROL_SIGNALS):
+        drew = False
+        for s in scenarios:
+            t, _, (values,) = s.control_columns(source, signal)
+            if not t:
+                continue
+            drew = True
+            ax.plot(t, values, linewidth=1.0, label=s.name, color=cmp.color(s.name))
+            rows.extend([s.name, signal, a, b] for a, b in zip(t, values))
+        ax.set_title(signal if drew else f'{signal} (no data)')
+        ax.set_xlabel('Time [s]')
+        ax.set_ylabel(ylabel)
+        ax.grid(True, alpha=0.3)
+        if drew:
+            ax.legend(fontsize=7)
+    fig.suptitle('Control timeseries by scenario (overlay)')
+    cmp.save(fig, 'control_timeseries_overlay_by_scenario',
+             ['scenario', 'signal', 't_run_s', 'value'], rows)
+
+
+def _control_timeseries(cmp, scenarios):
+    """The per-run control figures, one row per scenario, side by side.
+
+    Each panel is what `<scenario>/tracking_error_timeseries.png` and
+    `speed_and_compute_cost.png` already show - same signals, same signal
+    colors, same FSM shading - so a panel and its per-scenario figure cannot
+    read differently. Scenario color would collide with the signal colors, so it
+    is left to the overlay and the histograms.
+    """
+    height = 2.9 * len(scenarios)
+    fig, axes = cmp.plt.subplots(len(scenarios), 3, squeeze=False, figsize=(16.0, height))
+    rows = []
+    states_seen = set()
+    for row_index, (row_axes, s) in enumerate(zip(axes, scenarios)):
+        t, states, (e_y, heading) = s.control_columns(
+            'tracking_series', 'e_y_m', 'heading_error_rad')
+        t_speed, states_speed, (v_x, solve_ms) = s.control_columns(
+            'speed_series', 'v_x_mps', 'mpc_solve_time_ms')
+        rows.extend([s.name, a, b, c, '', ''] for a, b, c in zip(t, e_y, heading))
+        rows.extend([s.name, a, '', '', b, c] for a, b, c in zip(t_speed, v_x, solve_ms))
+
+        for column, (ax, (clock, state_seq, values, color, ylabel, title)) in enumerate(zip(
+            row_axes, (
+                (t, states, e_y, 'tab:blue', 'e_y [m]', 'Lateral tracking error'),
+                (t, states, heading, 'tab:red', 'heading error [rad]',
+                 'Heading tracking error'),
+                (t_speed, states_speed, v_x, 'tab:green', 'v_x [m/s]',
+                 'Speed profile vs. MPC compute cost'),
+            ))):
+            states_seen.update(_shade_states(ax, clock, state_seq))
+            if clock:
+                ax.plot(clock, values, color=color, linewidth=1.0)
+                if s.failure_reason:
+                    ax.axvline(clock[-1], color=FAILURE_COLOR, linestyle='-.',
+                               linewidth=1.6, zorder=5)
+            ax.set_ylabel(ylabel if clock else f'{ylabel} (no data)', color=color)
+            ax.tick_params(axis='y', labelcolor=color)
+            ax.set_xlabel('Time [s]')
+            # The scenario names its row once, over the left-hand panel; the top
+            # row's titles name the signal for every row under them.
+            if column == 0:
+                ax.set_title(s.name, fontweight='bold')
+            elif row_index == 0:
+                ax.set_title(title)
+            ax.grid(True, alpha=0.3)
+
+        if t_speed:
+            twin = row_axes[2].twinx()
+            twin.plot(t_speed, solve_ms, color='tab:purple', linewidth=0.8, alpha=0.8)
+            twin.set_ylabel('MPC solve_time_ms [ms]', color='tab:purple')
+            twin.tick_params(axis='y', labelcolor='tab:purple')
+
+    # Title, then legend, then the panels: a strip of fixed inches, so the
+    # reserved fraction shrinks as scenarios lengthen the figure.
+    top = 1.0 - 0.75 / height
+    fig.suptitle('Control timeseries by scenario', y=1.0 - 0.18 / height)
+    _state_legend(fig, [s for s in STATE_ORDER if s in states_seen],
+                  any(s.failure_reason for s in scenarios), 1.0 - 0.33 / height)
+    cmp.save(fig, 'control_timeseries_panels_by_scenario',
+             ['scenario', 't_run_s', 'e_y_m', 'heading_error_rad',
+              'v_x_mps', 'mpc_solve_time_ms'], rows, top=top)
 
 
 def _pacejka(cmp, scenarios):
